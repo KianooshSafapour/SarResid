@@ -1,0 +1,795 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faMoney, faNum, formatJalaliShort } from '@/lib/jalali'
+     7→import { SectionCard, Pill, EmptyState, Labeled, KeyValue, SearchInput } from '@/components/app/ui-bits'
+     8→import { JalaliDatePicker } from '@/components/app/jalali-widgets'
+     9→import { Modal } from '@/components/views/Orders'
+    10→import { PeopleNetBar } from '@/components/app/PeopleNetBar'
+    11→import type { AppCtx } from '@/components/app/ui-bits'
+    12→import { Users, Factory, BookOpen, Plus, Pencil, Trash2, Phone, Mail, MapPin, Cake, Building2, Link2, History } from 'lucide-react'
+    13→import { cn } from '@/lib/utils'
+    14→
+    15→/* ───────────────── دفتر اشخاص (round-15) ─────────────────
+    16→ * یک مرجع واحد (SSOT) برای همهٔ اشخاصی که در رخدادهای سامانه ظاهر می‌شوند:
+    17→ * نمایندگان تأمین‌کنندگان، راننده‌ها، حسابدارهای شرکت‌ها، بازرس‌ها، مالکان ملک و…
+    18→ * شخص یک‌بار تعریف می‌شود و هر رخداد سند به او وصل می‌ماند — تاریخچه هرگز گم نمی‌شود.
+    19→ */
+    20→
+    21→type Rep = {
+    22→  id: string; fullName: string; mobile: string; phone2: string; email: string; address: string
+    23→  birthday: string; kind: string; company: string; providerId: string; providerName: string
+    24→  jobRole: string; nationalId: string; notes: string; tags: string[]; active: boolean
+    25→  providerHistory: { providerName: string; from: string; to?: string }[]
+    26→  docCount?: number; lastSeen?: string; totalCollected?: number; eventCount?: number
+    27→}
+    28→type ProviderLite = { id: string; name: string }
+    29→type Manufacturer = {
+    30→  id: string; name: string; country: string; website: string; phone: string
+    31→  brands: string[]; notes: string; active: boolean
+    32→  providerCount: number; productCount: number; providers: { id: string; name: string }[]
+    33→}
+    34→type ProfileRes = {
+    35→  rep: Rep
+    36→  events: { id: string; kind: string; at: string; amount: number; note: string; docCode: string; docTitle: string }[]
+    37→  docs: { id: string; code: string; title: string; party: string; amount: number; docDate: string }[]
+    38→}
+    39→
+    40→/** انواع شخص — با ایموجی برای تشخیص فوری در کارت‌ها */
+    41→const KINDS: Record<string, { label: string; emoji: string; color: string; nonProvider?: boolean }> = {
+    42→  REP: { label: 'نماینده فروش', emoji: '🧑‍💼', color: '#0e7a4a' },
+    43→  DRIVER: { label: 'راننده', emoji: '🚚', color: '#c96f4a' },
+    44→  ACCOUNTANT: { label: 'حسابدار', emoji: '🧾', color: '#8a6d10' },
+    45→  MANAGER: { label: 'مدیر', emoji: '🕴️', color: '#6d28d9' },
+    46→  CONTACT: { label: 'تماس', emoji: '📞', color: '#334155', nonProvider: true },
+    47→  INSPECTOR: { label: 'کارشناس بازرسی', emoji: '🔍', color: '#0f766e', nonProvider: true },
+    48→  LANDLORD: { label: 'مالک ملک', emoji: '🏠', color: '#a16207', nonProvider: true },
+    49→  OTHER: { label: 'سایر', emoji: '👤', color: '#6b7280', nonProvider: true },
+    50→}
+    51→const KIND_ORDER = ['REP', 'DRIVER', 'ACCOUNTANT', 'MANAGER', 'CONTACT', 'INSPECTOR', 'LANDLORD', 'OTHER']
+    52→
+    53→const EVENT_LABELS: Record<string, string> = {
+    54→  DELIVERY: 'تحویل کالا', PAYMENT_POS: 'پرداخت POS', PAYMENT_CHEQUE: 'وصول چک', PAYMENT_CASH: 'پرداخت نقدی',
+    55→  PAYMENT_TRANSFER: 'کارت‌به‌کارت', RETURN: 'مرجوعی', REJECT: 'مردود', SHORTAGE: 'کسری',
+    56→  HOLOO_INVOICE: 'فاکتور هلو', HOLOO_RECEIPT: 'رسید هلو', NOTE: 'یادداشت',
+    57→}
+    58→
+    59→type Tab = 'reps' | 'manufacturers' | 'guide'
+    60→
+    61→const MANAGE_ROLES = ['OWNER', 'GM', 'OM', 'ADMIN', 'ACC']
+    62→type RoleLite = { key: string; caps: string[]; active: boolean }
+    63→
+    64→/* round-18-C: دفتر اشخاص + تأمین‌کنندگان با هم طراحی شده‌اند — نوار «شبکهٔ اشخاص» بالای هر دو */
+    65→export default function PeopleView({ ctx }: { ctx: AppCtx } & Record<string, unknown>) {
+    66→  const user = ctx.user
+    67→  const roleKeys = useMemo(
+    68→    () => (user ? Array.from(new Set([user.role, ...(user.secondaryRoles || [])])) : []),
+    69→    [user],
+    70→  )
+    71→
+    72→  const [tab, setTab] = useState<Tab>('reps')
+    73→  const [roleMap, setRoleMap] = useState<Record<string, RoleLite>>({})
+    74→
+    75→  const canManage = useMemo(() => {
+    76→    if (!user) return false
+    77→    if (MANAGE_ROLES.includes(user.role)) return true
+    78→    return roleKeys.some((k) => roleMap[k]?.caps?.includes('*') || roleMap[k]?.caps?.includes('people.manage'))
+    79→  }, [user, roleKeys, roleMap])
+    80→
+    81→  const canMfg = useMemo(() => {
+    82→    if (!user) return false
+    83→    if (MANAGE_ROLES.includes(user.role) || user.role === 'ACC') return true
+    84→    return roleKeys.some((k) => roleMap[k]?.caps?.includes('*') || roleMap[k]?.caps?.includes('manufacturers.manage'))
+    85→  }, [user, roleKeys, roleMap])
+    86→
+    87→  // ── deep-link شبکهٔ اشخاص (round-18-C) ──
+    88→  // navigate('people', repId) → تب «نمایندگان و اشخاص» باز می‌شود و پروندهٔ همان شخص
+    89→  // خودکار بالا می‌آید (لینک «📇 پرونده در دفتر» از کارت تأمین‌کننده و نتایج PeopleNetBar).
+    90→  // الگوی رسمی «تنظیم state در رندر» — سازگار با قاعدهٔ set-state-in-effect.
+    91→  const [focusId, setFocusId] = useState('')
+    92→  const [lastParam, setLastParam] = useState('')
+    93→  if (ctx.param !== lastParam) {
+    94→    setLastParam(ctx.param)
+    95→    if (ctx.view === 'people' && ctx.param) {
+    96→      setFocusId(ctx.param)
+    97→      if (tab !== 'reps') setTab('reps')
+    98→    } else if (!ctx.param) {
+    99→      setFocusId('')
+   100→    }
+   101→  }
+   102→
+   103→  useEffect(() => {
+   104→    api<{ roles: Array<{ key: string; active: boolean; permissions?: { caps?: string[] } }> }>('/api/roles')
+   105→      .then((d) => {
+   106→        const m: Record<string, RoleLite> = {}
+   107→        for (const r of d.roles || []) m[r.key] = { key: r.key, active: r.active, caps: r.permissions?.caps || [] }
+   108→        setRoleMap(m)
+   109→      })
+   110→      .catch(() => { /* fallback to role list above */ })
+   111→  }, [])
+   112→
+   113→  return (
+   114→    <div className="space-y-4">
+   115→      {/* نوار مشترک شبکهٔ اشخاص — دفتر اشخاص + تأمین‌کنندگان + CRM (round-18-C) */}
+   116→      <PeopleNetBar active="people" ctx={ctx} />
+   117→      <div className="flex flex-wrap gap-2 rounded-2xl border border-[#8a5a2b]/25 bg-[#f7efe2] p-1.5">
+   118→        {([
+   119→          ['reps', <Users key="i" size={15} />, 'نمایندگان و اشخاص'],
+   120→          ['manufacturers', <Factory key="i" size={15} />, 'تولیدکنندگان'],
+   121→          ['guide', <BookOpen key="i" size={15} />, 'راهنما'],
+   122→        ] as [Tab, React.ReactNode, string][]).map(([k, icon, label]) => (
+   123→          <button
+   124→            key={k}
+   125→            type="button"
+   126→            onClick={() => setTab(k)}
+   127→            className={cn(
+   128→              'flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition',
+   129→              tab === k ? 'bg-white text-[#0e7a4a] shadow' : 'text-[#8a5a2b] hover:bg-white/60',
+   130→            )}
+   131→          >
+   132→            {icon} {label}
+   133→          </button>
+   134→        ))}
+   135→      </div>
+   136→
+   137→      {tab === 'reps' && <RepDirectory canManage={canManage} ctx={ctx} focusId={focusId} />}
+   138→      {tab === 'manufacturers' && <ManufacturerBoard canManage={canMfg} />}
+   139→      {tab === 'guide' && <GuideCard />}
+   140→    </div>
+   141→  )
+   142→}
+   143→
+   144→/* ───────────────── دفتر نمایندگان و اشخاص ───────────────── */
+   145→
+   146→function RepDirectory({ canManage, ctx, focusId }: { canManage: boolean; ctx: AppCtx; focusId?: string }) {
+   147→  const [reps, setReps] = useState<Rep[]>([])
+   148→  const [providers, setProviders] = useState<ProviderLite[]>([])
+   149→  const [q, setQ] = useState('')
+   150→  const [kindFilter, setKindFilter] = useState('')
+   151→  const [providerFilter, setProviderFilter] = useState('')
+   152→  const [loading, setLoading] = useState(true)
+   153→
+   154→  const [formOpen, setFormOpen] = useState(false)
+   155→  const [editing, setEditing] = useState<Rep | null>(null)
+   156→  const [profileId, setProfileId] = useState('')
+   157→  const [profile, setProfile] = useState<ProfileRes | null>(null)
+   158→
+   159→  const load = useCallback(async () => {
+   160→    setLoading(true)
+   161→    try {
+   162→      const params = new URLSearchParams()
+   163→      params.set('all', '1')
+   164→      if (q.trim()) params.set('q', q.trim())
+   165→      if (kindFilter) params.set('kind', kindFilter)
+   166→      if (providerFilter) params.set('providerId', providerFilter)
+   167→      const d = await api<{ reps: Rep[] }>(`/api/sales-reps?${params}`)
+   168→      setReps(d.reps || [])
+   169→    } catch (e: any) {
+   170→      toast.error(e.message)
+   171→    } finally {
+   172→      setLoading(false)
+   173→    }
+   174→  }, [q, kindFilter, providerFilter])
+   175→
+   176→  useEffect(() => { load() }, [load])
+   177→  useEffect(() => {
+   178→    api<{ providers: ProviderLite[] }>('/api/providers').then((d) => setProviders(d.providers || [])).catch(() => { /* free-text still works */ })
+   179→  }, [])
+   180→
+   181→  const openProfile = async (id: string) => {
+   182→    setProfile(null)
+   183→    setProfileId(id)
+   184→    try {
+   185→      setProfile(await api<ProfileRes>(`/api/sales-reps/${id}`))
+   186→    } catch (e: any) {
+   187→      toast.error(e.message)
+   188→      setProfileId('')
+   189→    }
+   190→  }
+   191→
+   192→  // deep-link (round-18-C): با آمدن focusId از ناوبری، پروندهٔ شخص خودکار باز می‌شود.
+   193→  // الگوی «تنظیم state در رندر»؛ محدودیت شناخته‌شده: کلیک دوباره روی همان شخص بلافاصله
+   194→  // پس از بستن پرونده (بدون تعویض نما) دوباره باز نمی‌شود چون param ناوبری تغییری نمی‌کند.
+   195→  const [lastFocus, setLastFocus] = useState('')
+   196→  if (focusId && focusId !== lastFocus) {
+   197→    setLastFocus(focusId)
+   198→    openProfile(focusId)
+   199→  }
+   200→
+   201→  const toggleActive = async (r: Rep) => {
+   202→    try {
+   203→      await api(`/api/sales-reps?id=${r.id}`, { method: 'PATCH', body: { active: !r.active } })
+   204→      toast.success(!r.active ? 'شخص فعال شد' : 'شخص غیرفعال شد (تاریخچه محفوظ ماند)')
+   205→      load()
+   206→    } catch (e: any) { toast.error(e.message) }
+   207→  }
+   208→
+   209→  const removeRep = async (r: Rep) => {
+   210→    if (!confirm(`حذف «${r.fullName}» از دفتر اشخاص؟ اگر رخداد ثبت‌شده داشته باشد، فقط غیرفعال می‌شود.`)) return
+   211→    try {
+   212→      const res = await api<{ mode: string; message?: string }>(`/api/sales-reps?id=${r.id}`, { method: 'DELETE' })
+   213→      if (res.mode === 'soft') toast.warning(res.message || 'شخص دارای رخداد است — غیرفعال شد', { duration: 7000 })
+   214→      else toast.success('شخص حذف شد')
+   215→      load()
+   216→    } catch (e: any) { toast.error(e.message) }
+   217→  }
+   218→
+   219→  return (
+   220→    <>
+   221→      <SectionCard
+   222→        title="دفتر اشخاص — نمایندگان، راننده‌ها، بازرس‌ها و تماس‌های مهم"
+   223→        subtitle="ثبت یک‌بار، همیشه در تاریخچه — هر رخداد سند (تحویل، وصول چک، مرجوعی…) با نام شخص ثبت می‌شود"
+   224→        icon={<Users size={18} />}
+   225→        actions={canManage && (
+   226→          <button onClick={() => { setEditing(null); setFormOpen(true) }} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   227→            <Plus size={14} /> شخص جدید
+   228→          </button>
+   229→        )}
+   230→      >
+   231→        <div className="mb-3 flex flex-wrap items-center gap-2">
+   232→          <div className="min-w-[180px] flex-1"><SearchInput value={q} onChange={setQ} placeholder="نام، شرکت، موبایل یا سمت…" /></div>
+   233→          <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className="rounded-xl border border-input bg-white p-2 text-xs font-bold">
+   234→            <option value="">همهٔ انواع</option>
+   235→            {KIND_ORDER.map((k) => <option key={k} value={k}>{KINDS[k].emoji} {KINDS[k].label}</option>)}
+   236→          </select>
+   237→          <select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)} className="max-w-[190px] rounded-xl border border-input bg-white p-2 text-xs font-bold">
+   238→            <option value="">همهٔ تأمین‌کنندگان</option>
+   239→            {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+   240→          </select>
+   241→        </div>
+   242→
+   243→        {loading ? (
+   244→          <p className="py-6 text-center text-xs font-bold text-muted-foreground">…در حال بارگذاری دفتر اشخاص</p>
+   245→        ) : reps.length === 0 ? (
+   246→          <EmptyState
+   247→            emoji="🧑‍💼"
+   248→            title="شخصی یافت نشد"
+   249→            hint="نمایندگان طرف‌حساب‌ها و اشخاص مهم (راننده، حسابدار شرکت، بازرس، مالک ملک) را یک‌بار ثبت کنید؛ سپس در اسناد و رخدادها فقط انتخاب می‌کنید"
+   250→          />
+   251→        ) : (
+   252→          <div className="scroll-gold grid max-h-[58vh] gap-2.5 overflow-y-auto pl-1 sm:grid-cols-2 lg:grid-cols-3">
+   253→            {reps.map((r) => {
+   254→              const meta = KINDS[r.kind] || KINDS.OTHER
+   255→              return (
+   256→                <div key={r.id} className={cn('glow-card rounded-2xl bg-white/85 p-3.5', !r.active && 'opacity-70')}>
+   257→                  <button type="button" onClick={() => openProfile(r.id)} className="w-full text-right">
+   258→                    <p className="flex items-center justify-between gap-2 text-sm font-black">
+   259→                      <span className="truncate">{meta.emoji} {r.fullName}</span>
+   260→                      {!r.active && <Pill label="غیرفعال" color="#6b7280" bg="#6b72801a" />}
+   261→                    </p>
+   262→                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+   263→                      <Pill label={meta.label} color={meta.color} bg={`${meta.color}1a`} />
+   264→                      {r.providerName ? (
+   265→                        /* 🚛 لینک متقابل به کارت تأمین‌کننده (شبکهٔ اشخاص — round-18-C)؛
+   266→                           با providerId پارامتر ناوبری پر می‌شود تا کارت کالاهای همان تأمین‌کننده باز شود */
+   267→                        <span
+   268→                          role="button"
+   269→                          tabIndex={0}
+   270→                          title="رفتن به کارت این تأمین‌کننده در نمای تأمین‌کنندگان"
+   271→                          onClick={(e) => { e.stopPropagation(); ctx.navigate('providers', r.providerId || '') }}
+   272→                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); ctx.navigate('providers', r.providerId || '') } }}
+   273→                          className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-[#c9a227]/15 px-2 py-0.5 text-[11px] font-bold text-[#8a5a2b] transition hover:bg-[#c9a227]/30"
+   274→                        >
+   275→                          🚛 {r.providerName}
+   276→                        </span>
+   277→                      ) : r.company
+   278→                        ? <span className="rounded-full bg-[#334155]/10 px-2 py-0.5 text-[10px] font-bold text-[#334155]">🏢 {r.company}</span>
+   279→                        : <span className="text-[10px] text-muted-foreground">بدون شرکت</span>}
+   280→                      {r.jobRole && <span className="text-[10px] font-bold text-muted-foreground">{r.jobRole}</span>}
+   281→                    </div>
+   282→                    {r.tags.length > 0 && (
+   283→                      <div className="mt-1.5 flex flex-wrap gap-1">
+   284→                        {r.tags.map((t) => <span key={t} className="rounded-full bg-[#77934a]/15 px-2 py-0.5 text-[9px] font-black text-[#5c7236]">#{t}</span>)}
+   285→                      </div>
+   286→                    )}
+   287→                    <div className="mt-2 grid grid-cols-3 gap-1.5 text-center text-[10px]">
+   288→                      <span className="rounded-lg bg-muted/60 px-1 py-1.5"><b className="block text-xs">{faNum(r.docCount || 0)}</b>سند</span>
+   289→                      <span className="rounded-lg bg-muted/60 px-1 py-1.5"><b className="block text-xs">{faNum(r.eventCount || 0)}</b>رخداد</span>
+   290→                      <span className="rounded-lg bg-muted/60 px-1 py-1.5"><b className="block text-xs" style={{ color: '#0e7a4a' }}>{faMoney(r.totalCollected || 0)}</b>وصولی (تومان)</span>
+   291→                    </div>
+   292→                    <p className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px] text-muted-foreground">
+   293→                      {r.mobile
+   294→                        ? <a href={`tel:${r.mobile}`} onClick={(e) => e.stopPropagation()} className="rounded-md bg-[#0e7a4a]/10 px-2 py-1 font-black text-[#0e7a4a]" dir="ltr">📞 {faNum(r.mobile)}</a>
+   295→                        : <span>بدون موبایل</span>}
+   296→                      <span>آخرین رخداد: {r.lastSeen ? formatJalaliShort(r.lastSeen) : '—'}</span>
+   297→                    </p>
+   298→                  </button>
+   299→                  {canManage && (
+   300→                    <div className="mt-2 flex gap-1.5">
+   301→                      <button type="button" onClick={() => { setEditing(r); setFormOpen(true) }} className="flex-1 rounded-xl bg-[#c9a227]/15 py-2 text-[11px] font-black text-[#8a5a2b]">
+   302→                        ✏️ ویرایش
+   303→                      </button>
+   304→                      <button type="button" onClick={() => toggleActive(r)} className="flex-1 rounded-xl bg-[#0e7a4a]/10 py-2 text-[11px] font-black text-[#0e7a4a]">
+   305→                        {r.active ? '⏸ غیرفعال' : '▶️ فعال'}
+   306→                      </button>
+   307→                      <button type="button" onClick={() => removeRep(r)} className="rounded-xl bg-[#b3372f]/10 px-2.5 py-2 text-[11px] font-black text-[#b3372f]" title="حذف">
+   308→                        <Trash2 size={13} />
+   309→                      </button>
+   310→                    </div>
+   311→                  )}
+   312→                </div>
+   313→              )
+   314→            })}
+   315→          </div>
+   316→        )}
+   317→      </SectionCard>
+   318→
+   319→      {formOpen && canManage && (
+   320→        <PersonFormModal
+   321→          rep={editing}
+   322→          onClose={() => { setFormOpen(false); setEditing(null) }}
+   323→          onSaved={() => { setFormOpen(false); setEditing(null); toast.success(editing ? 'شخص ویرایش شد' : 'شخص ثبت شد'); load() }}
+   324→        />
+   325→      )}
+   326→
+   327→      {profileId && (
+   328→        <PersonProfileModal data={profile} onClose={() => { setProfileId(''); setProfile(null) }} />
+   329→      )}
+   330→    </>
+   331→  )
+   332→}
+   333→
+   334→/** مودال ثبت/ویرایش شخص — همهٔ فیلدها (از نمای تأمین‌کنندگان هم با پیش‌پرکردن استفاده می‌شود) */
+   335→export function PersonFormModal({ rep, defaults, onClose, onSaved }: { rep: Rep | null; defaults?: Partial<Rep>; onClose: () => void; onSaved: () => void }) {
+   336→  const [f, setF] = useState(() => ({
+   337→    fullName: rep?.fullName || defaults?.fullName || '', mobile: rep?.mobile || defaults?.mobile || '', phone2: rep?.phone2 || defaults?.phone2 || '',
+   338→    email: rep?.email || defaults?.email || '', address: rep?.address || defaults?.address || '', birthday: rep?.birthday || defaults?.birthday || '',
+   339→    kind: rep?.kind || defaults?.kind || 'REP', company: rep?.company || defaults?.company || '', providerId: rep?.providerId || defaults?.providerId || '',
+   340→    jobRole: rep?.jobRole || defaults?.jobRole || '', nationalId: rep?.nationalId || defaults?.nationalId || '', notes: rep?.notes || defaults?.notes || '',
+   341→  }))
+   342→  const [tags, setTags] = useState<string[]>(rep?.tags || defaults?.tags || [])
+   343→  const [tagInput, setTagInput] = useState('')
+   344→  const [providers, setProviders] = useState<ProviderLite[]>([])
+   345→  const [busy, setBusy] = useState(false)
+   346→  const set = (k: string, v: string) => setF((s) => ({ ...s, [k]: v }))
+   347→  const nonProvider = KINDS[f.kind]?.nonProvider
+   348→
+   349→  useEffect(() => {
+   350→    api<{ providers: ProviderLite[] }>('/api/providers')
+   351→      .then((d) => setProviders(d.providers || []))
+   352→      .catch(() => { /* free-text company still works */ })
+   353→  }, [])
+   354→
+   355→  const addTag = () => {
+   356→    const t = tagInput.trim().replace(/^#/, '')
+   357→    if (t && !tags.includes(t)) setTags((l) => [...l, t])
+   358→    setTagInput('')
+   359→  }
+   360→
+   361→  const save = async () => {
+   362→    if (!f.fullName.trim()) return toast.error('نام شخص الزامی است')
+   363→    setBusy(true)
+   364→    try {
+   365→      const body = { ...f, tags, company: nonProvider ? f.company : undefined }
+   366→      if (rep) await api(`/api/sales-reps?id=${rep.id}`, { method: 'PATCH', body })
+   367→      else await api('/api/sales-reps', { method: 'POST', body })
+   368→      onSaved()
+   369→    } catch (e: any) {
+   370→      toast.error(e.message)
+   371→    } finally {
+   372→      setBusy(false)
+   373→    }
+   374→  }
+   375→
+   376→  return (
+   377→    <Modal title={rep ? `ویرایش شخص — ${rep.fullName}` : 'ثبت شخص جدید در دفتر'} onClose={onClose} wide>
+   378→      <div className="grid gap-3 sm:grid-cols-2">
+   379→        <Labeled label="نام و نام خانوادگی *"><input value={f.fullName} onChange={(e) => set('fullName', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" /></Labeled>
+   380→        <Labeled label="نوع شخص">
+   381→          <select value={f.kind} onChange={(e) => set('kind', e.target.value)} className="w-full rounded-xl border border-input bg-white px-2.5 py-2 text-[13px]">
+   382→            {KIND_ORDER.map((k) => <option key={k} value={k}>{KINDS[k].emoji} {KINDS[k].label}</option>)}
+   383→          </select>
+   384→        </Labeled>
+   385→        <Labeled label="موبایل"><input value={f.mobile} onChange={(e) => set('mobile', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" dir="ltr" inputMode="tel" placeholder="0912…" /></Labeled>
+   386→        <Labeled label="تلفن دوم"><input value={f.phone2} onChange={(e) => set('phone2', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" dir="ltr" /></Labeled>
+   387→        <Labeled label="ایمیل"><input value={f.email} onChange={(e) => set('email', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" dir="ltr" inputMode="email" /></Labeled>
+   388→        <Labeled label="تاریخ تولد" hint="برای تبریک و هدیه — تقویم جلالی"><JalaliDatePicker value={f.birthday} onChange={(v) => set('birthday', v)} holidays={new Map()} compact /></Labeled>
+   389→        {nonProvider ? (
+   390→          <Labeled label="شرکت / نهاد متبوع" hint="برای این نوع شخص، شرکت آزاد تایپ می‌شود">
+   391→            <input value={f.company} onChange={(e) => set('company', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" placeholder="مثلاً: بازرسی استاندارد کرمان" />
+   392→          </Labeled>
+   393→        ) : (
+   394→          <Labeled label="تأمین‌کننده / شرکت" hint="از دفتر تأمین‌کنندگان انتخاب کنید — تغییر شرکت در سابقهٔ شخص ثبت می‌شود">
+   395→            <select value={f.providerId} onChange={(e) => set('providerId', e.target.value)} className="w-full rounded-xl border border-input bg-white px-2.5 py-2 text-[13px]">
+   396→              <option value="">— بدون شرکت —</option>
+   397→              {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+   398→            </select>
+   399→          </Labeled>
+   400→        )}
+   401→        <Labeled label="سمت شغلی (متن آزاد)"><input value={f.jobRole} onChange={(e) => set('jobRole', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" placeholder="مثلاً: ویزیتور منطقهٔ شرق" /></Labeled>
+   402→        <Labeled label="کد ملی"><input value={f.nationalId} onChange={(e) => set('nationalId', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" dir="ltr" inputMode="numeric" /></Labeled>
+   403→        <Labeled label="آدرس"><input value={f.address} onChange={(e) => set('address', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" /></Labeled>
+   404→        <Labeled label="برچسب‌ها" hint="Enter بزنید تا اضافه شود — مثلاً: چک‌کش، خوش‌حساب">
+   405→          <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" />
+   406→        </Labeled>
+   407→        <Labeled label="یادداشت"><input value={f.notes} onChange={(e) => set('notes', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" /></Labeled>
+   408→      </div>
+   409→      {tags.length > 0 && (
+   410→        <div className="flex flex-wrap gap-1.5">
+   411→          {tags.map((t) => (
+   412→            <button key={t} type="button" onClick={() => setTags((l) => l.filter((x) => x !== t))} className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-bold text-secondary-foreground">
+   413→              #{t} ×
+   414→            </button>
+   415→          ))}
+   416→        </div>
+   417→      )}
+   418→      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   419→        {busy ? '…' : rep ? 'ذخیرهٔ تغییرات' : 'ثبت شخص'}
+   420→      </button>
+   421→    </Modal>
+   422→  )
+   423→}
+   424→
+   425→/** پروندهٔ شخص — اطلاعات کامل + سابقهٔ شرکت‌ها (read-only) + رخدادها */
+   426→function PersonProfileModal({ data, onClose }: { data: ProfileRes | null; onClose: () => void }) {
+   427→  if (!data) {
+   428→    return (
+   429→      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+   430→        <div className="absolute inset-0 bg-black/50" />
+   431→        <div className="glow-card rounded-2xl bg-card p-6 text-center text-xs font-bold text-muted-foreground">…در حال بازکردن پروندهٔ شخص</div>
+   432→      </div>
+   433→    )
+   434→  }
+   435→  const { rep, events, docs } = data
+   436→  const meta = KINDS[rep.kind] || KINDS.OTHER
+   437→  const totalCollected = events.filter((e) => e.kind.startsWith('PAYMENT')).reduce((s, e) => s + (Number(e.amount) || 0), 0)
+   438→  // گارد نوعی — tags/providerHistory ممکن است رشتهٔ JSON خام باشند (مقاوم در برابر پاس ناقص API)
+   439→  const safeTags: string[] = Array.isArray(rep.tags) ? rep.tags : []
+   440→  const safeHistory = Array.isArray(rep.providerHistory) ? rep.providerHistory : []
+   441→  return (
+   442→    <Modal title={`پروندهٔ شخص — ${rep.fullName}`} onClose={onClose} wide>
+   443→      <div className="flex flex-wrap items-center gap-1.5">
+   444→        <Pill label={`${meta.emoji} ${meta.label}`} color={meta.color} bg={`${meta.color}1a`} />
+   445→        {rep.providerName && <Pill label={rep.providerName} color="#8a5a2b" bg="#c9a227/15" />}
+   446→        {rep.company && <Pill label={`🏢 ${rep.company}`} color="#334155" bg="#3341551a" />}
+   447→        {!rep.active && <Pill label="غیرفعال" color="#6b7280" bg="#6b72801a" />}
+   448→        {safeTags.map((t) => <span key={t} className="rounded-full bg-[#77934a]/15 px-2 py-0.5 text-[10px] font-black text-[#5c7236]">#{t}</span>)}
+   449→      </div>
+   450→
+   451→      <div className="grid gap-2 text-[11px] sm:grid-cols-2">
+   452→        <KeyValue k="موبایل" v={rep.mobile ? <span dir="ltr">{faNum(rep.mobile)}</span> : '—'} />
+   453→        <KeyValue k="تلفن دوم" v={rep.phone2 ? <span dir="ltr">{faNum(rep.phone2)}</span> : '—'} />
+   454→        <KeyValue k="ایمیل" v={rep.email ? <span dir="ltr">{rep.email}</span> : '—'} />
+   455→        <KeyValue k="کد ملی" v={rep.nationalId ? <span dir="ltr">{faNum(rep.nationalId)}</span> : '—'} />
+   456→        <KeyValue k="تاریخ تولد" v={rep.birthday ? formatJalaliShort(rep.birthday) : '—'} />
+   457→        <KeyValue k="سمت شغلی" v={rep.jobRole || '—'} />
+   458→        <div className="rounded-lg bg-muted/50 px-3 py-2 sm:col-span-2">
+   459→          <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin size={12} /> آدرس</span>
+   460→          <span className="mt-0.5 block text-sm font-bold text-foreground">{rep.address || '—'}</span>
+   461→        </div>
+   462→        {rep.notes && (
+   463→          <div className="rounded-lg bg-muted/50 px-3 py-2 sm:col-span-2">
+   464→            <span className="text-xs text-muted-foreground">یادداشت</span>
+   465→            <span className="mt-0.5 block text-sm font-bold text-foreground">{rep.notes}</span>
+   466→          </div>
+   467→        )}
+   468→      </div>
+   469→
+   470→      {/* سابقهٔ شرکت‌ها — append-only، هرگز پاک نمی‌شود */}
+   471→      <p className="mb-2 mt-4 flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]">
+   472→        <History size={13} /> سابقهٔ شرکت‌ها (تاریخچهٔ ماندگار)
+   473→      </p>
+   474→      {safeHistory.length === 0 && !rep.providerName ? (
+   475→        <p className="rounded-xl bg-muted/50 p-3 text-[11px] text-muted-foreground">هنوز سابقهٔ شرکتی ثبت نشده است.</p>
+   476→      ) : (
+   477→        <div className="space-y-1.5">
+   478→          {rep.providerName && (
+   479→            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#f3f6ec] p-2.5">
+   480→              <span className="text-[11px] font-black text-[#0e7a4a]">🏢 {rep.providerName} — شرکت فعلی</span>
+   481→              <span className="text-[10px] text-muted-foreground">از {rep.providerHistory.length ? formatJalaliShort(rep.providerHistory[rep.providerHistory.length - 1].to || rep.providerHistory[rep.providerHistory.length - 1].from) : 'ابتدا'} تا امروز</span>
+   482→            </div>
+   483→          )}
+   484→          {[...rep.providerHistory].reverse().map((h, i) => (
+   485→            <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/50 p-2.5">
+   486→              <span className="text-[11px] font-bold">🏢 {h.providerName}</span>
+   487→              <span className="text-[10px] text-muted-foreground">{formatJalaliShort(h.from)} ← {h.to ? formatJalaliShort(h.to) : '—'}</span>
+   488→            </div>
+   489→          ))}
+   490→        </div>
+   491→      )}
+   492→
+   493→      {/* آمار + رخدادها */}
+   494→      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[10px]">
+   495→        <span className="rounded-xl bg-muted/60 px-2 py-2"><b className="block text-sm">{faNum(rep.docCount || docs.length)}</b>سند مرتبط</span>
+   496→        <span className="rounded-xl bg-muted/60 px-2 py-2"><b className="block text-sm">{faNum(events.length)}</b>رخداد ثبت‌شده</span>
+   497→        <span className="rounded-xl bg-muted/60 px-2 py-2"><b className="block text-sm" style={{ color: '#0e7a4a' }}>{faMoney(totalCollected)}</b>مجموع وصولی (تومان)</span>
+   498→      </div>
+   499→      <p className="mb-2 mt-4 flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]"><Phone size={13} /> رخدادهای سند این شخص</p>
+   500→      {events.length === 0 ? (
+   501→        <p className="rounded-xl bg-muted/50 p-3 text-[11px] text-muted-foreground">هنوز رخدادی برای این شخص ثبت نشده است — با نخستین تحویل/پرداخت/مرجوعی، اینجا پر می‌شود.</p>
+   502→      ) : (
+   503→        <div className="scroll-gold max-h-64 space-y-1.5 overflow-y-auto pl-1">
+   504→          {events.map((e) => (
+   505→            <div key={e.id} className="rounded-xl bg-white/85 p-2.5">
+   506→              <div className="flex flex-wrap items-center justify-between gap-2">
+   507→                <p className="text-[11px] font-black text-[#0e7a4a]">{EVENT_LABELS[e.kind] || e.kind}{e.amount > 0 && <span className="mr-2">{faMoney(e.amount)} تومان</span>}</p>
+   508→                <span className="rounded-md bg-[#8a5a2b]/10 px-2 py-0.5 text-[9px] font-black text-[#8a5a2b]">{formatJalaliShort(e.at)}</span>
+   509→              </div>
+   510→              <p className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+   511→                {e.docCode && <span className="rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 font-black text-[#8a5a2b]" dir="ltr">{e.docCode}</span>}
+   512→                {e.docTitle && <span>{e.docTitle}</span>}
+   513→                {e.note && <span>— {e.note}</span>}
+   514→              </p>
+   515→            </div>
+   516→          ))}
+   517→        </div>
+   518→      )}
+   519→    </Modal>
+   520→  )
+   521→}
+   522→
+   523→/* ───────────────── تولیدکنندگان ───────────────── */
+   524→
+   525→function ManufacturerBoard({ canManage }: { canManage: boolean }) {
+   526→  const [rows, setRows] = useState<Manufacturer[]>([])
+   527→  const [providers, setProviders] = useState<ProviderLite[]>([])
+   528→  const [loading, setLoading] = useState(true)
+   529→  const [q, setQ] = useState('')
+   530→  const [formOpen, setFormOpen] = useState(false)
+   531→  const [editing, setEditing] = useState<Manufacturer | null>(null)
+   532→  const [assignFor, setAssignFor] = useState<Manufacturer | null>(null)
+   533→
+   534→  const load = useCallback(async () => {
+   535→    setLoading(true)
+   536→    try {
+   537→      const [m, p] = await Promise.all([
+   538→        api<{ manufacturers: Manufacturer[] }>('/api/manufacturers'),
+   539→        api<{ providers: ProviderLite[] }>('/api/providers'),
+   540→      ])
+   541→      setRows(m.manufacturers || [])
+   542→      setProviders(p.providers || [])
+   543→    } catch (e: any) {
+   544→      toast.error(e.message)
+   545→    } finally {
+   546→      setLoading(false)
+   547→    }
+   548→  }, [])
+   549→
+   550→  useEffect(() => { load() }, [load])
+   551→
+   552→  const removeMfg = async (m: Manufacturer) => {
+   553→    if (!confirm(`حذف تولیدکنندهٔ «${m.name}»؟`)) return
+   554→    try {
+   555→      await api(`/api/manufacturers/${m.id}`, { method: 'DELETE' })
+   556→      toast.success('تولیدکننده حذف شد')
+   557→      load()
+   558→    } catch (e: any) { toast.error(e.message) }
+   559→  }
+   560→
+   561→  const filtered = rows.filter((m) => !q.trim() || m.name.includes(q.trim()) || m.brands.some((b) => b.includes(q.trim())))
+   562→
+   563→  return (
+   564→    <>
+   565→      <SectionCard
+   566→        title="تولیدکنندگان — رکورد مادر زنجیرهٔ تأمین"
+   567→        subtitle="تولیدکننده را یک‌بار با برندهایش ثبت کنید؛ سپس تأمین‌کنندگان/پخش‌ها را به او وصل کنید تا معلوم شود چه کسی محصولاتش را پشتیبانی می‌کند"
+   568→        icon={<Factory size={18} />}
+   569→        actions={canManage && (
+   570→          <button onClick={() => { setEditing(null); setFormOpen(true) }} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   571→            <Plus size={14} /> تولیدکنندهٔ جدید
+   572→          </button>
+   573→        )}
+   574→      >
+   575→        <div className="mb-3"><SearchInput value={q} onChange={setQ} placeholder="نام تولیدکننده یا برند…" /></div>
+   576→        {loading ? (
+   577→          <p className="py-6 text-center text-xs font-bold text-muted-foreground">…در حال بارگذاری تولیدکنندگان</p>
+   578→        ) : filtered.length === 0 ? (
+   579→          <EmptyState emoji="🏭" title="تولیدکننده‌ای ثبت نشده" hint="مثلاً «کاله»، «میهن»، «گلدیس» را با برندهایشان ثبت کنید و پخش‌هایشان را وصل کنید" />
+   580→        ) : (
+   581→          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+   582→            {filtered.map((m) => (
+   583→              <div key={m.id} className={cn('glow-card rounded-2xl bg-white/85 p-3.5', !m.active && 'opacity-70')}>
+   584→                <div className="flex items-start justify-between gap-2">
+   585→                  <button type="button" className="min-w-0 text-right" onClick={() => setAssignFor(m)}>
+   586→                    <p className="truncate text-sm font-black">🏭 {m.name}</p>
+   587→                    <p className="mt-0.5 text-[10px] text-muted-foreground">{m.country || 'ایران'}{m.phone ? ` • ${faNum(m.phone)}` : ''}</p>
+   588→                  </button>
+   589→                  {canManage && (
+   590→                    <div className="flex shrink-0 gap-1">
+   591→                      <button onClick={() => { setEditing(m); setFormOpen(true) }} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted" title="ویرایش"><Pencil size={13} /></button>
+   592→                      <button onClick={() => removeMfg(m)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-[#fee2e2] hover:text-[#b3372f]" title="حذف"><Trash2 size={13} /></button>
+   593→                    </div>
+   594→                  )}
+   595→                </div>
+   596→                <div className="mt-2 flex flex-wrap gap-1">
+   597→                  {m.brands.length === 0
+   598→                    ? <span className="text-[10px] text-muted-foreground">برندی ثبت نشده</span>
+   599→                    : m.brands.map((b) => <span key={b} className="rounded-full bg-[#c9a227]/15 px-2 py-0.5 text-[10px] font-black text-[#8a5a2b]">{b}</span>)}
+   600→                </div>
+   601→                <div className="mt-2 flex items-center justify-between text-[10px] font-bold text-muted-foreground">
+   602→                  <button type="button" onClick={() => setAssignFor(m)} className="flex items-center gap-1 rounded-lg bg-[#0e7a4a]/10 px-2 py-1 font-black text-[#0e7a4a]">
+   603→                    <Link2 size={11} /> {faNum(m.providerCount)} تأمین‌کننده
+   604→                  </button>
+   605→                  <span>{faNum(m.productCount)} قلم کالا (بر پایهٔ برندها)</span>
+   606→                </div>
+   607→                {m.providers.length > 0 && (
+   608→                  <p className="mt-1.5 truncate text-[10px] text-muted-foreground" title={m.providers.map((p) => p.name).join('، ')}>
+   609→                    🔗 {m.providers.map((p) => p.name).join('، ')}
+   610→                  </p>
+   611→                )}
+   612→              </div>
+   613→            ))}
+   614→          </div>
+   615→        )}
+   616→      </SectionCard>
+   617→
+   618→      {formOpen && canManage && (
+   619→        <ManufacturerFormModal
+   620→          mfg={editing}
+   621→          onClose={() => { setFormOpen(false); setEditing(null) }}
+   622→          onSaved={() => { setFormOpen(false); setEditing(null); toast.success(editing ? 'تولیدکننده ویرایش شد' : 'تولیدکننده ثبت شد'); load() }}
+   623→        />
+   624→      )}
+   625→
+   626→      {assignFor && canManage && (
+   627→        <AssignProvidersModal
+   628→          mfg={assignFor}
+   629→          providers={providers}
+   630→          onClose={() => setAssignFor(null)}
+   631→          onSaved={() => { setAssignFor(null); toast.success('اتصال تأمین‌کنندگان به‌روز شد'); load() }}
+   632→        />
+   633→      )}
+   634→    </>
+   635→  )
+   636→}
+   637→
+   638→function ManufacturerFormModal({ mfg, onClose, onSaved }: { mfg: Manufacturer | null; onClose: () => void; onSaved: () => void }) {
+   639→  const [f, setF] = useState({ name: mfg?.name || '', country: mfg?.country || 'ایران', website: mfg?.website || '', phone: mfg?.phone || '', notes: mfg?.notes || '' })
+   640→  const [brands, setBrands] = useState<string[]>(mfg?.brands || [])
+   641→  const [brandInput, setBrandInput] = useState('')
+   642→  const [busy, setBusy] = useState(false)
+   643→  const set = (k: string, v: string) => setF((s) => ({ ...s, [k]: v }))
+   644→
+   645→  const addBrand = () => {
+   646→    const b = brandInput.trim()
+   647→    if (b && !brands.includes(b)) setBrands((l) => [...l, b])
+   648→    setBrandInput('')
+   649→  }
+   650→
+   651→  const save = async () => {
+   652→    if (!f.name.trim()) return toast.error('نام تولیدکننده الزامی است')
+   653→    setBusy(true)
+   654→    try {
+   655→      if (mfg) await api(`/api/manufacturers/${mfg.id}`, { method: 'PATCH', body: { ...f, brands } })
+   656→      else await api('/api/manufacturers', { method: 'POST', body: { ...f, brands } })
+   657→      onSaved()
+   658→    } catch (e: any) {
+   659→      toast.error(e.message)
+   660→    } finally {
+   661→      setBusy(false)
+   662→    }
+   663→  }
+   664→
+   665→  return (
+   666→    <Modal title={mfg ? `ویرایش تولیدکننده — ${mfg.name}` : 'ثبت تولیدکنندهٔ جدید'} onClose={onClose} wide>
+   667→      <div className="grid gap-3 sm:grid-cols-2">
+   668→        <Labeled label="نام تولیدکننده *"><input value={f.name} onChange={(e) => set('name', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" placeholder="مثلاً: کارtière پگاه" /></Labeled>
+   669→        <Labeled label="کشور"><input value={f.country} onChange={(e) => set('country', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" /></Labeled>
+   670→        <Labeled label="وب‌سایت"><input value={f.website} onChange={(e) => set('website', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" dir="ltr" placeholder="example.ir" /></Labeled>
+   671→        <Labeled label="تلفن"><input value={f.phone} onChange={(e) => set('phone', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" dir="ltr" /></Labeled>
+   672→        <Labeled label="برندها" hint="نام برند + Enter — با برندِ کالاها تطبیق داده می‌شود تا تعداد محصولات شمرده شود">
+   673→          <input value={brandInput} onChange={(e) => setBrandInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBrand() } }} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" placeholder="مثلاً: پگاه" />
+   674→        </Labeled>
+   675→        <Labeled label="یادداشت"><input value={f.notes} onChange={(e) => set('notes', e.target.value)} className="w-full rounded-xl border border-input px-2.5 py-2 text-[13px]" /></Labeled>
+   676→      </div>
+   677→      {brands.length > 0 && (
+   678→        <div className="flex flex-wrap gap-1.5">
+   679→          {brands.map((b) => (
+   680→            <button key={b} type="button" onClick={() => setBrands((l) => l.filter((x) => x !== b))} className="rounded-full bg-[#c9a227]/15 px-2.5 py-1 text-[10px] font-black text-[#8a5a2b]">
+   681→              {b} ×
+   682→            </button>
+   683→          ))}
+   684→        </div>
+   685→      )}
+   686→      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   687→        {busy ? '…' : mfg ? 'ذخیرهٔ تغییرات' : 'ثبت تولیدکننده'}
+   688→      </button>
+   689→    </Modal>
+   690→  )
+   691→}
+   692→
+   693→/** اتصال/جداکردن تأمین‌کنندگان به تولیدکننده (multi-select) */
+   694→function AssignProvidersModal({ mfg, providers, onClose, onSaved }: { mfg: Manufacturer; providers: ProviderLite[]; onClose: () => void; onSaved: () => void }) {
+   695→  const [selected, setSelected] = useState<string[]>(mfg.providers.map((p) => p.id))
+   696→  const [busy, setBusy] = useState(false)
+   697→  const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+   698→
+   699→  const save = async () => {
+   700→    setBusy(true)
+   701→    try {
+   702→      await api(`/api/manufacturers/${mfg.id}`, { method: 'PATCH', body: { action: 'assign-providers', providerIds: selected } })
+   703→      onSaved()
+   704→    } catch (e: any) {
+   705→      toast.error(e.message)
+   706→    } finally {
+   707→      setBusy(false)
+   708→    }
+   709→  }
+   710→
+   711→  return (
+   712→    <Modal title={`تأمین‌کنندگان ${mfg.name}`} onClose={onClose} wide>
+   713→      <p className="rounded-xl bg-[#fdf6dd] p-3 text-[11px] font-bold text-[#8a5a2b]">
+   714→        <Building2 size={13} className="ml-1 inline" />
+   715→        هر تأمین‌کننده/پخش را که محصولات این تولیدکننده را پشتیبانی می‌کند، علامت بزنید — تغییرات در یک فراخوان ذخیره می‌شود.
+   716→      </p>
+   717→      {providers.length === 0 ? (
+   718→        <EmptyState emoji="🚛" title="تأمین‌کننده‌ای ثبت نشده" hint="ابتدا از نمای «تأمین‌کنندگان» پخش‌ها را ثبت کنید" />
+   719→      ) : (
+   720→        <div className="scroll-gold max-h-[42vh] space-y-1.5 overflow-y-auto pl-1">
+   721→          {providers.map((p) => {
+   722→            const on = selected.includes(p.id)
+   723→            return (
+   724→              <button
+   725→                key={p.id}
+   726→                type="button"
+   727→                onClick={() => toggle(p.id)}
+   728→                className={cn(
+   729→                  'flex w-full items-center justify-between gap-2 rounded-xl bg-white/85 p-2.5 text-right transition hover:shadow-sm',
+   730→                  on && 'ring-2 ring-[#0e7a4a]/60',
+   731→                )}
+   732→              >
+   733→                <span className="text-xs font-black">{p.name}</span>
+   734→                <span className={cn('rounded-full px-2.5 py-0.5 text-[10px] font-black', on ? 'bg-[#0e7a4a] text-white' : 'bg-muted text-muted-foreground')}>
+   735→                  {on ? '✓ متصل' : 'غیرمتصل'}
+   736→                </span>
+   737→              </button>
+   738→            )
+   739→          })}
+   740→        </div>
+   741→      )}
+   742→      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   743→        {busy ? '…' : `ذخیره (${faNum(selected.length)} تأمین‌کننده متصل)`}
+   744→      </button>
+   745→    </Modal>
+   746→  )
+   747→}
+   748→
+   749→/* ───────────────── راهنما ───────────────── */
+   750→
+   751→function GuideCard() {
+   752→  return (
+   753→    <SectionCard
+   754→      title="راهنمای دفتر اشخاص و تولیدکنندگان"
+   755→      subtitle="چرا یک مرجع واحد (SSOT) برای اشخاص و تولیدکنندگان داریم؟"
+   756→      icon={<BookOpen size={18} />}
+   757→    >
+   758→      <div className="grid gap-3 text-[12px] leading-relaxed sm:grid-cols-2">
+   759→        <div className="rounded-2xl bg-[#f3f6ec] p-4">
+   760→          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-black text-[#0e7a4a]"><Users size={15} /> دفتر اشخاص — ثبت یک‌بار، همیشه در تاریخچه</p>
+   761→          <p className="text-muted-foreground">
+   762→            هر شخص (نماینده، راننده، حسابدار شرکت، کارشناس بازرسی، مالک ملک و…) فقط یک‌بار تعریف می‌شود.
+   763→            بعد از آن، در هر سند و رخداد (تحویل، وصول چک، پرداخت POS، مرجوعی و مردودی) فقط «انتخاب» می‌کنید.
+   764→            رخدادها به شخص وصل می‌مانند — حتی اگر سال‌ها بگذرد یا او شرکت را عوض کند؛ سابقهٔ شرکت‌های قبلی هم
+   765→            به‌صورت ماندگار (append-only) نگه‌داری می‌شود. اشخاصی که رخداد ثبت‌شده دارند حذف سخت نمی‌شوند؛ فقط غیرفعال می‌شوند تا تاریخچه سالم بماند.
+   766→          </p>
+   767→        </div>
+   768→        <div className="rounded-2xl bg-[#fdf6dd] p-4">
+   769→          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-black text-[#8a5a2b]"><Factory size={15} /> تولیدکنندگان — مادرِ زنجیرهٔ تأمین</p>
+   770→          <p className="text-muted-foreground">
+   771→            تولیدکننده (مثلاً «کاله» یا «پگاه») رکورد مادر است: برندهایش را ثبت می‌کنید و سپس پخش‌ها/تأمین‌کنندگانی
+   772→            که محصولاتش را پشتیبانی می‌کنند را به او وصل می‌کنید. تعداد کالاهای هر تولیدکننده از تطبیق برندها
+   773→            با کالاهای سامانه شمرده می‌شود — پس همیشه معلوم است چه شرکتی چه محصولاتی را پشتیبانی می‌کند.
+   774→          </p>
+   775→        </div>
+   776→        <div className="rounded-2xl bg-card p-4 ring-1 ring-border">
+   777→          <p className="mb-1.5 text-sm font-black">🚚 نمایندگان هر تأمین‌کننده</p>
+   778→          <p className="text-muted-foreground">
+   779→            در نمای «تأمین‌کنندگان»، کارت هر پخش بخش «نمایندگان» دارد: فهرست اشخاصی که به همان تأمین‌کننده وصل‌اند
+   780→            + دکمهٔ سریع «افزودن نماینده». نمایندهٔ هر تأمین‌کننده فقط یک‌بار تعریف می‌شود و در همهٔ سفارش‌ها و
+   781→            اسناد آرشیو همان‌جا انتخاب می‌شود.
+   782→          </p>
+   783→        </div>
+   784→        <div className="rounded-2xl bg-card p-4 ring-1 ring-border">
+   785→          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-black"><Cake size={15} /> اطلاعات تماس و مناسبت‌ها</p>
+   786→          <p className="text-muted-foreground">
+   787→            موبایل، تلفن دوم، ایمیل، آدرس، کد ملی و تاریخ تولد هر شخص ثبت می‌شود؛ تاریخ تولد برای تبریک و هدیه
+   788→            (در تقویم جلالی) استفاده می‌شود و برچسب‌ها (مثل «چک‌کش» یا «خوش‌حساب») فهرست را قابل فیلتر می‌کنند.
+   789→          </p>
+   790→        </div>
+   791→      </div>
+   792→    </SectionCard>
+   793→  )
+   794→}
+   795→

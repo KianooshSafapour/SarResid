@@ -1,0 +1,681 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState } from 'react'
+     4→import { api } from '@/lib/client'
+     5→import { daysBetween, faMoney, faNum, formatJalaliFull, formatJalaliShort, todayIso } from '@/lib/jalali'
+     6→import { ORDER_STATUSES, PRIORITIES, TASK_STATUSES, canAccess } from '@/lib/constants'
+     7→import { SectionCard, Pill, EmptyState } from '@/components/app/ui-bits'
+     8→import { BarChart, Donut, LineChart, RankBars } from '@/components/app/charts'
+     9→import type { AppCtx } from '@/components/app/ui-bits'
+    10→import { cn } from '@/lib/utils'
+    11→import {
+    12→  AlertTriangle,
+    13→  Banknote,
+    14→  ClipboardList,
+    15→  ListChecks,
+    16→  MessageCircle,
+    17→  Newspaper,
+    18→  PieChart,
+    19→  ShoppingBasket,
+    20→  Sparkles,
+    21→  Sun,
+    22→  TrendingUp,
+    23→  Truck,
+    24→} from 'lucide-react'
+    25→
+    26→type Dash = any
+    27→type Tab = 'today' | 'week'
+    28→
+    29→/* ─────────────────────────اعداد و ابزارهای کوچک───────────────────────── */
+    30→
+    31→/** کارت آماری فشردهٔ نوار KPI — مقدار + برچسب؛ جزئیات در tooltip */
+    32→function KpiMini({
+    33→  label,
+    34→  value,
+    35→  hint,
+    36→  tone = 'emerald',
+    37→  icon,
+    38→  onClick,
+    39→}: {
+    40→  label: string
+    41→  value: React.ReactNode
+    42→  hint?: string
+    43→  tone?: 'emerald' | 'gold' | 'terra' | 'rose' | 'olive'
+    44→  icon: React.ReactNode
+    45→  onClick?: () => void
+    46→}) {
+    47→  const tones: Record<string, string> = {
+    48→    emerald: 'bg-[#0e7a4a]/10 text-[#0e7a4a]',
+    49→    gold: 'bg-[#c9a227]/15 text-[#8a6d10]',
+    50→    terra: 'bg-[#c96f4a]/15 text-[#a04c2a]',
+    51→    rose: 'bg-[#b3372f]/10 text-[#b3372f]',
+    52→    olive: 'bg-[#77934a]/15 text-[#5c7236]',
+    53→  }
+    54→  return (
+    55→    <button
+    56→      type="button"
+    57→      onClick={onClick}
+    58→      title={hint}
+    59→      className={cn(
+    60→        'glow-card flex min-h-13 min-w-0 items-center gap-2.5 rounded-xl bg-card p-2.5 text-right transition-all sm:p-3',
+    61→        onClick && 'cursor-pointer hover:-translate-y-0.5'
+    62→      )}
+    63→    >
+    64→      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tones[tone])}>{icon}</span>
+    65→      <span className="min-w-0">
+    66→        <span className="block truncate text-lg font-black leading-6 text-foreground">{value}</span>
+    67→        <span className="block truncate text-[11px] font-bold text-muted-foreground">{label}</span>
+    68→      </span>
+    69→    </button>
+    70→  )
+    71→}
+    72→
+    73→/** کاشی صف اقدام نقش‌محور — فشرده و قابل کلیک */
+    74→function QueueTile({
+    75→  title,
+    76→  count,
+    77→  desc,
+    78→  tone,
+    79→  onClick,
+    80→  cta,
+    81→  children,
+    82→}: {
+    83→  title: string
+    84→  count: number
+    85→  desc: string
+    86→  tone: string
+    87→  onClick: () => void
+    88→  cta: string
+    89→  children?: React.ReactNode
+    90→}) {
+    91→  return (
+    92→    <div className="glow-card flex flex-col rounded-2xl bg-card p-3">
+    93→      <div className="flex items-center justify-between gap-2">
+    94→        <p className="truncate text-xs font-black text-foreground">{title}</p>
+    95→        <span className="shrink-0 rounded-lg px-2 py-0.5 text-base font-black" style={{ color: tone, background: `${tone}1a` }}>
+    96→          {faNum(count)}
+    97→        </span>
+    98→      </div>
+    99→      <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{desc}</p>
+   100→      {children}
+   101→      <button
+   102→        onClick={onClick}
+   103→        className="mt-2 min-h-11 w-full rounded-lg py-2 text-[11px] font-black transition hover:brightness-95"
+   104→        style={{ color: tone, background: `${tone}14` }}
+   105→      >
+   106→        {cta} ←
+   107→      </button>
+   108→    </div>
+   109→  )
+   110→}
+   111→
+   112→/** سگمنت انتخاب حالت داشبورد — «امروز من» / «نگاه هفته» */
+   113→function SegTabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+   114→  const tabs: { key: Tab; label: string; sub: string; icon: React.ReactNode }[] = [
+   115→    { key: 'today', label: 'امروز من', sub: 'کارها و صف‌های شخصی', icon: <Sun size={16} /> },
+   116→    { key: 'week', label: 'نگاه هفته', sub: 'تحلیل و روند مدیریتی', icon: <TrendingUp size={16} /> },
+   117→  ]
+   118→  return (
+   119→    <div role="tablist" aria-label="حالت نمایش داشبورد" className="flex justify-center">
+   120→      <div className="glow-card inline-flex w-full gap-1 rounded-2xl bg-card p-1.5 sm:w-auto">
+   121→        {tabs.map((t) => {
+   122→          const active = tab === t.key
+   123→          return (
+   124→            <button
+   125→              key={t.key}
+   126→              role="tab"
+   127→              aria-selected={active}
+   128→              onClick={() => onChange(t.key)}
+   129→              className={cn(
+   130→                'flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 transition-all sm:flex-none sm:px-5',
+   131→                active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-secondary/70'
+   132→              )}
+   133→            >
+   134→              {t.icon}
+   135→              <span className="text-xs font-black">{t.label}</span>
+   136→              <span className={cn('hidden text-[10px] font-bold md:inline', active ? 'text-primary-foreground/70' : 'text-muted-foreground/80')}>
+   137→                · {t.sub}
+   138→              </span>
+   139→            </button>
+   140→          )
+   141→        })}
+   142→      </div>
+   143→    </div>
+   144→  )
+   145→}
+   146→
+   147→/** دکمهٔ «مشاهدهٔ همه» — به نمای مالکِ فهرست می‌رود */
+   148→function ViewAll({ label, onClick }: { label: string; onClick: () => void }) {
+   149→  return (
+   150→    <button
+   151→      onClick={onClick}
+   152→      className="mt-3 flex min-h-11 w-full items-center justify-center gap-1 rounded-xl bg-secondary py-2 text-xs font-extrabold text-secondary-foreground transition hover:bg-[#dcead4]"
+   153→    >
+   154→      {label} ←
+   155→    </button>
+   156→  )
+   157→}
+   158→
+   159→/** ردیف فشردهٔ لیست — کل ردیف قابل کلیک (≥۴۴px) */
+   160→function Row({ onClick, children, className }: { onClick?: () => void; children: React.ReactNode; className?: string }) {
+   161→  return (
+   162→    <li>
+   163→      <button
+   164→        type="button"
+   165→        onClick={onClick}
+   166→        disabled={!onClick}
+   167→        className={cn(
+   168→          'flex min-h-11 w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-white/60 px-3 py-2 text-right transition',
+   169→          onClick && 'hover:border-[#c9a227]/40 hover:bg-white',
+   170→          className
+   171→        )}
+   172→      >
+   173→        {children}
+   174→      </button>
+   175→    </li>
+   176→  )
+   177→}
+   178→
+   179→/** چیپ فاصلهٔ زمانی تا سررسید — دیرکرد قرمز، امروز/فردا طلایی */
+   180→function DueChip({ days }: { days: number }) {
+   181→  if (days < 0) return <Pill label={`${faNum(Math.abs(days))} روز دیرکرد`} color="#b3372f" />
+   182→  if (days === 0) return <Pill label="امروز" color="#8a6d10" />
+   183→  if (days === 1) return <Pill label="فردا" color="#a16207" />
+   184→  return <Pill label={`${faNum(days)} روز مانده`} color={days <= 5 ? '#77934a' : '#6d7a6e'} />
+   185→}
+   186→
+   187→/* ─────────────────────────نمای اصلی داشبورد───────────────────────── */
+   188→
+   189→export default function DashboardView({ ctx }: { ctx: AppCtx }) {
+   190→  const [data, setData] = useState<Dash | null>(null)
+   191→  const [abc, setAbc] = useState<{ rows: { name: string; category: string; annualValue: number; cls: string }[] } | null>(null)
+   192→  const [err, setErr] = useState('')
+   193→  const [tab, setTab] = useState<Tab>('today')
+   194→
+   195→  const load = () =>
+   196→    api<Dash>('/api/dashboard')
+   197→      .then(setData)
+   198→      .catch((e) => setErr(e.message))
+   199→
+   200→  useEffect(() => {
+   201→    load()
+   202→    api<any>('/api/science?tool=abc')
+   203→      .then((d) => setAbc(d.abc))
+   204→      .catch(() => {
+   205→        /* تحلیل ABC غیرحیاتی است — در صورت خطا فقط پنهان می‌شود */
+   206→      })
+   207→    const t = setInterval(load, 60000)
+   208→    return () => clearInterval(t)
+   209→  }, [])
+   210→
+   211→  if (err) return <EmptyState emoji="⚠️" title="خطا در بارگذاری داشبورد" hint={err} />
+   212→  if (!data) {
+   213→    return (
+   214→      <div className="grid gap-3 md:grid-cols-4">
+   215→        {Array.from({ length: 8 }).map((_, i) => (
+   216→          <div key={i} className="glow-card h-20 animate-pulse rounded-2xl bg-card/60" />
+   217→        ))}
+   218→      </div>
+   219→    )
+   220→  }
+   221→
+   222→  const k = data.kpi
+   223→  const role = ctx.user!.role
+   224→  const isManager = ['GM', 'OM', 'OWNER', 'PM'].includes(role)
+   225→  const canScience = canAccess('science', role, ctx.user!.secondaryRoles)
+   226→  const todayV = todayIso()
+   227→
+   228→  const pipelineData = ['SUBMITTED', 'APPROVED', 'RECEIVING', 'RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE'].map((s) => ({
+   229→    label: ORDER_STATUSES[s].label,
+   230→    value: k.byStatus[s] || 0,
+   231→  }))
+   232→
+   233→  // ── سری‌های ۱۴روزه: دو خط کوچک کنار هم (تعداد سفارش + مبلغ فروش) ──
+   234→  const dayLabel = (iso: string) => formatJalaliShort(iso).slice(5)
+   235→  const seriesOrders = (data.series || []).map((s: any) => ({ label: dayLabel(s.day), value: s.count, extra: `${faNum(s.count)} سفارش در این روز` }))
+   236→  const seriesSales = (data.series || []).map((s: any) => ({ label: dayLabel(s.day), value: s.amount, extra: `${faMoney(s.amount)} تومان` }))
+   237→  const compactToman = (v: number) => (v >= 1e6 ? `${faNum(Math.round(v / 1e6))} م` : faMoney(v))
+   238→
+   239→  // ── تحلیل ABC: سهم دسته‌ها + پرفروش‌ترین کالاها (ارزش تقاضای سالانه) ──
+   240→  const abcRows = abc?.rows || []
+   241→  const catAgg: Record<string, number> = {}
+   242→  for (const r of abcRows) catAgg[r.category] = (catAgg[r.category] || 0) + (r.annualValue || 0)
+   243→  const catDonut = Object.entries(catAgg)
+   244→    .sort((a, b) => b[1] - a[1])
+   245→    .slice(0, 6)
+   246→    .map(([label, value]) => ({ label, value: Math.round(value / 1e6) }))
+   247→  const topProducts = abcRows.slice(0, 6).map((r) => ({
+   248→    label: r.name,
+   249→    value: Math.round((r.annualValue || 0) / 1e6),
+   250→    color: r.cls === 'A' ? '#0e7a4a' : r.cls === 'B' ? '#c9a227' : '#c96f4a',
+   251→  }))
+   252→
+   253→  const hasQueues =
+   254→    (canAccess('pricecheck', role, ctx.user!.secondaryRoles) && k.priceCheckRemaining > 0) ||
+   255→    (['ACC', 'OM', 'OWNER'].includes(role) && k.toAccountCount > 0) ||
+   256→    (['SK', 'OM', 'GM'].includes(role) && k.toVerifyCount > 0) ||
+   257→    (k.cashierQueue > 0 && ['HC', 'CASHIER', 'GM'].includes(role))
+   258→
+   259→  return (
+   260→    <div className="space-y-3">
+   261→      {/* ── نوار هیرو — همیشه بالای صفحه ── */}
+   262→      <section className="hero-emerald gold-glow-border relative overflow-hidden rounded-2xl p-4 sm:p-5">
+   263→        <svg className="hero-ornament tl" width="150" height="84" viewBox="0 0 150 84" fill="none" stroke="#c9a227" strokeWidth="1.4">
+   264→          <path d="M6 62 C28 60 42 44 48 24 C54 44 66 58 88 62 M48 24 C50 36 56 50 68 58" />
+   265→          <circle cx="48" cy="21" r="3.5" fill="#c9a227" stroke="none" />
+   266→          <ellipse cx="26" cy="58" rx="6" ry="3" transform="rotate(-18 26 58)" opacity="0.8" />
+   267→          <ellipse cx="72" cy="56" rx="6" ry="3" transform="rotate(14 72 56)" opacity="0.8" />
+   268→          <path d="M100 70 C116 66 126 54 132 40 C136 54 144 62 148 64" opacity="0.6" />
+   269→          <circle cx="132" cy="36" r="2.5" fill="#93c572" stroke="none" />
+   270→        </svg>
+   271→        <svg className="hero-ornament br" width="150" height="84" viewBox="0 0 150 84" fill="none" stroke="#c9a227" strokeWidth="1.4">
+   272→          <path d="M6 62 C28 60 42 44 48 24 C54 44 66 58 88 62 M48 24 C50 36 56 50 68 58" />
+   273→          <circle cx="48" cy="21" r="3.5" fill="#c9a227" stroke="none" />
+   274→          <ellipse cx="26" cy="58" rx="6" ry="3" transform="rotate(-18 26 58)" opacity="0.8" />
+   275→          <ellipse cx="72" cy="56" rx="6" ry="3" transform="rotate(14 72 56)" opacity="0.8" />
+   276→          <path d="M100 70 C116 66 126 54 132 40 C136 54 144 62 148 64" opacity="0.6" />
+   277→          <circle cx="132" cy="36" r="2.5" fill="#93c572" stroke="none" />
+   278→        </svg>
+   279→        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+   280→          <div>
+   281→            <p className="text-[11px] font-bold text-[#93c572]">{new Intl.DateTimeFormat('fa-IR', { dateStyle: 'full' }).format(new Date())}</p>
+   282→            <h2 className="mt-0.5 text-lg font-black text-white sm:text-xl">
+   283→              سلام {ctx.user!.name.split(' ')[0]} عزیز 👋
+   284→            </h2>
+   285→            <p className="mt-1 max-w-lg text-[11px] leading-5 text-[#cfe3d4]">
+   286→              {k.myOpenTasks > 0
+   287→                ? `${faNum(k.myOpenTasks)} وظیفه باز دارید و ${faNum(k.todayDeliveries)} مرسوله امروز به فروشگاه می‌رسد. با هم پیش می‌رویم! 🌿`
+   288→                : 'امروز وظیفه‌ای بر عهده شما نیست — وقت خوبی برای ایده‌های تازه است ✨'}
+   289→            </p>
+   290→          </div>
+   291→          <div className="flex flex-wrap items-center gap-2">
+   292→            {isManager && (
+   293→              <button
+   294→                onClick={() => ctx.navigate('briefing')}
+   295→                className="flex items-center gap-2 rounded-xl border border-[#c9a227]/50 bg-[#c9a227]/15 px-3 py-2 text-right backdrop-blur transition hover:bg-[#c9a227]/25"
+   296→              >
+   297→                <span className="text-xl">🌅</span>
+   298→                <span>
+   299→                  <span className="block text-[11px] font-black text-white">صبح‌نامه امروز</span>
+   300→                  <span className="block text-[9px] text-[#93c572]">گزارش چاپی جلسه صبح</span>
+   301→                </span>
+   302→              </button>
+   303→            )}
+   304→            <div className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 backdrop-blur">
+   305→              <Sparkles className="text-[#c9a227]" size={18} />
+   306→              <div>
+   307→                <p className="text-[11px] font-black leading-4 text-white">{faNum(ctx.user!.points)}</p>
+   308→                <p className="block text-[9px] text-[#93c572]">امتیاز شما — آفرین!</p>
+   309→              </div>
+   310→            </div>
+   311→          </div>
+   312→        </div>
+   313→        <div className="shimmer-line absolute bottom-0 right-0 h-1 w-full" />
+   314→      </section>
+   315→
+   316→      {/* ── نوار KPI — ۴-۵ شاخص کلیدی در یک ردیف (موبایل: شبکهٔ ۲تایی) ── */}
+   317→      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+   318→        <KpiMini label="سفارش‌های در جریان" value={faNum(k.ordersTotal - (k.byStatus['DONE'] || 0) - (k.byStatus['CANCELLED'] || 0))} hint="در چرخهٔ تأمین از تأیید تا ثبت نهایی" tone="emerald" icon={<ClipboardList size={16} />} onClick={() => ctx.navigate('orders')} />
+   319→        {k.overdueCount > 0 ? (
+   320→          <KpiMini label="سفارش سرآمده ⚠️" value={faNum(k.overdueCount)} hint="تحویل با تأخیر — فالوآپ" tone="rose" icon={<Truck size={16} />} onClick={() => ctx.navigate('orders')} />
+   321→        ) : (
+   322→          <KpiMini label="مرسوله‌های امروز" value={faNum(k.todayDeliveries)} hint="برای دریافت امروز" tone="olive" icon={<Truck size={16} />} onClick={() => ctx.navigate('receiving')} />
+   323→        )}
+   324→        <KpiMini label="کالاهای رو به اتمام" value={faNum(k.lowStockCount)} hint={`${faNum(k.outOfStockCount)} قلم ناموجود`} tone={k.lowStockCount > 0 ? 'gold' : 'emerald'} icon={<ShoppingBasket size={16} />} onClick={() => ctx.navigate('products')} />
+   325→        <KpiMini label="چک‌های نزدیک" value={faNum(k.pendingCheques)} hint={`${faMoney(k.pendingChequesAmount)} تومان — ${faNum(k.signedCheques)} چک آماده تحویل`} tone="terra" icon={<Banknote size={16} />} onClick={() => ctx.navigate('cheques')} />
+   326→        <KpiMini label="وظایف باز من" value={faNum(k.myOpenTasks)} hint="وظایف باز امروز شما" tone="emerald" icon={<ListChecks size={16} />} onClick={() => ctx.navigate('tasks')} />
+   327→        <KpiMini label="پیام ناخوانده" value={faNum(k.unreadMessages)} hint="پیام‌های ناخواندهٔ صندوق پیام" tone={k.unreadMessages > 0 ? 'rose' : 'emerald'} icon={<MessageCircle size={16} />} onClick={() => ctx.navigate('messages')} />
+   328→      </div>
+   329→
+   330→      {/* ── صف‌های اقدام نقش‌محور — همیشه دیده می‌شوند ── */}
+   331→      {hasQueues ? (
+   332→        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+   333→          {canAccess('pricecheck', role, ctx.user!.secondaryRoles) && k.priceCheckRemaining > 0 && (
+   334→            <QueueTile
+   335→              title="کنترل قیمت امروز ⏳"
+   336→              count={k.priceCheckRemaining}
+   337→              desc={k.priceCheckRed > 0 ? `${faNum(k.priceCheckRed)} کالا حاشیه بحرانی زیر ۱۰٪ دارد` : 'قیمت چاپ‌شده هنوز امروز تأیید نشده'}
+   338→              tone={k.priceCheckRed > 0 ? '#b3372f' : '#a16207'}
+   339→              onClick={() => ctx.navigate('pricecheck')}
+   340→              cta="بازکردن تابلوی کنترل قیمت"
+   341→            />
+   342→          )}
+   343→          {['ACC', 'OM', 'OWNER'].includes(role) && k.toAccountCount > 0 && (
+   344→            <div className="glow-card flex flex-col rounded-2xl bg-card p-3 sm:col-span-2 xl:col-span-2">
+   345→              <div className="flex items-center justify-between gap-2">
+   346→                <p className="truncate text-xs font-black text-foreground">در انتظار ثبت در هلو</p>
+   347→                <span className="shrink-0 rounded-lg bg-[#c9a227]/10 px-2 py-0.5 text-base font-black text-[#8a6d10]">{faNum(k.toAccountCount)}</span>
+   348→              </div>
+   349→              <div className="mt-1.5 min-h-0 flex-1 space-y-1">
+   350→                {data.toAccount.map((o: any) => (
+   351→                  <button key={o.id} onClick={() => ctx.navigate('accounting', o.id)} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-right transition hover:bg-white">
+   352→                    <span className="min-w-0 truncate text-[11px] font-bold">
+   353→                      <span dir="ltr" className="font-mono text-[10px] text-[#8a5a2b]">{o.code}</span> · {o.providerName}
+   354→                    </span>
+   355→                    <span className="shrink-0 text-[10px] font-black text-[#8a6d10]">{faMoney(o.totalAmount)}</span>
+   356→                  </button>
+   357→                ))}
+   358→              </div>
+   359→              <button onClick={() => ctx.navigate('accounting')} className="mt-2 min-h-11 w-full rounded-lg bg-[#c9a227]/15 py-2 text-[11px] font-black text-[#8a6d10] transition hover:bg-[#c9a227]/25">
+   360→                بازکردن حسابداری ←
+   361→              </button>
+   362→            </div>
+   363→          )}
+   364→          {['SK', 'OM', 'GM'].includes(role) && k.toVerifyCount > 0 && (
+   365→            <QueueTile
+   366→              title="در انتظار تأیید انبار"
+   367→              count={k.toVerifyCount}
+   368→              desc="مرسوله‌های دریافتی که سرپرست انبار باید تأیید کند"
+   369→              tone="#77934a"
+   370→              onClick={() => ctx.navigate('verify')}
+   371→              cta="بازکردن تأیید انبار"
+   372→            />
+   373→          )}
+   374→          {k.cashierQueue > 0 && ['HC', 'CASHIER', 'GM'].includes(role) && (
+   375→            <QueueTile
+   376→              title="صف پیش‌فاکتورهای فروش"
+   377→              count={k.cashierQueue}
+   378→              desc="فروشندگان برای مشتریان سفارش ثبت کرده‌اند — آمادهٔ پردازش صندوق"
+   379→              tone="#c9a227"
+   380→              onClick={() => ctx.navigate('sales')}
+   381→              cta="بازکردن بخش فروش"
+   382→            />
+   383→          )}
+   384→        </div>
+   385→      ) : null}
+   386→
+   387→      {/* ── سگمنت «امروز من» / «نگاه هفته» ── */}
+   388→      <SegTabs tab={tab} onChange={setTab} />
+   389→
+   390→      {/* ═══════════════ امروز من — کارهای شخصی امروز ═══════════════ */}
+   391→      {tab === 'today' && (
+   392→        <div key="today" role="tabpanel" aria-label="امروز من" className="fade-in-up grid grid-cols-1 gap-3 xl:grid-cols-12">
+   393→          <div className="space-y-3 xl:col-span-8">
+   394→            {/* وظایف من — کامل */}
+   395→            <SectionCard
+   396→              title="وظایف من"
+   397→              subtitle={k.myOpenTasks > 0 ? `${faNum(k.myOpenTasks)} وظیفهٔ باز در انتظار شماست` : 'امروز فاقد وظیفهٔ باز'}
+   398→              icon={<ListChecks size={18} />}
+   399→              className="sm:p-4"
+   400→            >
+   401→              {data.myTasks.length === 0 ? (
+   402→                <EmptyState emoji="🌤️" title="فعلاً وظیفه‌ای ندارید" hint="وقت خوبی برای یادگیری بخش راهنماست" />
+   403→              ) : (
+   404→                <ul className="space-y-2">
+   405→                  {data.myTasks.map((t: any) => {
+   406→                    const due = t.dueDate ? daysBetween(String(t.dueDate).slice(0, 10), todayV) : null
+   407→                    return (
+   408→                      <Row key={t.id} onClick={() => ctx.navigate('tasks')}>
+   409→                        <span className="min-w-0 flex-1 truncate text-xs font-bold">{t.title}</span>
+   410→                        <span className="flex shrink-0 items-center gap-1.5">
+   411→                          <Pill label={TASK_STATUSES[t.status]?.label || t.status} color={TASK_STATUSES[t.status]?.color || '#6d7a6e'} />
+   412→                          <Pill label={PRIORITIES[t.priority]?.label || t.priority} color={PRIORITIES[t.priority]?.color || '#6d7a6e'} />
+   413→                        </span>
+   414→                        {due !== null && (
+   415→                          <span className={cn('w-full shrink-0 text-[10px] font-black sm:w-auto', due < 0 ? 'text-[#b3372f]' : due === 0 ? 'text-[#8a6d10]' : 'text-muted-foreground')}>
+   416→                            🗓 {formatJalaliFull(String(t.dueDate).slice(0, 10))}
+   417→                            {due < 0 ? ' — دیرکرد!' : due === 0 ? ' — امروز!' : ''}
+   418→                          </span>
+   419→                        )}
+   420→                      </Row>
+   421→                    )
+   422→                  })}
+   423→                </ul>
+   424→              )}
+   425→              <ViewAll label="مشاهدهٔ همهٔ وظایف" onClick={() => ctx.navigate('tasks')} />
+   426→            </SectionCard>
+   427→
+   428→            {/* مرسوله‌های امروز + سفارش‌های سرآمده */}
+   429→            <div className={cn('grid gap-3', k.overdueCount > 0 && 'sm:grid-cols-2')}>
+   430→              <SectionCard
+   431→                title="مرسوله‌های امروز"
+   432→                subtitle={k.todayDeliveries > 0 ? `${faNum(k.todayDeliveries)} مرسوله برای دریافت` : 'امروز مرسوله‌ای در راه نیست'}
+   433→                icon={<Truck size={18} />}
+   434→                className="sm:p-4"
+   435→              >
+   436→                {data.todayDeliveriesList.length === 0 ? (
+   437→                  <EmptyState emoji="📦" title="مرسوله‌ای برای امروز ثبت نشده" />
+   438→                ) : (
+   439→                  <ul className="space-y-2">
+   440→                    {data.todayDeliveriesList.map((o: any) => (
+   441→                      <Row key={o.id} onClick={() => ctx.navigate('receiving', o.id)}>
+   442→                        <span className="min-w-0 truncate text-xs font-bold">
+   443→                          <span dir="ltr" className="font-mono text-[10px] text-[#8a5a2b]">{o.code}</span> · {o.providerName}
+   444→                        </span>
+   445→                        <Pill label={ORDER_STATUSES[o.status]?.label || o.status} color={ORDER_STATUSES[o.status]?.color || '#6d7a6e'} />
+   446→                      </Row>
+   447→                    ))}
+   448→                  </ul>
+   449→                )}
+   450→                <ViewAll label="بازکردن دریافت" onClick={() => ctx.navigate('receiving')} />
+   451→              </SectionCard>
+   452→
+   453→              {k.overdueCount > 0 && (
+   454→                <SectionCard title="سفارش‌های سرآمده ⚠️" subtitle="تحویل با تأخیر — پیگیری کنید" icon={<AlertTriangle size={18} />} className="border-[#b3372f]/40 sm:p-4">
+   455→                  <ul className="space-y-2">
+   456→                    {data.overdueOrders.map((o: any) => {
+   457→                      const late = daysBetween(todayV, String(o.deliveryDate).slice(0, 10))
+   458→                      return (
+   459→                        <Row key={o.id} onClick={() => ctx.navigate('orders', o.id)} className="bg-[#fee2e2]/40">
+   460→                          <span className="min-w-0 truncate text-xs font-bold">
+   461→                            <span dir="ltr" className="font-mono text-[10px] text-[#8a5a2b]">{o.code}</span> · {o.providerName}
+   462→                          </span>
+   463→                          <DueChip days={-late} />
+   464→                        </Row>
+   465→                      )
+   466→                    })}
+   467→                  </ul>
+   468→                  <ViewAll label="مشاهدهٔ همه در سفارش‌ها" onClick={() => ctx.navigate('orders')} />
+   469→                </SectionCard>
+   470→              )}
+   471→            </div>
+   472→
+   473→            {/* چک‌های در انتظار امضا — ردیف‌های فشرده */}
+   474→            <SectionCard
+   475→              title="چک‌های در انتظار امضا"
+   476→              subtitle={k.pendingCheques > 0 ? `${faNum(k.pendingCheques)} چک — ${faMoney(k.pendingChequesAmount)} تومان` : 'صف امضا خالی است'}
+   477→              icon={<Banknote size={18} />}
+   478→              className="sm:p-4"
+   479→            >
+   480→              {data.pendingChequesList.length === 0 ? (
+   481→                <EmptyState emoji="🧾" title="چکی در صف امضا نیست" hint="چک‌های جدید پس از ثبت سفارش اینجا ظاهر می‌شوند" />
+   482→              ) : (
+   483→                <ul className="space-y-2">
+   484→                  {data.pendingChequesList.map((c: any) => {
+   485→                    const due = daysBetween(String(c.dueDate).slice(0, 10), todayV)
+   486→                    return (
+   487→                      <Row key={c.id} onClick={() => ctx.navigate('cheques')}>
+   488→                        <span className="min-w-0 truncate text-xs font-bold">
+   489→                          {c.recipientName}
+   490→                          {c.orderCode ? <span className="mr-1 text-[10px] font-bold text-muted-foreground"> · <span dir="ltr" className="font-mono">{c.orderCode}</span></span> : null}
+   491→                        </span>
+   492→                        <span className="flex shrink-0 items-center gap-2">
+   493→                          <span className="text-[10px] font-bold text-muted-foreground">{formatJalaliShort(c.dueDate)}</span>
+   494→                          <DueChip days={due} />
+   495→                          <span className="text-xs font-black text-[#8a6d10]">{faMoney(c.amount)}</span>
+   496→                        </span>
+   497→                      </Row>
+   498→                    )
+   499→                  })}
+   500→                </ul>
+   501→              )}
+   502→              <ViewAll label="مشاهدهٔ همهٔ چک‌ها" onClick={() => ctx.navigate('cheques')} />
+   503→            </SectionCard>
+   504→
+   505→            {/* درخواست‌های فوری مشتریان — ۵ مورد برتر */}
+   506→            <SectionCard
+   507→              title="درخواست‌های فوری مشتریان"
+   508→              subtitle="پرتقاضاترین کالاهایی که مشتری دنبالش بود و نداشتیم"
+   509→              icon={<MessageCircle size={18} />}
+   510→              className="sm:p-4"
+   511→            >
+   512→              {data.customerReqs.length === 0 ? (
+   513→                <EmptyState emoji="🛒" title="درخواستی ثبت نشده" />
+   514→              ) : (
+   515→                <ul className="space-y-2">
+   516→                  {data.customerReqs.slice(0, 5).map((r: any) => (
+   517→                    <Row key={r.id} onClick={() => ctx.navigate('sales')}>
+   518→                      <span className="min-w-0 truncate text-xs font-bold">
+   519→                        {r.productName}
+   520→                        {r.notes ? <span className="mr-1 hidden text-[10px] font-bold text-muted-foreground sm:inline"> — {r.notes}</span> : null}
+   521→                      </span>
+   522→                      <span className="shrink-0 rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[11px] font-black text-[#b3372f]">{faNum(r.count)} بار</span>
+   523→                    </Row>
+   524→                  ))}
+   525→                </ul>
+   526→              )}
+   527→              <ViewAll label="مشاهدهٔ همه در بخش فروش" onClick={() => ctx.navigate('sales')} />
+   528→            </SectionCard>
+   529→          </div>
+   530→
+   531→          {/* دیجیتال‌وال — ستون باریک کناری در دسکتاپ */}
+   532→          <aside className="self-start xl:col-span-4 xl:sticky xl:top-4">
+   533→            <SectionCard title="دیجیتال‌وال" subtitle="آخرین خبرهای تیم" icon={<Newspaper size={18} />} className="sm:p-4">
+   534→              {data.wall.length === 0 ? (
+   535→                <EmptyState emoji="📰" title="دیوار ساکت است" hint="اولین خبر را شما بنویسید!" />
+   536→              ) : (
+   537→                <ul className="scroll-gold max-h-96 space-y-2 overflow-y-auto pl-1">
+   538→                  {data.wall.map((w: any) => (
+   539→                    <li key={w.id} className="rounded-xl border border-border/60 bg-white/60 p-2.5">
+   540→                      <p className="text-xs font-extrabold">{w.pinned ? '📌 ' : ''}{w.title}</p>
+   541→                      <p className="mt-0.5 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{w.content}</p>
+   542→                      <p className="mt-1 text-[10px] font-bold text-primary">{w.authorName}</p>
+   543→                    </li>
+   544→                  ))}
+   545→                </ul>
+   546→              )}
+   547→              <ViewAll label="مشاهدهٔ همهٔ دیوار" onClick={() => ctx.navigate('wall')} />
+   548→            </SectionCard>
+   549→          </aside>
+   550→        </div>
+   551→      )}
+   552→
+   553→      {/* ═══════════════ نگاه هفته — تحلیل و روند مدیریتی ═══════════════ */}
+   554→      {tab === 'week' && (
+   555→        <div key="week" role="tabpanel" aria-label="نگاه هفته" className="fade-in-up space-y-3">
+   556→          <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+   557→            <SectionCard title="سفارش‌ها و فروش ۱۴ روز اخیر" subtitle="تعداد سفارش و مبلغ فروش هر روز — روند دو هفته" icon={<TrendingUp size={18} />} className="xl:col-span-8 sm:p-4">
+   558→              <div className="grid gap-4 sm:grid-cols-2">
+   559→                <div>
+   560→                  <p className="mb-1 text-[11px] font-black text-[#0e7a4a]">تعداد سفارش روزانه</p>
+   561→                  <LineChart data={seriesOrders} color="#0e7a4a" height={130} formatValue={(v) => `${faNum(v)} سفارش`} formatLabel={(l) => l} />
+   562→                </div>
+   563→                <div>
+   564→                  <p className="mb-1 text-[11px] font-black text-[#8a6d10]">مبلغ فروش روزانه (تومان)</p>
+   565→                  <LineChart data={seriesSales} color="#c9a227" height={130} formatValue={compactToman} formatLabel={(l) => l} />
+   566→                </div>
+   567→              </div>
+   568→            </SectionCard>
+   569→
+   570→            <SectionCard title="گردش سفارش‌ها" subtitle="وضعیت همهٔ سفارش‌ها در یک نگاه" icon={<PieChart size={18} />} className="xl:col-span-4 sm:p-4">
+   571→              <Donut data={pipelineData} centerLabel="کل سفارش‌ها" centerValue={faNum(k.ordersTotal)} size={150} />
+   572→            </SectionCard>
+   573→          </div>
+   574→
+   575→          <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+   576→            <SectionCard title="سررسید چک‌ها (۸ هفته آینده)" subtitle="برنامهٔ مالی هفتگی — مبلغ تومان" icon={<Banknote size={18} />} className="xl:col-span-8 sm:p-4">
+   577→              <BarChart
+   578→                data={data.chequeSeries.map((s: any) => ({ label: formatJalaliShort(s.week).slice(5), value: s.amount }))}
+   579→                color="#c9a227"
+   580→                height={150}
+   581→                formatValue={(v) => `${faMoney(v)} تومان`}
+   582→              />
+   583→            </SectionCard>
+   584→
+   585→            <SectionCard
+   586→              title="جدول امتیاز تیم 🏆"
+   587→              subtitle="قدردانی مدیران از تلاش همکاران"
+   588→              icon={<Sparkles size={18} />}
+   589→              className="xl:col-span-4 sm:p-4"
+   590→              actions={
+   591→                <button onClick={() => ctx.navigate('perf')} className="min-h-11 rounded-xl bg-secondary px-3 py-2 text-[11px] font-extrabold text-secondary-foreground transition hover:bg-[#dcead4]">
+   592→                  جدول کامل ←
+   593→                </button>
+   594→              }
+   595→            >
+   596→              <RankBars data={data.leaderboard.map((l: any) => ({ label: l.name, value: l.points, color: l.color }))} formatValue={(v) => faNum(v)} />
+   597→            </SectionCard>
+   598→          </div>
+   599→
+   600→          {canScience && (catDonut.length > 0 || topProducts.length > 0) && (
+   601→            <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+   602→              {catDonut.length > 0 && (
+   603→                <SectionCard
+   604→                  title="سهم دسته‌بندی کالا از تقاضا"
+   605→                  subtitle="تحلیل ABC — ارزش تقاضای سالانه (میلیون تومان)"
+   606→                  icon={<PieChart size={18} />}
+   607→                  className="xl:col-span-7 sm:p-4"
+   608→                >
+   609→                  <Donut data={catDonut} centerLabel="دسته‌ها" size={150} />
+   610→                </SectionCard>
+   611→              )}
+   612→              {topProducts.length > 0 && (
+   613→                <SectionCard
+   614→                  title="پرفروش‌ترین کالاها"
+   615→                  subtitle="برترین‌ها بر پایهٔ ارزش تقاضای سالانه (میلیون تومان) — رنگ بر پایهٔ کلاس A/B/C"
+   616→                  icon={<ShoppingBasket size={18} />}
+   617→                  className="xl:col-span-5 sm:p-4"
+   618→                >
+   619→                  <RankBars data={topProducts} formatValue={(v) => `${faNum(v)} م`} />
+   620→                </SectionCard>
+   621→              )}
+   622→            </div>
+   623→          )}
+   624→
+   625→          {/* اقلام رو به انقضا — ثبت‌شده در دریافت */}
+   626→          {['GM', 'OM', 'SK', 'ACC', 'HC'].includes(role) && data.expiring?.length > 0 && (
+   627→            <SectionCard
+   628→              title="نزدیک به انقضا ⏳"
+   629→              subtitle="اقلام ثبت‌شده در دریافت که تا ۱۴ روز آینده تمام می‌شوند — جلوتر از قفسه بفروشید یا تخفیف بزنید"
+   630→              icon={<AlertTriangle size={18} />}
+   631→              className="border-[#c96f4a]/40 sm:p-4"
+   632→            >
+   633→              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+   634→                {data.expiring.map((e: any) => (
+   635→                  <div key={e.id} className={`rounded-xl border p-2.5 ${e.daysLeft <= 3 ? 'border-[#b3372f]/40 bg-[#fee2e2]/50' : e.daysLeft <= 7 ? 'border-[#a16207]/40 bg-[#fef9c3]/50' : 'border-border bg-white/70'}`}>
+   636→                    <p className="line-clamp-2 text-xs font-extrabold">{e.productName}</p>
+   637→                    <div className="mt-1.5 flex items-center justify-between">
+   638→                      <span className="text-[10px] text-muted-foreground">{faNum(e.qty)} قلم</span>
+   639→                      <span className={`text-[11px] font-black ${e.daysLeft <= 3 ? 'text-[#b3372f]' : e.daysLeft <= 7 ? 'text-[#a16207]' : 'text-[#0e7a4a]'}`}>
+   640→                        {e.daysLeft < 0 ? 'منقضی شده!' : `${faNum(e.daysLeft)} روز مانده`}
+   641→                      </span>
+   642→                    </div>
+   643→                  </div>
+   644→                ))}
+   645→              </div>
+   646→            </SectionCard>
+   647→          )}
+   648→
+   649→          {/* درخواست‌های مشتریان — فهرست کامل */}
+   650→          <SectionCard
+   651→            title="درخواست‌های مشتریان — فهرست کامل"
+   652→            subtitle="کالاهایی که مشتری دنبالش بود و نداشتیم — مبنای تصمیم تأمین"
+   653→            icon={<MessageCircle size={18} />}
+   654→            className="sm:p-4"
+   655→          >
+   656→            {data.customerReqs.length === 0 ? (
+   657→              <EmptyState emoji="🛒" title="درخواستی ثبت نشده" hint="فروشندگان از بخش فروش درخواست ثبت می‌کنند" />
+   658→            ) : (
+   659→              <ul className="space-y-2">
+   660→                {data.customerReqs.map((r: any) => (
+   661→                  <Row key={r.id} onClick={() => ctx.navigate('sales')}>
+   662→                    <span className="min-w-0">
+   663→                      <span className="block truncate text-xs font-bold">{r.productName}</span>
+   664→                      <span className="block truncate text-[10px] text-muted-foreground">
+   665→                        {r.notes ? `${r.notes} · ` : ''}
+   666→                        {r.lastByName ? `آخرین: ${r.lastByName}` : '—'}
+   667→                      </span>
+   668→                    </span>
+   669→                    <span className="shrink-0 rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[11px] font-black text-[#b3372f]">{faNum(r.count)} بار</span>
+   670→                  </Row>
+   671→                ))}
+   672→              </ul>
+   673→            )}
+   674→            <ViewAll label="مدیریت درخواست‌ها در بخش فروش" onClick={() => ctx.navigate('sales')} />
+   675→          </SectionCard>
+   676→        </div>
+   677→      )}
+   678→    </div>
+   679→  )
+   680→}
+   681→

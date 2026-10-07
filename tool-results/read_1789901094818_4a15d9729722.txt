@@ -1,0 +1,562 @@
+     1→   149→export default function ArchiveView({ ctx }: { ctx: AppCtx }) {
+     2→   150→  const role = ctx.user!.role
+     3→   151→  const canManage = ['GM', 'OM', 'ACC', 'OWNER'].includes(role)
+     4→   152→  const canRegister = ['GM', 'OM', 'ACC', 'OWNER', 'SK', 'ADMIN'].includes(role)
+     5→   153→  // عملیات حساس دفع/نگهداری حقوقی — ACC/OM/GM/OWNER/ADMIN (تأیید دوم همیشه کاربر دیگری است)
+     6→   154→  const canDispose = ['ACC', 'OM', 'GM', 'OWNER', 'ADMIN'].includes(role)
+     7→   155→
+     8→   156→  const [tab, setTab] = useState<Tab>(ctx.param === 'parties' ? 'parties' : 'docs')
+     9→   157→  const [binders, setBinders] = useState<Binder[]>([])
+    10→   158→  const [docs, setDocs] = useState<Doc[]>([])
+    11→   159→  const [parties, setParties] = useState<PartyEntry[]>([])
+    12→   160→  const [stats, setStats] = useState<Stats | null>(null)
+    13→   161→  const [q, setQ] = useState('')
+    14→   162→  const [binderFilter, setBinderFilter] = useState('')
+    15→   163→  const [statusFilter, setStatusFilter] = useState('')
+    16→   164→  const [lifecycleFilter, setLifecycleFilter] = useState('')
+    17→   165→  const [dueMode, setDueMode] = useState<'' | 'due' | 'pending'>('')
+    18→   166→  const [partyFilter, setPartyFilter] = useState<PartyFilter>(null)
+    19→   167→  const [intakeOpen, setIntakeOpen] = useState(false)
+    20→   168→  const [binderOpen, setBinderOpen] = useState(false)
+    21→   169→  const [lastFiled, setLastFiled] = useState<{ doc: Doc; binder: Binder | { id: string; code: string; title: string; cabinet: string; shelf: string }; pickReason: string; itemsCreated: number } | null>(null)
+    22→   170→  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+    23→   171→
+    24→   172→  // expandable line items (سجل کالا) per document
+    25→   173→  const [expandedDoc, setExpandedDoc] = useState('')
+    26→   174→  const [itemsMap, setItemsMap] = useState<Record<string, DocItem[]>>({})
+    27→   175→  const [itemsLoading, setItemsLoading] = useState('')
+    28→   176→
+    29→   177→  // ── نمایندگان ──
+    30→   178→  const [reps, setReps] = useState<RepLite[]>([])
+    31→   179→  const [repsStats, setRepsStats] = useState<RepFull[]>([])
+    32→   180→  const [repsQ, setRepsQ] = useState('')
+    33→   181→  const [repProfile, setRepProfile] = useState<RepProfileRes | null>(null)
+    34→   182→  const [repProfileId, setRepProfileId] = useState('')
+    35→   183→  const [repFormOpen, setRepFormOpen] = useState(false)
+    36→   184→  const [repEdit, setRepEdit] = useState<RepFull | null>(null)
+    37→   185→
+    38→   186→  // ── جزئیات سند + مودال‌های عملیات ──
+    39→   187→  const [detail, setDetail] = useState<DetailRes | null>(null)
+    40→   188→  const [detailBusy, setDetailBusy] = useState(false)
+    41→   189→  const [editOpen, setEditOpen] = useState(false)
+    42→   190→  const [eventOpen, setEventOpen] = useState(false)
+    43→   191→  const [borrowOpen, setBorrowOpen] = useState(false)
+    44→   192→  const [disposalOpen, setDisposalOpen] = useState(false)
+    45→   193→
+    46→   194→  // کارت کالا (product 360)
+    47→   195→  const [ledgerProducts, setLedgerProducts] = useState<LedgerProduct[]>([])
+    48→   196→  const [prodQ, setProdQ] = useState('')
+    49→   197→  const [partyQ, setPartyQ] = useState('')
+    50→   198→  const [selProduct, setSelProduct] = useState<LedgerProduct | null>(null)
+    51→   199→  const [history, setHistory] = useState<HistoryRes | null>(null)
+    52→   200→  const [histBusy, setHistBusy] = useState(false)
+    53→   201→
+    54→   202→  const load = useCallback((qq = q, bid = binderFilter, st = statusFilter, pf: PartyFilter = partyFilter, dm: '' | 'due' | 'pending' = dueMode, lc = lifecycleFilter) => {
+    55→   203→    const params = new URLSearchParams()
+    56→   204→    if (qq) params.set('q', qq)
+    57→   205→    if (bid) params.set('binderId', bid)
+    58→   206→    if (st) params.set('status', st)
+    59→   207→    if (dm === 'due') params.set('retention', 'due')
+    60→   208→    if (dm === 'pending') params.set('lifecycle', 'DISPOSAL_PENDING')
+    61→   209→    else if (lc) params.set('lifecycle', lc)
+    62→   210→    if (pf?.id) params.set('partyId', pf.id)
+    63→   211→    if (pf?.name) params.set('party', pf.name)
+    64→   212→    return api<{ binders: Binder[]; docs: Doc[]; parties: PartyEntry[]; stats: Stats }>(`/api/archive?${params}`).then((d) => {
+    65→   213→      setBinders(d.binders); setDocs(d.docs); setParties(d.parties || []); setStats(d.stats)
+    66→   214→    })
+    67→   215→  }, [q, binderFilter, statusFilter, partyFilter, dueMode, lifecycleFilter])
+    68→   216→
+    69→   217→  const loadReps = useCallback(() => {
+    70→   218→    api<{ reps: RepLite[] }>('/api/archive?reps=1').then((d) => setReps(d.reps || [])).catch(() => { /* silent */ })
+    71→   219→    api<{ reps: RepFull[] }>('/api/sales-reps').then((d) => setRepsStats(d.reps || [])).catch(() => { /* silent */ })
+    72→   220→  }, [])
+    73→   221→
+    74→   222→  useEffect(() => { load(); loadReps() }, [])
+    75→   223→
+    76→   224→  const onSearch = (v: string) => {
+    77→   225→    setQ(v)
+    78→   226→    if (debounce.current) clearTimeout(debounce.current)
+    79→   227→    debounce.current = setTimeout(() => load(v, binderFilter, statusFilter), 320)
+    80→   228→  }
+    81→   229→
+    82→   230→  const pickBinder = (id: string) => {
+    83→   231→    const bid = id === binderFilter ? '' : id
+    84→   232→    setBinderFilter(bid)
+    85→   233→    load(q, bid, statusFilter)
+    86→   234→  }
+    87→   235→
+    88→   236→  const onPartyPick = (p: PartyEntry) => {
+    89→   237→    const pf: PartyFilter = { id: p.partyId, name: p.party }
+    90→   238→    setPartyFilter(pf)
+    91→   239→    setTab('docs')
+    92→   240→    load(q, '', statusFilter, pf)
+    93→   241→  }
+    94→   242→
+    95→   243→  const clearParty = () => {
+    96→   244→    setPartyFilter(null)
+    97→   245→    load(q, binderFilter, statusFilter, null)
+    98→   246→  }
+    99→   247→
+   100→   248→  const jumpRetention = (dm: '' | 'due' | 'pending') => {
+   101→   249→    setDueMode(dm)
+   102→   250→    setLifecycleFilter('')
+   103→   251→    setTab('docs')
+   104→   252→    load(q, binderFilter, statusFilter, partyFilter, dm)
+   105→   253→  }
+   106→   254→
+   107→   255→  const applyLifecycleFilter = (lc: string) => {
+   108→   256→    setLifecycleFilter(lc)
+   109→   257→    setDueMode('')
+   110→   258→    load(q, binderFilter, statusFilter, partyFilter, '', lc)
+   111→   259→  }
+   112→   260→
+   113→   261→  const toggleDoc = async (id: string) => {
+   114→   262→    if (expandedDoc === id) return setExpandedDoc('')
+   115→   263→    setExpandedDoc(id)
+   116→   264→    if (itemsMap[id]) return
+   117→   265→    setItemsLoading(id)
+   118→   266→    try {
+   119→   267→      const d = await api<DetailRes>(`/api/archive?docId=${id}`)
+   120→   268→      setItemsMap((m) => ({ ...m, [id]: d.items || [] }))
+   121→   269→    } catch (e: any) {
+   122→   270→      toast.error(e.message)
+   123→   271→    } finally {
+   124→   272→      setItemsLoading('')
+   125→   273→    }
+   126→   274→  }
+   127→   275→
+   128→   276→  // ── جزئیات کامل سند (پرونده) ──
+   129→   277→  const openDoc = async (id: string) => {
+   130→   278→    setDetail(null)
+   131→   279→    setDetailBusy(true)
+   132→   280→    try {
+   133→   281→      const d = await api<DetailRes>(`/api/archive?docId=${id}`)
+   134→   282→      setDetail(d)
+   135→   283→    } catch (e: any) {
+   136→   284→      toast.error(e.message)
+   137→   285→    } finally {
+   138→   286→      setDetailBusy(false)
+   139→   287→    }
+   140→   288→  }
+   141→   289→
+   142→   290→  const refreshDetail = async () => {
+   143→   291→    if (detail?.doc?.id) {
+   144→   292→      try {
+   145→   293→        setDetail(await api<DetailRes>(`/api/archive?docId=${detail.doc.id}`))
+   146→   294→      } catch { /* keep current view */ }
+   147→   295→      setItemsMap((m) => {
+   148→   296→        const n = { ...m }
+   149→   297→        delete n[detail.doc.id]
+   150→   298→        return n
+   151→   299→      })
+   152→   300→    }
+   153→   301→    await load()
+   154→   302→  }
+   155→   303→
+   156→   304→  const act = async (id: string, body: any, msg: string) => {
+   157→   305→    try {
+   158→   306→      await api(`/api/archive/${id}`, { method: 'PATCH', body })
+   159→   307→      toast.success(msg)
+   160→   308→      await refreshDetail()
+   161→   309→    } catch (e: any) { toast.error(e.message) }
+   162→   310→  }
+   163→   311→
+   164→   312→  const openRep = async (id: string) => {
+   165→   313→    setRepProfile(null)
+   166→   314→    setRepProfileId(id)
+   167→   315→    try {
+   168→   316→      setRepProfile(await api<RepProfileRes>(`/api/sales-reps/${id}`))
+   169→   317→    } catch (e: any) {
+   170→   318→      toast.error(e.message)
+   171→   319→      setRepProfileId('')
+   172→   320→    }
+   173→   321→  }
+   174→   322→
+   175→   323→  // ── کارت کالا: load product list once the tab is opened ──
+   176→   324→  useEffect(() => {
+   177→   325→    if (tab !== 'ledger' || ledgerProducts.length > 0) return
+   178→   326→    api<{ products: LedgerProduct[] }>('/api/products')
+   179→   327→      .then((d) => setLedgerProducts((d.products || []).slice(0, 200)))
+   180→   328→      .catch(() => { /*silent — retry on next tab open*/ })
+   181→   329→  }, [tab, ledgerProducts.length])
+   182→   330→
+   183→   331→  const openProduct = async (p: LedgerProduct) => {
+   184→   332→    setSelProduct(p)
+   185→   333→    setHistory(null)
+   186→   334→    setHistBusy(true)
+   187→   335→    try {
+   188→   336→      setHistory(await api<HistoryRes>(`/api/archive/history?productId=${p.id}`))
+   189→   337→    } catch (e: any) {
+   190→   338→      toast.error(e.message)
+   191→   339→    } finally {
+   192→   340→      setHistBusy(false)
+   193→   341→    }
+   194→   342→  }
+   195→   343→
+   196→   344→  const filteredProducts = useMemo(() => {
+   197→   345→    const n = prodQ.trim()
+   198→   346→    if (!n) return ledgerProducts.slice(0, 8)
+   199→   347→    return ledgerProducts.filter((p) => p.name.includes(n) || p.brand.includes(n) || p.category.includes(n)).slice(0, 8)
+   200→   348→  }, [ledgerProducts, prodQ])
+   201→   349→
+   202→   350→  const cabinets = useMemo(() => {
+   203→   351→    const m = new Map<string, Binder[]>()
+   204→   352→    for (const b of binders) {
+   205→   353→      if (!m.has(b.cabinet)) m.set(b.cabinet, [])
+   206→   354→      m.get(b.cabinet)!.push(b)
+   207→   355→    }
+   208→   356→    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fa'))
+   209→   357→  }, [binders])
+   210→   358→
+   211→   359→  const binderById = useMemo(() => new Map(binders.map((b) => [b.id, b])), [binders])
+   212→   360→
+   213→   361→  const partyEntry = useMemo(
+   214→   362→    () => (partyFilter ? parties.find((p) => p.party === partyFilter.name) || null : null),
+   215→   363→    [parties, partyFilter],
+   216→   364→  )
+   217→   365→
+   218→   366→  const filteredReps = useMemo(() => {
+   219→   367→    const n = repsQ.trim()
+   220→   368→    if (!n) return repsStats
+   221→   369→    return repsStats.filter((r) => r.fullName.includes(n) || (r.providerName || '').includes(n) || (r.mobile || '').includes(n))
+   222→   370→  }, [repsStats, repsQ])
+   223→   371→
+   224→   372→  const copyText = async (text: string) => {
+   225→   373→    try {
+   226→   374→      await navigator.clipboard.writeText(text)
+   227→   375→      toast.success(`«${text}» کپی شد`)
+   228→   376→    } catch {
+   229→   377→      toast.error('کپی خودکار ممکن نشد — مقدار: ' + text)
+   230→   378→    }
+   231→   379→  }
+   232→   380→
+   233→   381→  return (
+   234→   382→    <div className="space-y-4">
+   235→   383→      {/* KPI row */}
+   236→   384→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+   237→   385→        {[
+   238→   386→          { l: 'اسناد ثبت‌شده', v: faNum(stats?.docs ?? 0), s: 'در چرخهٔ فعال', c: '#0e7a4a', i: <FileText size={14} /> },
+   239→   387→          { l: 'زونکن‌های آرشیو', v: faNum(stats?.binders ?? 0), s: 'طبقه‌بندی موضوعی', c: '#8a5a2b', i: <Library size={14} /> },
+   240→   388→          { l: 'اسناد امانتی', v: faNum(stats?.borrowed ?? 0), s: 'خارج از زونکن', c: '#c96f4a', i: <Hand size={14} /> },
+   241→   389→          { l: 'ثبت این ماه', v: faNum(stats?.monthIntake ?? 0), s: 'ورودی جدید', c: '#77934a', i: <Plus size={14} /> },
+   242→   390→          { l: 'ارزش اسناد', v: faMoney(stats?.totalValue ?? 0), s: 'تومان', c: '#c9a227', i: <Landmark size={14} /> },
+   243→   391→        ].map((s) => (
+   244→   392→          <div key={s.l} className="glow-card rounded-2xl bg-card p-4">
+   245→   393→            <p className="flex items-center gap-1.5 text-xl font-black" style={{ color: s.c }}>{s.i}{s.v}</p>
+   246→   394→            <p className="mt-0.5 text-xs font-bold">{s.l}</p>
+   247→   395→            <p className="text-[10px] text-muted-foreground">{s.s}</p>
+   248→   396→          </div>
+   249→   397→        ))}
+   250→   398→        <button
+   251→   399→          type="button"
+   252→   400→          onClick={() => jumpRetention('due')}
+   253→   401→          className="glow-card rounded-2xl bg-card p-4 text-right transition hover:-translate-y-0.5"
+   254→   402→        >
+   255→   403→          <p className="flex items-center gap-1.5 text-xl font-black" style={{ color: '#c96f4a' }}>
+   256→   404→            <Clock size={14} />
+   257→   405→            {faNum((stats?.retentionDue ?? 0) + (stats?.disposalPending ?? 0))}
+   258→   406→          </p>
+   259→   407→          <p className="mt-0.5 text-xs font-bold">سرِرسید نگهداری و دفع</p>
+   260→   408→          <p className="text-[10px] text-muted-foreground">
+   261→   409→            {faNum(stats?.retentionDue ?? 0)} در آستانه • {faNum(stats?.disposalPending ?? 0)} در انتظار دفع
+   262→   410→          </p>
+   263→   411→        </button>
+   264→   412→      </div>
+   265→   413→
+   266→   414→      {/* tabs */}
+   267→   415→      <div className="flex flex-wrap gap-2 rounded-2xl border border-[#8a5a2b]/25 bg-[#f7efe2] p-1.5">
+   268→   416→        {([
+   269→   417→          ['docs', <FolderOpen key="i" size={15} />, 'اسناد'],
+   270→   418→          ['parties', <Users key="i" size={15} />, 'تأمین‌کنندگان'],
+   271→   419→          ['ledger', <Package key="i" size={15} />, 'کارت کالا'],
+   272→   420→          ['reps', <UserCog key="i" size={15} />, 'نمایندگان'],
+   273→   421→        ] as [Tab, React.ReactNode, string][]).map(([k, icon, label]) => (
+   274→   422→          <button
+   275→   423→            key={k}
+   276→   424→            type="button"
+   277→   425→            onClick={() => setTab(k)}
+   278→   426→            className={cn(
+   279→   427→              'flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition',
+   280→   428→              tab === k ? 'bg-white text-[#0e7a4a] shadow' : 'text-[#8a5a2b] hover:bg-white/60',
+   281→   429→            )}
+   282→   430→          >
+   283→   431→            {icon} {label}
+   284→   432→          </button>
+   285→   433→        ))}
+   286→   434→      </div>
+   287→   435→
+   288→   436→      {tab === 'docs' && (
+   289→   437→        <>
+   290→   438→          {/* ── ویجت نگهداری و دفع (ISO 15489 — دفع هرگز خودکار نیست) ── */}
+   291→   439→          <div className="fade-in-up grid gap-3 sm:grid-cols-2">
+   292→   440→            <button
+   293→   441→              type="button"
+   294→   442→              onClick={() => jumpRetention(dueMode === 'due' ? '' : 'due')}
+   295→   443→              className={cn(
+   296→   444→                'flex min-h-[44px] items-center justify-between gap-2 rounded-2xl border-2 bg-[#fdf6dd] p-3.5 text-right transition',
+   297→   445→                dueMode === 'due' ? 'border-[#c9a227] ring-2 ring-[#c9a227]/40' : 'border-[#c9a227]/50 hover:shadow-md',
+   298→   446→              )}
+   299→   447→            >
+   300→   448→              <span className="flex items-center gap-2">
+   301→   449→                <Clock size={18} className="text-[#8a6d10]" />
+   302→   450→                <span>
+   303→   451→                  <span className="block text-xs font-black text-[#8a6d10]">سرِرسید مهلت نگهداری</span>
+   304→   452→                  <span className="block text-[10px] text-muted-foreground">مهلت دفع تا ۶۰ روز آینده — بررسی و تصمیم مدیریتی</span>
+   305→   453→                </span>
+   306→   454→              </span>
+   307→   455→              <span className="rounded-xl bg-[#c9a227]/20 px-3 py-1.5 text-base font-black text-[#8a6d10]">{faNum(stats?.retentionDue ?? 0)}</span>
+   308→   456→            </button>
+   309→   457→            <button
+   310→   458→              type="button"
+   311→   459→              onClick={() => jumpRetention(dueMode === 'pending' ? '' : 'pending')}
+   312→   460→              className={cn(
+   313→   461→                'flex min-h-[44px] items-center justify-between gap-2 rounded-2xl border-2 bg-[#fbeae8] p-3.5 text-right transition',
+   314→   462→                dueMode === 'pending' ? 'border-[#b3372f] ring-2 ring-[#b3372f]/30' : 'border-[#b3372f]/40 hover:shadow-md',
+   315→   463→              )}
+   316→   464→            >
+   317→   465→              <span className="flex items-center gap-2">
+   318→   466→                <Gavel size={18} className="text-[#b3372f]" />
+   319→   467→                <span>
+   320→   468→                  <span className="block text-xs font-black text-[#b3372f]">در انتظار دفع (تأیید دوم)</span>
+   321→   469→                  <span className="block text-[10px] text-muted-foreground">درخواست دفع ثبت شده — نیازمند تأیید کاربر دیگر</span>
+   322→   470→                </span>
+   323→   471→              </span>
+   324→   472→              <span className="rounded-xl bg-[#b3372f]/15 px-3 py-1.5 text-base font-black text-[#b3372f]">{faNum(stats?.disposalPending ?? 0)}</span>
+   325→   473→            </button>
+   326→   474→          </div>
+   327→   475→
+   328→   476→          {partyFilter && (
+   329→   477→            <div className="fade-in-up rounded-2xl border-2 border-[#c9a227]/60 bg-[#fdf6dd] p-4">
+   330→   478→              <div className="flex flex-wrap items-center justify-between gap-2">
+   331→   479→                <p className="flex items-center gap-1.5 text-sm font-black text-[#8a5a2b]">
+   332→   480→                  <Users size={16} /> پروندهٔ طرف حساب: {partyFilter.name}
+   333→   481→                </p>
+   334→   482→                <button onClick={clearParty} className="min-h-[44px] rounded-xl border border-[#c9a227]/60 bg-white/70 px-3 py-2 text-[11px] font-black text-[#8a5a2b]">
+   335→   483→                  نمایش همهٔ اسناد ✕
+   336→   484→                </button>
+   337→   485→              </div>
+   338→   486→              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+   339→   487→                <KeyValue k="تعداد اسناد" v={faNum(partyEntry?.docCount ?? docs.length)} />
+   340→   488→                <KeyValue k="مجموع ارزش" v={`${faMoney(partyEntry?.totalAmount ?? docs.reduce((s, d) => s + d.amount, 0))} تومان`} />
+   341→   489→                <KeyValue k="نخستین سند" v={partyEntry?.firstDate ? formatJalaliShort(partyEntry.firstDate) : '—'} />
+   342→   490→                <KeyValue k="آخرین سند" v={partyEntry?.lastDate ? formatJalaliShort(partyEntry.lastDate) : '—'} />
+   343→   491→              </div>
+   344→   492→              {partyFilter.id ? (
+   345→   493→                <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#0e7a4a]">
+   346→   494→                  ✅ ذخیره در تأمین‌کنندگان — این طرف حساب با رکورد سامانه مرتبط است.
+   347→   495→                  <button onClick={() => ctx.navigate('providers')} className="min-h-[44px] rounded-xl bg-[#0e7a4a]/10 px-3 py-2 text-[11px] font-black text-[#0e7a4a]">
+   348→   496→                    بازکردن تأمین‌کنندگان
+   349→   497→                  </button>
+   350→   498→                </p>
+   351→   499→              ) : (
+   352→   500→                <p className="mt-2 text-[11px] font-bold text-[#c96f4a]">
+   353→   501→                  ⚠️ این طرف حساب هنوز به رکورد تأمین‌کنندگان متصل نیست — در ثبت سند بعدی تطبیق خودکار انجام می‌شود.
+   354→   502→                </p>
+   355→   503→              )}
+   356→   504→            </div>
+   357→   505→          )}
+   358→   506→
+   359→   507→          {dueMode && (
+   360→   508→            <div className={cn('fade-in-up flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3', dueMode === 'due' ? 'border-[#c9a227]/60 bg-[#fdf6dd]' : 'border-[#b3372f]/50 bg-[#fbeae8]')}>
+   361→   509→              <p className={cn('text-xs font-black', dueMode === 'due' ? 'text-[#8a6d10]' : 'text-[#b3372f]')}>
+   362→   510→                {dueMode === 'due' ? '⏳ فیلتر فعال: اسنادی که مهلت نگهداری‌شان رو به پایان است' : '🗑️ فیلتر فعال: اسناد در انتظار تأیید دفع'}
+   363→   511→                {' '}— {faNum(docs.length)} سند
+   364→   512→              </p>
+   365→   513→              <button onClick={() => jumpRetention('')} className="min-h-[44px] rounded-xl bg-white/70 px-3 py-2 text-[11px] font-black text-[#8a5a2b]">
+   366→   514→                نمایش همهٔ اسناد ✕
+   367→   515→              </button>
+   368→   516→            </div>
+   369→   517→          )}
+   370→   518→
+   371→   519→          <div className="grid gap-4 lg:grid-cols-5">
+   372→   520→            {/* ── binder shelf ── */}
+   373→   521→            <SectionCard
+   374→   522→              title="قفسهٔ آرشیو — طبقه‌بندی موضوعی زونکن‌ها"
+   375→   523→              subtitle="ساختار ۲۰ زونکنی گروه‌بندی طرف‌حساب‌ها؛ روی هر زونکن بزنید تا اسنادش نمایش داده شود"
+   376→   524→              icon={<Library size={18} />}
+   377→   525→              className="lg:col-span-2"
+   378→   526→              actions={canManage && (
+   379→   527→                <button onClick={() => setBinderOpen(true)} className="flex items-center gap-1 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-2 text-[11px] font-extrabold text-[#8a5a2b]">
+   380→   528→                  <Plus size={13} /> زونکن جدید
+   381→   529→                </button>
+   382→   530→              )}
+   383→   531→            >
+   384→   532→              <div className="scroll-gold max-h-[52vh] space-y-3 overflow-y-auto pl-1">
+   385→   533→                {cabinets.map(([cab, bs]) => (
+   386→   534→                  <div key={cab} className="rounded-2xl border border-[#8a5a2b]/25 bg-gradient-to-b from-[#f7efe2] to-[#fdf6dd] p-3">
+   387→   535→                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-[#8a5a2b]">
+   388→   536→                      <Archive size={13} /> کابینت {faNum(cab)}
+   389→   537→                    </p>
+   390→   538→                    <div className="space-y-1.5">
+   391→   539→                      {bs.map((b) => {
+   392→   540→                        const fill = Math.min(100, Math.round((b.docCount / Math.max(1, b.capacity)) * 100))
+   393→   541→                        const active = binderFilter === b.id
+   394→   542→                        return (
+   395→   543→                          <button
+   396→   544→                            key={b.id}
+   397→   545→                            type="button"
+   398→   546→                            onClick={() => pickBinder(b.id)}
+   399→   547→                            className={cn(
+   400→   548→                              'w-full rounded-xl bg-white/85 p-2.5 text-right transition hover:shadow-md',
+   401→   549→                              active && 'ring-2 ring-[#c9a227]',
+   402→   550→                            )}
+   403→   551→                          >
+   404→   552→                            <div className="flex items-center gap-2.5">
+   405→   553→                              <span className="h-9 w-2.5 shrink-0 rounded-full" style={{ background: b.colorTag }} />
+   406→   554→                              <span className="min-w-0 flex-1">
+   407→   555→                                <span className="flex items-center justify-between gap-2">
+   408→   556→                                  <span className="truncate text-[11px] font-black">{b.title}</span>
+   409→   557→                                  <span className="shrink-0 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{b.code}</span>
+   410→   558→                                </span>
+   411→   559→                                <span className="mt-0.5 flex items-center justify-between text-[9px] text-muted-foreground">
+   412→   560→                                  <span>طبقهٔ {faNum(b.shelf)} • {faNum(b.docCount)} سند</span>
+   413→   561→                                  <span style={{ color: fill >= 90 ? '#b3372f' : undefined }}>{faNum(fill)}٪ پر</span>
+   414→   562→                                </span>
+   415→   563→                                <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-[#8a5a2b]/10">
+   416→   564→                                  <span className="block h-full rounded-full transition-all" style={{ width: `${fill}%`, background: b.colorTag }} />
+   417→   565→                                </span>
+   418→   566→                              </span>
+   419→   567→                            </div>
+   420→   568→                          </button>
+   421→   569→                        )
+   422→   570→                      })}
+   423→   571→                    </div>
+   424→   572→                  </div>
+   425→   573→                ))}
+   426→   574→              </div>
+   427→   575→            </SectionCard>
+   428→   576→
+   429→   577→            {/* ── docs registry ── */}
+   430→   578→            <SectionCard
+   431→   579→              title="دفتر ثبت اسناد"
+   432→   580→              subtitle="روی سند بزنید تا پروندهٔ کامل (مالی، هلو، نماینده، اقلام و زنجیرهٔ custody) باز شود"
+   433→   581→              icon={<FolderOpen size={18} />}
+   434→   582→              className="lg:col-span-3"
+   435→   583→              actions={canRegister && (
+   436→   584→                <button onClick={() => setIntakeOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   437→   585→                  <Plus size={14} /> ثبت سند در آرشیو
+   438→   586→                </button>
+   439→   587→              )}
+   440→   588→            >
+   441→   589→              <div className="mb-3 flex flex-wrap items-center gap-2">
+   442→   590→                <div className="min-w-[180px] flex-1"><SearchInput value={q} onChange={onSearch} placeholder="جست‌وجو: طرف حساب، شماره هلو، نماینده، شماره سند…" /></div>
+   443→   591→                <select
+   444→   592→                  value={statusFilter}
+   445→   593→                  onChange={(e) => { setStatusFilter(e.target.value); load(q, binderFilter, e.target.value) }}
+   446→   594→                  className="rounded-xl border border-input bg-white p-2 text-xs font-bold"
+   447→   595→                >
+   448→   596→                  <option value="">همهٔ وضعیت‌ها</option>
+   449→   597→                  <option value="IN_BINDER">در زونکن</option>
+   450→   598→                  <option value="BORROWED">امانتی</option>
+   451→   599→                  <option value="DESTROYED">خارج‌شده</option>
+   452→   600→                </select>
+   453→   601→                <select
+   454→   602→                  value={lifecycleFilter}
+   455→   603→                  onChange={(e) => applyLifecycleFilter(e.target.value)}
+   456→   604→                  className="rounded-xl border border-input bg-white p-2 text-xs font-bold"
+   457→   605→                >
+   458→   606→                  <option value="">همهٔ مراحل حیات</option>
+   459→   607→                  {LIFECYCLE_ORDER.map((k) => <option key={k} value={k}>{LIFECYCLE_META[k].label}</option>)}
+   460→   608→                </select>
+   461→   609→                {binderFilter && (
+   462→   610→                  <button onClick={() => pickBinder(binderFilter)} className="rounded-xl bg-[#c9a227]/15 px-2.5 py-2 text-[11px] font-black text-[#8a5a2b]">
+   463→   611→                    فقط {binderById.get(binderFilter)?.code || 'زونکن'} ✕
+   464→   612→                  </button>
+   465→   613→                )}
+   466→   614→              </div>
+   467→   615→
+   468→   616→              {lastFiled && (
+   469→   617→                <div className="fade-in-up mb-3 rounded-2xl border-2 border-[#c9a227] bg-[#fdf6dd] p-4 shadow-[0_8px_24px_rgba(201,162,39,0.18)]">
+   470→   618→                  <p className="flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]">
+   471→   619→                    <MapPin size={14} /> سند بایگانی شد — موقعیت فیزیکی برای یافتن فوری
+   472→   620→                  </p>
+   473→   621→                  <p className="mt-2 text-center text-lg font-black tracking-wide text-[#0e7a4a]" dir="ltr">{lastFiled.doc.code}</p>
+   474→   622→                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+   475→   623→                    <KeyValue k="زونکن" v={lastFiled.doc.binderCode} />
+   476→   624→                    <KeyValue k="کابینت" v={faNum(lastFiled.binder.cabinet)} />
+   477→   625→                    <KeyValue k="طبقه" v={faNum(lastFiled.binder.shelf)} />
+   478→   626→                    <KeyValue k="ترتیب در زونکن" v={faNum(lastFiled.doc.seq)} />
+   479→   627→                  </div>
+   480→   628→                  <p className="mt-2 text-center text-[11px] font-bold text-[#8a5a2b]">
+   481→   629→                    🗄️ کابینت {faNum(lastFiled.binder.cabinet)} → طبقهٔ {faNum(lastFiled.binder.shelf)} → زونکن «{lastFiled.binder.title}» → جایگاه {faNum(lastFiled.doc.seq)}
+   482→   630→                    {' '}— {lastFiled.pickReason}
+   483→   631→                  </p>
+   484→   632→                  {lastFiled.itemsCreated > 0 && (
+   485→   633→                    <p className="mt-1 text-center text-[11px] font-black text-[#0e7a4a]">
+   486→   634→                      📋 {faNum(lastFiled.itemsCreated)} قلم کالا در سجل سند ثبت شد — تاریخچهٔ کالا از «کارت کالا» قابل ردیابی است
+   487→   635→                    </p>
+   488→   636→                  )}
+   489→   637→                  <button onClick={() => setLastFiled(null)} className="mt-2 w-full rounded-xl border border-[#c9a227]/50 py-1.5 text-[11px] font-bold text-[#8a5a2b]">متوجه شدم</button>
+   490→   638→                </div>
+   491→   639→              )}
+   492→   640→
+   493→   641→              <div className="scroll-gold max-h-[46vh] space-y-2 overflow-y-auto pl-1">
+   494→   642→                {docs.length === 0 && <EmptyState emoji="🗂️" title="سندی یافت نشد" hint="با «ثبت سند در آرشیو» نخستین سند را بایگانی کنید" />}
+   495→   643→                {docs.map((d) => {
+   496→   644→                  const t = DOC_TYPES[d.docType] || DOC_TYPES.OTHER
+   497→   645→                  const b = binderById.get(d.binderId)
+   498→   646→                  const items = itemsMap[d.id]
+   499→   647→                  const expanded = expandedDoc === d.id
+   500→   648→                  const lc = LIFECYCLE_META[d.lifecycle] || LIFECYCLE_META.ACTIVE
+   501→   649→                  const pm = PAYMENT_META[d.paymentStatus] || PAYMENT_META.UNPAID
+   502→   650→                  return (
+   503→   651→                    <div
+   504→   652→                      key={d.id}
+   505→   653→                      onClick={() => openDoc(d.id)}
+   506→   654→                      className={cn('glow-card cursor-pointer rounded-2xl bg-white/80 p-3.5 transition hover:shadow-md', expanded && 'ring-1 ring-[#c9a227]/60', d.legalHold && 'border-2 border-[#b3372f]/40')}
+   507→   655→                    >
+   508→   656→                      <div className="flex flex-wrap items-start justify-between gap-2">
+   509→   657→                        <div className="min-w-0 flex-1">
+   510→   658→                          <p className="truncate text-sm font-black">
+   511→   659→                            <ChevronDown size={14} className={cn('ml-1 inline transition-transform', expanded && 'rotate-180')} />
+   512→   660→                            {t.emoji} {d.title}
+   513→   661→                            <span className="mr-2 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{d.code}</span>
+   514→   662→                          </p>
+   515→   663→                          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+   516→   664→                            <span>{d.party}</span>
+   517→   665→                            <span>• {formatJalaliShort(d.docDate)}</span>
+   518→   666→                            {d.amount > 0 && <span>• {faMoney(d.amount)} تومان</span>}
+   519→   667→                            {d.invoiceNo && (
+   520→   668→                              <span className="rounded-md bg-[#0e7a4a]/10 px-1.5 py-0.5 font-black text-[#0e7a4a]">🧾 فاکتور {d.invoiceNo}</span>
+   521→   669→                            )}
+   522→   670→                            {d.refOrderCode && <span>• سفارش {d.refOrderCode}</span>}
+   523→   671→                          </p>
+   524→   672→                          {/* chips آرشیو ۲٫۰ */}
+   525→   673→                          <p className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-bold">
+   526→   674→                            <span className="rounded-full px-2 py-0.5" style={{ color: lc.color, background: lc.bg }}>{lc.label}</span>
+   527→   675→                            <span className="rounded-full px-2 py-0.5" style={{ color: pm.color, background: `${pm.color}1a` }}>{pm.label}</span>
+   528→   676→                            {d.repName && <span className="rounded-full bg-[#77934a]/15 px-2 py-0.5 text-[#5c7236]">👤 {d.repName}</span>}
+   529→   677→                            {d.holooInvoiceNo && <span className="rounded-full bg-[#8a5a2b]/10 px-2 py-0.5 text-[#8a5a2b]" title="فاکتور خرید در هلو">🏷 {d.holooInvoiceNo}</span>}
+   530→   678→                            {d.holooReceiptNo && <span className="rounded-full bg-[#8a5a2b]/10 px-2 py-0.5 text-[#8a5a2b]" title="رسید پرداخت در هلو">🧾 {d.holooReceiptNo}</span>}
+   531→   679→                            {d.legalHold && <span className="rounded-full bg-[#b3372f]/15 px-2 py-0.5 font-black text-[#b3372f]">🔒 نگهداری حقوقی</span>}
+   532→   680→                          </p>
+   533→   681→                          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-[#0e7a4a]">
+   534→   682→                            <MapPin size={11} /> زونکن {d.binderCode}
+   535→   683→                            {b && <> — کابینت {faNum(b.cabinet)} • طبقهٔ {faNum(b.shelf)} • جایگاه {faNum(d.seq)}</>}
+   536→   684→                          </p>
+   537→   685→                          {d.status === 'BORROWED' && (
+   538→   686→                            <p className="mt-1 text-[10px] font-black text-[#c96f4a]">✋ امانت‌گرفته توسط {d.borrowByName}</p>
+   539→   687→                          )}
+   540→   688→                        </div>
+   541→   689→                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+   542→   690→                          {d.status === 'IN_BINDER' && <Pill label="در زونکن" color="#0e7a4a" bg="#0e7a4a/10" />}
+   543→   691→                          {d.status === 'BORROWED' && <Pill label="امانتی" color="#c96f4a" bg="#c96f4a/10" />}
+   544→   692→                          {d.status === 'DESTROYED' && <Pill label="خارج‌شده" color="#6b7280" bg="#6b7280/10" />}
+   545→   693→                          {d.status === 'IN_BINDER' && canRegister && (
+   546→   694→                            <button
+   547→   695→                              onClick={(e) => { e.stopPropagation(); act(d.id, { action: 'borrow' }, 'امانت ثبت شد — پس از استفاده بازگردانید') }}
+   548→   696→                              className="flex items-center gap-1 rounded-lg bg-[#c96f4a]/10 px-2.5 py-1.5 text-[10px] font-black text-[#c96f4a]"
+   549→   697→                            >
+   550→   698→                              <Hand size={12} /> امانت می‌برم
+   551→   699→                            </button>
+   552→   700→                          )}
+   553→   701→                          {d.status === 'BORROWED' && (
+   554→   702→                            <button
+   555→   703→                              onClick={(e) => { e.stopPropagation(); act(d.id, { action: 'return' }, 'سند به زونکن بازگشت ✅') }}
+   556→   704→                              className="flex items-center gap-1 rounded-lg bg-[#0e7a4a]/10 px-2.5 py-1.5 text-[10px] font-black text-[#0e7a4a]"
+   557→   705→                            >
+   558→   706→                              <Undo2 size={12} /> بازگشت به زونکن
+   559→   707→                            </button>
+   560→   708→                          )}
+   561→
+   562→[showing lines 149-708 of 2155; use offset=709 with limit to continue reading]

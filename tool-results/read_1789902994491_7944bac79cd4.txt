@@ -1,0 +1,1695 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import {
+     7→  faMoney, faNum, formatJalaliFull, formatJalaliShort, jalaliToIso, todayIso, toJalaliParts,
+     8→  addDaysIso, daysBetween, weekdayName, jMonthLength, jMonthStartWeekday, J_MONTHS,
+     9→} from '@/lib/jalali'
+    10→import {
+    11→  resolveFlex, dueAlternatives, weekStartIso, SCOPE_LABELS, SEASON_NAMES, flexScopeDesc,
+    12→  type FlexRuleLite,
+    13→} from '@/lib/flex'
+    14→import {
+    15→  generateSchedule, resolvePeriodKey, PAY_PERIOD_LABELS, PAY_METHOD_LABELS,
+    16→  DEFAULT_SCHED_PARAMS, maxChequesFor,
+    17→  type SchedParams, type SchedOption, type PayLimitLite,
+    18→} from '@/lib/pay-scheduler'
+    19→import { CHEQUE_STATUSES } from '@/lib/constants'
+    20→import { SectionCard, Pill, EmptyState, Labeled, KeyValue, FaPriceInput } from '@/components/app/ui-bits'
+    21→import { JalaliDatePicker, useHolidays } from '@/components/app/jalali-widgets'
+    22→import { formatHijri, isoToHijri } from '@/lib/hijri'
+    23→import { Modal } from '@/components/views/Orders'
+    24→import { SciExplain } from '@/components/app/SciExplain'
+    25→import type { AppCtx } from '@/components/app/ui-bits'
+    26→import {
+    27→  Banknote, Plus, CheckCircle2, XCircle, Scissors, Handshake, AlertTriangle, CalendarDays,
+    28→  SlidersHorizontal, Sparkles, CalendarCheck, Wallet, Gauge, Trash2, Pencil, Trophy, ShieldCheck,
+    29→  Landmark, Eye,
+    30→} from 'lucide-react'
+    31→import { cn } from '@/lib/utils'
+    32→
+    33→type Cheque = {
+    34→  id: string; number: string; amount: number; orderCode: string; recipientName: string; recipientPhone: string
+    35→  writtenAt: string; dueDate: string; periodDays: number; status: string; ownerNote: string; createdByName: string
+    36→  createdById?: string
+    37→  history: any[]; isFriday: boolean; overdue: boolean
+    38→  sayadSerial?: string; selfIssued?: boolean; holooReceiptNo?: string; repId?: string; repName?: string
+    39→}
+    40→type DueBucket = { count: number; amount: number }
+    41→type ChequeStats = {
+    42→  totalWritten: number; totalAmount: number; byStatus: Record<string, number>
+    43→  pendingOwner: DueBucket; waitingPickup: DueBucket; delivered: DueBucket; cleared: DueBucket
+    44→  dueToday: DueBucket; dueTomorrow: DueBucket; dueThisWeek: DueBucket; dueThisMonth: DueBucket
+    45→  overdue: number
+    46→  byStatusDue: Record<string, { today: DueBucket; tomorrow: DueBucket; week: DueBucket; month: DueBucket }>
+    47→}
+    48→type LimitRow = {
+    49→  id: string; period: string; dateKey: string; method: string; maxAmount: number; maxCheques: number
+    50→  note: string; used: number; usedCheques: number; overRatio: number; range: { start: string; end: string }
+    51→}
+    52→type PaymentRow = {
+    53→  id: string; kind: string; amount: number; orderId: string; orderCode: string; providerName: string
+    54→  repId: string; repName: string; paidAt: string; holooReceiptNo: string; note: string
+    55→  createdById: string; createdByName: string; history: any[]
+    56→}
+    57→type PaymentStats = {
+    58→  count: number; total: number
+    59→  today: { count: number; amount: number }; month: { count: number; amount: number }
+    60→  byKind: Record<string, { count: number; amount: number }>
+    61→}
+    62→type RepLite = { id: string; fullName: string; providerName: string; active: boolean }
+    63→type SchedResult = ReturnType<typeof generateSchedule>
+    64→
+    65→const WEEKDAY_SHORT = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج']
+    66→function wdShort(iso: string): string {
+    67→  const d = new Date(iso + 'T12:00:00').getDay()
+    68→  return WEEKDAY_SHORT[d === 6 ? 0 : d + 1]
+    69→}
+    70→/** compact money for calendar cells: ۸۵م / ۱٫۲م / ۹۵۰ه */
+    71→function faMoneyShort(v: number): string {
+    72→  if (v >= 1_000_000_000) return `${faNum((v / 1_000_000_000).toFixed(1))} میلیارد`
+    73→  if (v >= 1_000_000) return `${faNum(Math.round(v / 1_000_000))}م`
+    74→  if (v >= 1000) return `${faNum(Math.round(v / 1000))}ه`
+    75→  return faNum(v)
+    76→}
+    77→
+    78→const PAY_KIND_META: Record<string, { label: string; icon: string; color: string }> = {
+    79→  CASH: { label: 'نقدی', icon: '💵', color: '#0e7a4a' },
+    80→  POS: { label: 'کارت‌خوان', icon: '🏧', color: '#8a5a2b' },
+    81→  TRANSFER: { label: 'کارت به کارت / حواله', icon: '🔁', color: '#77934a' },
+    82→  OTHER: { label: 'سایر', icon: '📄', color: '#6d7a6e' },
+    83→}
+    84→
+    85→const TABS = [
+    86→  { key: 'cheques', label: 'چک‌ها', icon: <Banknote size={14} /> },
+    87→  { key: 'payments', label: 'پرداخت‌ها', icon: <Wallet size={14} /> },
+    88→  { key: 'limits', label: 'سقف‌ها', icon: <ShieldCheck size={14} /> },
+    89→  { key: 'advisor', label: 'مشاور پرداخت', icon: <Sparkles size={14} /> },
+    90→] as const
+    91→type TabKey = (typeof TABS)[number]['key']
+    92→
+    93→export default function ChequesView({ ctx }: { ctx: AppCtx }) {
+    94→  const [cheques, setCheques] = useState<Cheque[]>([])
+    95→  const [flexRules, setFlexRules] = useState<FlexRuleLite[]>([])
+    96→  const [stats, setStats] = useState<ChequeStats | null>(null)
+    97→  const [limitsUsage, setLimitsUsage] = useState<LimitRow[]>([])
+    98→  const [payments, setPayments] = useState<PaymentRow[]>([])
+    99→  const [payStats, setPayStats] = useState<PaymentStats | null>(null)
+   100→  const [limits, setLimits] = useState<LimitRow[]>([])
+   101→  const [schedParams, setSchedParams] = useState<SchedParams>(DEFAULT_SCHED_PARAMS)
+   102→  const [reps, setReps] = useState<RepLite[]>([])
+   103→
+   104→  const [tab, setTab] = useState<TabKey>('cheques')
+   105→  const [createOpen, setCreateOpen] = useState(false)
+   106→  const [standaloneOpen, setStandaloneOpen] = useState(false)
+   107→  const [payOpen, setPayOpen] = useState(false)
+   108→  const [flexOpen, setFlexOpen] = useState(false)
+   109→  const [filter, setFilter] = useState('')
+   110→  const [detailId, setDetailId] = useState<string | null>(null)
+   111→  const [sched, setSched] = useState<SchedResult | null>(null)
+   112→
+   113→  const load = () =>
+   114→    Promise.all([
+   115→      api<{ cheques: Cheque[]; stats?: ChequeStats; limitsUsage?: LimitRow[] }>('/api/cheques?stats=1'),
+   116→      api<{ rules: FlexRuleLite[] }>('/api/cheques/flexibility'),
+   117→      api<{ payments: PaymentRow[]; stats: PaymentStats }>('/api/payments'),
+   118→      api<{ limits: LimitRow[]; params: SchedParams }>('/api/paylimits'),
+   119→    ]).then(([c, f, p, l]) => {
+   120→      setCheques(c.cheques)
+   121→      if (c.stats) setStats(c.stats)
+   122→      setLimitsUsage(c.limitsUsage || [])
+   123→      setFlexRules(f.rules)
+   124→      setPayments(p.payments)
+   125→      setPayStats(p.stats)
+   126→      setLimits(l.limits)
+   127→      if (l.params) setSchedParams(l.params)
+   128→    })
+   129→  useEffect(() => { load() }, [])
+   130→
+   131→  // نمایندگان (برای انتخاب در چک/پرداخت) — در نبود دسترسی آرشیو، بی‌صدا خالی می‌ماند
+   132→  useEffect(() => {
+   133→    api<{ reps: RepLite[] }>('/api/sales-reps').then((d) => setReps(d.reps || [])).catch(() => setReps([]))
+   134→  }, [])
+   135→
+   136→  const holidays = useHolidays()
+   137→  const role = ctx.user!.role
+   138→  const canCreate = ['GM', 'OM', 'ACC'].includes(role)
+   139→  const canFlex = ['GM', 'OM', 'ACC', 'OWNER'].includes(role)
+   140→  const isOwner = role === 'OWNER'
+   141→  const isExec = ['OWNER', 'GM', 'OM', 'ADMIN'].includes(role)
+   142→  const canStandalone = isExec || role === 'ACC'
+   143→  const canLimits = isExec || role === 'PM'
+   144→  const detailCheque = cheques.find((c) => c.id === detailId) || null
+   145→
+   146→  // calendar state: month view with per-day cheque totals + selected-day detail
+   147→  const now = toJalaliParts(todayIso())
+   148→  const [calJy, setCalJy] = useState(now.jy)
+   149→  const [calJm, setCalJm] = useState(now.jm)
+   150→  const [selDay, setSelDay] = useState<string | null>(null)
+   151→
+   152→  const byDate = useMemo(() => {
+   153→    const m = new Map<string, Cheque[]>()
+   154→    for (const c of cheques) {
+   155→      if (['CLEARED', 'REJECTED', 'RETURNED'].includes(c.status)) continue
+   156→      if (!m.has(c.dueDate)) m.set(c.dueDate, [])
+   157→      m.get(c.dueDate)!.push(c)
+   158→    }
+   159→    return m
+   160→  }, [cheques])
+   161→
+   162→  const monthTotal = useMemo(() => {
+   163→    let sum = 0
+   164→    for (const [iso, cs] of byDate) {
+   165→      const { jy, jm } = toJalaliParts(iso)
+   166→      if (jy === calJy && jm === calJm) sum += cs.reduce((s, c) => s + c.amount, 0)
+   167→    }
+   168→    return sum
+   169→  }, [byDate, calJy, calJm])
+   170→
+   171→  const filtered = cheques.filter((c) => !filter || c.status === filter)
+   172→
+   173→  const act = async (id: string, body: any, msg: string) => {
+   174→    try {
+   175→      await api(`/api/cheques/${id}`, { method: 'PATCH', body })
+   176→      toast.success(msg)
+   177→      await load()
+   178→      ctx.refreshNotifications()
+   179→    } catch (e: any) { toast.error(e.message) }
+   180→  }
+   181→
+   182→  const selCheques = selDay ? byDate.get(selDay) || [] : []
+   183→  const selFlex = selDay ? resolveFlex(flexRules, selDay) : null
+   184→  const selPreview = selDay && sched ? sched.overlay.filter((o) => o.dateIso === selDay) : []
+   185→
+   186→  // کارت‌های آمار — نگارش‌شده / آمادهٔ تحویل / تحویل‌شده / پاس‌شده
+   187→  const statCards = stats
+   188→    ? [
+   189→        { label: 'نگارش‌شده', st: null, val: stats.totalWritten, amount: stats.totalAmount, color: '#77934a', hint: stats.byStatus.PENDING_OWNER ? `${faNum(stats.byStatus.PENDING_OWNER)} در انتظار امضا` : undefined },
+   190→        { label: 'آمادهٔ تحویل (امضاشده)', st: 'SIGNED', val: stats.byStatus.SIGNED || 0, amount: stats.waitingPickup.amount, color: '#0e7a4a' },
+   191→        { label: 'تحویل‌شده', st: 'DELIVERED', val: stats.byStatus.DELIVERED || 0, amount: stats.delivered.amount, color: '#a04c2a' },
+   192→        { label: 'پاس‌شده', st: 'CLEARED', val: stats.byStatus.CLEARED || 0, amount: stats.cleared.amount, color: '#3f6212' },
+   193→      ]
+   194→    : []
+   195→
+   196→  return (
+   197→    <div className="space-y-4">
+   198→      {/* ── کارت‌های آمار + نوار سقف‌ها ── */}
+   199→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   200→        {statCards.map((s) => {
+   201→          const minis = s.st && stats?.byStatusDue[s.st]
+   202→          const miniItems: [string, DueBucket][] = minis
+   203→            ? [['امروز', minis.today], ['فردا', minis.tomorrow], ['هفته', minis.week], ['ماه', minis.month]]
+   204→            : [['امروز', stats?.dueToday || { count: 0, amount: 0 }], ['فردا', stats?.dueTomorrow || { count: 0, amount: 0 }], ['هفته', stats?.dueThisWeek || { count: 0, amount: 0 }], ['ماه', stats?.dueThisMonth || { count: 0, amount: 0 }]]
+   205→          return (
+   206→            <div key={s.label} className="glow-card rounded-2xl bg-card p-4">
+   207→              <div className="flex items-center justify-between">
+   208→                <p className="text-xl font-black" style={{ color: s.color }}>{faNum(s.val)}</p>
+   209→                <p className="text-[10px] font-bold text-muted-foreground">{faMoneyShort(s.amount)}</p>
+   210→              </div>
+   211→              <p className="mt-0.5 text-xs font-bold">{s.label}</p>
+   212→              {s.hint && <p className="text-[10px] text-[#a16207]">{s.hint}</p>}
+   213→              <div className="mt-2 grid grid-cols-4 gap-1 border-t border-border/60 pt-1.5 text-center">
+   214→                {miniItems.map(([lbl, b]) => (
+   215→                  <div key={lbl} title={`${lbl}: ${faMoney(b.amount)} تومان (${faNum(b.count)} فقره)`}>
+   216→                    <p className="text-[8.5px] font-bold text-muted-foreground">{lbl}</p>
+   217→                    <p className="text-[10px] font-black" style={{ color: b.amount > 0 ? s.color : undefined }}>{b.amount > 0 ? faMoneyShort(b.amount) : '—'}</p>
+   218→                  </div>
+   219→                ))}
+   220→              </div>
+   221→            </div>
+   222→          )
+   223→        })}
+   224→      </div>
+   225→
+   226→      {/* نوار سقف‌ها (مصرف دوره جاری) */}
+   227→      {limitsUsage.length > 0 && (
+   228→        <div className="glow-card flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-card px-4 py-2.5">
+   229→          <span className="flex items-center gap-1 text-[11px] font-black text-[#8a5a2b]"><ShieldCheck size={13} /> سقف‌های فعال</span>
+   230→          {limitsUsage.map((l) => {
+   231→            const hot = l.overRatio > 90
+   232→            return (
+   233→              <div key={l.id} className="min-w-[150px] flex-1" title={`${PAY_PERIOD_LABELS[l.period] || l.period} • ${PAY_METHOD_LABELS[l.method] || l.method} • ${faMoney(l.used)} از ${faMoney(l.maxAmount)} تومان`}>
+   234→                <div className="flex items-center justify-between text-[9.5px] font-bold">
+   235→                  <span>{PAY_PERIOD_LABELS[l.period] || l.period} — {PAY_METHOD_LABELS[l.method] || l.method}</span>
+   236→                  <span style={{ color: hot ? '#b3372f' : undefined }}>{faNum(l.overRatio)}٪</span>
+   237→                </div>
+   238→                <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-muted">
+   239→                  <div className={cn('h-full rounded-full transition-all', hot ? 'bg-[#b3372f]' : 'bg-[#0e7a4a]/70')} style={{ width: `${Math.min(100, l.overRatio)}%` }} />
+   240→                </div>
+   241→              </div>
+   242→            )
+   243→          })}
+   244→        </div>
+   245→      )}
+   246→
+   247→      {/* ── تب‌ها ── */}
+   248→      <div className="flex flex-wrap gap-1.5">
+   249→        {TABS.map((t) => (
+   250→          <button
+   251→            key={t.key}
+   252→            onClick={() => setTab(t.key)}
+   253→            className={cn(
+   254→              'flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-extrabold transition',
+   255→              tab === t.key ? 'bg-primary text-white shadow' : 'border border-border bg-card text-foreground/70 hover:border-[#c9a227]',
+   256→            )}
+   257→          >
+   258→            {t.icon} {t.label}
+   259→          </button>
+   260→        ))}
+   261→      </div>
+   262→
+   263→      {/* ═══════════ تب چک‌ها — تقویم + فهرست (همهٔ قابلیت‌های قبلی) ═══════════ */}
+   264→      {tab === 'cheques' && (
+   265→        <>
+   266→          <div className="grid gap-4 lg:grid-cols-5">
+   267→            <SectionCard
+   268→              title="تقویم سررسید چک‌ها و پرداخت‌ها"
+   269→              subtitle={`جمع سررسیدهای این ماه: ${faMoney(monthTotal)} تومان — روی هر روز بزنید`}
+   270→              icon={<CalendarDays size={18} />}
+   271→              actions={<SciExplain k="hijrical" />}
+   272→              className="lg:col-span-2"
+   273→            >
+   274→              <div className="flex justify-center [&_[data-cal]]:!w-full">
+   275→                <ChequeCalendar
+   276→                  byDate={byDate} holidays={holidays} flexRules={flexRules}
+   277→                  schedOverlay={sched?.overlay}
+   278→                  jy={calJy} jm={calJm} setJy={setCalJy} setJm={setCalJm}
+   279→                  selDay={selDay} onPick={(iso: string) => setSelDay(iso === selDay ? null : iso)}
+   280→                />
+   281→              </div>
+   282→              <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+   283→                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#c9a227]" /> چک</span>
+   284→                {sched && <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full border border-dashed border-[#b8860b] bg-[#c9a227]/50" /> پیش‌نمایش مشاور پرداخت</span>}
+   285→                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#b3372f]" /> تعطیل رسمی</span>
+   286→                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#1c2a22]/30" /> جمعه</span>
+   287→              </div>
+   288→
+   289→              {/* selected-day detail */}
+   290→              {selDay && (
+   291→                <div className="fade-in-up mt-3 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-3">
+   292→                  <div className="flex flex-wrap items-center justify-between gap-2">
+   293→                    <div>
+   294→                      <p className="text-xs font-black">{formatJalaliFull(selDay)}</p>
+   295→                      {(() => { const hl = formatHijri(selDay); return hl ? <p className="text-[9px] font-bold text-[#8a6d10]">🌙 هجری: {hl}</p> : null })()}
+   296→                    </div>
+   297→                    {holidays.get(selDay) && <Pill label={holidays.get(selDay)!} color="#b3372f" bg="#b3372f/10" />}
+   298→                    {!holidays.get(selDay) && weekdayName(selDay) === 'جمعه' && <Pill label="جمعه — بانک‌ها تعطیل" color="#b3372f" bg="#b3372f/10" />}
+   299→                  </div>
+   300→                  {selFlex && (
+   301→                    <p className="mt-1 text-[11px] text-muted-foreground">
+   302→                      انعطاف این روز: <span className="font-black text-[#8a5a2b]">±{faNum(selFlex.days)} روز</span>
+   303→                      {selFlex.rule && ` — مبنای قانون: ${selFlex.rule.label} (${SCOPE_LABELS[selFlex.rule.scope] || selFlex.rule.scope})`}
+   304→                    </p>
+   305→                  )}
+   306→                  {selPreview.length > 0 && (
+   307→                    <p className="mt-1 rounded-lg bg-[#c9a227]/15 px-2 py-1 text-[10.5px] font-bold text-[#8a5a2b]">
+   308→                      ✨ پیش‌نمایش مشاور پرداخت: {selPreview.map((p) => `گزینهٔ ${faNum(p.option === 'A' ? 1 : p.option === 'B' ? 2 : 3)} — ${faMoneyShort(p.amount)}`).join(' • ')}
+   309→                    </p>
+   310→                  )}
+   311→                  {selCheques.length === 0 ? (
+   312→                    <p className="mt-2 text-[11px] text-muted-foreground">چکی برای این روز ثبت نشده است.</p>
+   313→                  ) : (
+   314→                    <div className="mt-2 space-y-1.5">
+   315→                      {selCheques.map((c) => (
+   316→                        <div key={c.id} className="flex items-center justify-between rounded-xl bg-white/70 px-2.5 py-1.5 text-[11px]">
+   317→                          <span className="font-bold">{c.recipientName}</span>
+   318→                          <span className="font-black text-[#8a5a2b]">{faMoney(c.amount)}</span>
+   319→                        </div>
+   320→                      ))}
+   321→                      <div className="flex items-center justify-between border-t border-[#c9a227]/30 pt-1.5 text-[11px] font-black">
+   322→                        <span>جمع روز</span>
+   323→                        <span className="text-[#0e7a4a]">{faMoney(selCheques.reduce((s, c) => s + c.amount, 0))} تومان</span>
+   324→                      </div>
+   325→                    </div>
+   326→                  )}
+   327→                </div>
+   328→              )}
+   329→            </SectionCard>
+   330→
+   331→            <SectionCard
+   332→              title="چک‌ها و پرداخت‌ها"
+   333→              subtitle="چرخهٔ کامل: ثبت مدیر کل → برنامه‌ریز سررسید → امضای مالک → تحویل → وصول"
+   334→              icon={<Banknote size={18} />}
+   335→              className="lg:col-span-3"
+   336→              actions={
+   337→                <div className="flex gap-1.5">
+   338→                  {canFlex && (
+   339→                    <button onClick={() => setFlexOpen((v) => !v)} className="flex items-center gap-1.5 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-2 text-xs font-extrabold text-[#8a5a2b]">
+   340→                      <SlidersHorizontal size={14} /> انعطاف روزها
+   341→                    </button>
+   342→                  )}
+   343→                  {canStandalone && (
+   344→                    <button onClick={() => setStandaloneOpen(true)} className="flex items-center gap-1.5 rounded-xl border border-[#0e7a4a]/40 bg-[#0e7a4a]/10 px-3 py-2 text-xs font-extrabold text-[#0e7a4a]">
+   345→                      <Plus size={14} /> ثبت چک مستقل
+   346→                    </button>
+   347→                  )}
+   348→                  {canCreate && (
+   349→                    <button onClick={() => setCreateOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   350→                      <Plus size={14} /> چک جدید
+   351→                    </button>
+   352→                  )}
+   353→                </div>
+   354→              }
+   355→            >
+   356→              {flexOpen && canFlex && <FlexPanel rules={flexRules} onChanged={() => api<{ rules: FlexRuleLite[] }>('/api/cheques/flexibility').then((d) => setFlexRules(d.rules))} />}
+   357→
+   358→              <div className="mb-3 flex flex-wrap gap-1.5">
+   359→                <FilterChip active={!filter} label="همه" onClick={() => setFilter('')} />
+   360→                {Object.entries(CHEQUE_STATUSES).map(([k, v]) => (
+   361→                  <FilterChip key={k} active={filter === k} label={v.label} color={v.color} onClick={() => setFilter(k)} />
+   362→                ))}
+   363→              </div>
+   364→              <div className="scroll-gold max-h-[46vh] space-y-2 overflow-y-auto pl-1">
+   365→                {filtered.length === 0 && <EmptyState emoji="🧾" title="چکی ثبت نشده" />}
+   366→                {filtered.map((c) => {
+   367→                  const st = CHEQUE_STATUSES[c.status]
+   368→                  const fx = resolveFlex(flexRules, c.dueDate)
+   369→                  return (
+   370→                    <div key={c.id} onClick={() => setDetailId(c.id)} className="glow-card cursor-pointer rounded-2xl bg-white/80 p-3.5 transition hover:ring-1 hover:ring-[#c9a227]/50">
+   371→                      <div className="flex flex-wrap items-center justify-between gap-2">
+   372→                        <div>
+   373→                          <p className="text-sm font-black">
+   374→                            چک {c.number ? `شماره ${faNum(c.number)}` : 'بدون شماره'} — {faMoney(c.amount)} تومان
+   375→                            {c.selfIssued && <span className="mr-1.5 rounded-md bg-[#c9a227]/20 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]">مستقل</span>}
+   376→                          </p>
+   377→                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+   378→                            {c.recipientName} {c.orderCode && `• سفارش ${c.orderCode}`} • سررسید {formatJalaliFull(c.dueDate)} ({faNum(daysBetween(c.dueDate, c.writtenAt))} روز از نگارش)
+   379→                          </p>
+   380→                          {(c.sayadSerial || c.repName || c.holooReceiptNo) && (
+   381→                            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+   382→                              {c.sayadSerial && <span dir="ltr" className="font-mono text-[9.5px]">صیاد: {c.sayadSerial}</span>}
+   383→                              {c.repName && <span>👤 {c.repName}</span>}
+   384→                              {c.holooReceiptNo && <span>هلو: {faNum(c.holooReceiptNo)}</span>}
+   385→                            </p>
+   386→                          )}
+   387→                        </div>
+   388→                        <Pill label={st.label} color={st.color} bg={st.bg} />
+   389→                      </div>
+   390→                      {(c.isFriday || holidays.get(c.dueDate)) && !['CLEARED', 'REJECTED'].includes(c.status) && (
+   391→                        <p className="mt-1.5 rounded-lg bg-[#b3372f]/10 px-2 py-1 text-[11px] font-black text-[#b3372f]">
+   392→                          ⚠️ سررسید روی روز تعطیل است ({holidays.get(c.dueDate) || 'جمعه'}) — هنگام امضا اصلاح شود
+   393→                          {fx.days > 0 && ` — پنجرهٔ مجاز جابه‌جایی: ±${faNum(fx.days)} روز`}
+   394→                        </p>
+   395→                      )}
+   396→                      {c.status === 'SIGNED' && ['GM', 'ACC'].includes(role) && (
+   397→                        <button onClick={(e) => { e.stopPropagation(); act(c.id, { action: 'deliver', detail: ctx.user!.name }, 'چک تحویل شد — وصول را پیگیری کنید 🤝') }} className="mt-2 flex items-center gap-1 rounded-lg bg-[#a04c2a]/10 px-3 py-1.5 text-[11px] font-black text-[#a04c2a]">
+   398→                          <Handshake size={13} /> تحویل به نماینده
+   399→                        </button>
+   400→                      )}
+   401→                      {c.status === 'DELIVERED' && ['OWNER', 'ACC', 'GM'].includes(role) && (
+   402→                        <div className="mt-2 flex gap-1.5">
+   403→                          <button onClick={(e) => { e.stopPropagation(); act(c.id, { action: 'clear' }, 'چک پاس شد ✅') }} className="flex items-center gap-1 rounded-lg bg-[#3f6212]/10 px-3 py-1.5 text-[11px] font-black text-[#3f6212]">
+   404→                            <CheckCircle2 size={13} /> وصول شد
+   405→                          </button>
+   406→                          <button onClick={(e) => { e.stopPropagation(); act(c.id, { action: 'bounce' }, 'برگشتی ثبت شد') }} className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-3 py-1.5 text-[11px] font-black text-[#b3372f]">
+   407→                            <AlertTriangle size={13} /> برگشت خورد
+   408→                          </button>
+   409→                        </div>
+   410→                      )}
+   411→                    </div>
+   412→                  )
+   413→                })}
+   414→              </div>
+   415→            </SectionCard>
+   416→          </div>
+   417→
+   418→          {/* Owner panel */}
+   419→          {isOwner && (
+   420→            <SectionCard title="دسترسی مالک — امضا و تصمیم" subtitle="چک‌های پیشنهادی مدیر کل اینجاست؛ می‌توانید تاریخ را با پنجرهٔ انعطاف عوض کنید یا به چند چک بشکنید" icon={<CheckCircle2 size={18} />}>
+   421→              {cheques.filter((c) => c.status === 'PENDING_OWNER').length === 0 ? (
+   422→                <EmptyState emoji="✅" title="چکی در انتظار امضای شما نیست" />
+   423→              ) : (
+   424→                <div className="space-y-3">
+   425→                  {cheques.filter((c) => c.status === 'PENDING_OWNER').map((c) => (
+   426→                    <div key={c.id} className="rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-4">
+   427→                      <div className="flex flex-wrap items-center justify-between gap-2">
+   428→                        <div>
+   429→                          <p className="text-sm font-black">{faMoney(c.amount)} تومان → {c.recipientName}</p>
+   430→                          <p className="text-[11px] text-muted-foreground">
+   431→                            {c.recipientPhone && `${faNum(c.recipientPhone)} • `}
+   432→                            نوشته: {formatJalaliShort(c.writtenAt)} • سررسید پیشنهادی: {formatJalaliFull(c.dueDate)} ({faNum(c.periodDays)} روز)
+   433→                            {c.orderCode && ` • سفارش ${c.orderCode}`}
+   434→                          </p>
+   435→                          {(c.isFriday || holidays.get(c.dueDate)) && (
+   436→                            <p className="mt-1 text-[11px] font-black text-[#b3372f]">⚠️ سررسید پیشنهادی روی تعطیل است — تاریخ را اصلاح کنید</p>
+   437→                          )}
+   438→                        </div>
+   439→                        <OwnerActions cheque={c} holidays={holidays} flexRules={flexRules} act={act} />
+   440→                      </div>
+   441→                    </div>
+   442→                  ))}
+   443→                </div>
+   444→              )}
+   445→            </SectionCard>
+   446→          )}
+   447→        </>
+   448→      )}
+   449→
+   450→      {/* ═══════════ تب پرداخت‌ها ═══════════ */}
+   451→      {tab === 'payments' && (
+   452→        <SectionCard
+   453→          title="پرداخت‌های غیرچکی"
+   454→          subtitle="نقدی، کارت‌خوان، کارت به کارت — ثبت مستقل یا متصل به سفارش، با نمایندهٔ طرف‌حساب و رسید هلو"
+   455→          icon={<Wallet size={18} />}
+   456→          actions={
+   457→            canStandalone && (
+   458→              <button onClick={() => setPayOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   459→                <Plus size={14} /> ثبت پرداخت
+   460→              </button>
+   461→            )
+   462→          }
+   463→        >
+   464→          {payStats && (
+   465→            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+   466→              {[
+   467→                { l: 'تعداد پرداخت‌ها', v: faNum(payStats.count), c: '#77934a' },
+   468→                { l: 'جمع کل', v: faMoneyShort(payStats.total), c: '#0e7a4a' },
+   469→                { l: 'امروز', v: `${faMoneyShort(payStats.today.amount)} (${faNum(payStats.today.count)})`, c: '#a04c2a' },
+   470→                { l: 'این ماه', v: `${faMoneyShort(payStats.month.amount)} (${faNum(payStats.month.count)})`, c: '#8a5a2b' },
+   471→              ].map((s) => (
+   472→                <div key={s.l} className="rounded-2xl bg-muted/40 p-3 text-center">
+   473→                  <p className="text-base font-black" style={{ color: s.c }}>{s.v}</p>
+   474→                  <p className="text-[10px] font-bold text-muted-foreground">{s.l}</p>
+   475→                </div>
+   476→              ))}
+   477→            </div>
+   478→          )}
+   479→          <div className="scroll-gold max-h-[52vh] space-y-2 overflow-y-auto pl-1">
+   480→            {payments.length === 0 && <EmptyState emoji="💸" title="پرداختی ثبت نشده" hint="با دکمهٔ «ثبت پرداخت» اولین پرداخت نقدی/کارت‌خوان را ثبت کنید" />}
+   481→            {payments.map((p) => {
+   482→              const km = PAY_KIND_META[p.kind] || PAY_KIND_META.OTHER
+   483→              return (
+   484→                <div key={p.id} className="glow-card rounded-2xl bg-white/80 p-3.5">
+   485→                  <div className="flex flex-wrap items-center justify-between gap-2">
+   486→                    <div>
+   487→                      <p className="text-sm font-black">
+   488→                        {km.icon} {faMoney(p.amount)} تومان <span className="text-xs font-bold" style={{ color: km.color }}>({km.label})</span>
+   489→                      </p>
+   490→                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+   491→                        {p.providerName || 'بدون طرف‌حساب'} {p.orderCode && `• سفارش ${p.orderCode}`} • {formatJalaliFull(p.paidAt)}
+   492→                      </p>
+   493→                      {(p.repName || p.holooReceiptNo || p.note) && (
+   494→                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+   495→                          {p.repName && <span>👤 {p.repName}</span>}
+   496→                          {p.holooReceiptNo && <span>هلو: {faNum(p.holooReceiptNo)}</span>}
+   497→                          {p.note && <span>📝 {p.note}</span>}
+   498→                        </p>
+   499→                      )}
+   500→                    </div>
+   501→                    <div className="flex items-center gap-2">
+   502→                      <Pill label={km.label} color={km.color} />
+   503→                      {(p.createdById === ctx.user!.id || isExec) && (
+   504→                        <button
+   505→                          onClick={() => { if (confirm('این پرداخت حذف شود؟')) api(`/api/payments?id=${p.id}`, { method: 'DELETE' }).then(() => { toast.success('پرداخت حذف شد'); load() }).catch((e) => toast.error(e.message)) }}
+   506→                          className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-2.5 py-1.5 text-[10.5px] font-black text-[#b3372f]"
+   507→                        >
+   508→                          <Trash2 size={12} /> حذف
+   509→                        </button>
+   510→                      )}
+   511→                    </div>
+   512→                  </div>
+   513→                </div>
+   514→              )
+   515→            })}
+   516→          </div>
+   517→        </SectionCard>
+   518→      )}
+   519→
+   520→      {/* ═══════════ تب سقف‌ها ═══════════ */}
+   521→      {tab === 'limits' && (
+   522→        canLimits ? (
+   523→          <LimitsPanel limits={limits} params={schedParams} onChanged={load} />
+   524→        ) : (
+   525→          <EmptyState emoji="🔐" title="تنظیم سقف‌ها مخصوص مالک و مدیران است" hint="سقف‌های هزینه‌کرد پرداخت فقط با دسترسی «تعیین سقف هزینه‌کرد» قابل ویرایش است — اما در کارت‌های بالا مصرفشان را می‌بینید." />
+   526→        )
+   527→      )}
+   528→
+   529→      {/* ═══════════ تب مشاور پرداخت ═══════════ */}
+   530→      {tab === 'advisor' && (
+   531→        <AdvisorPanel
+   532→          params={schedParams}
+   533→          limits={limitsUsage}
+   534→          holidays={holidays}
+   535→          role={role}
+   536→          canApply={canStandalone}
+   537→          onApplied={() => { load(); ctx.refreshNotifications() }}
+   538→        />
+   539→      )}
+   540→
+   541→      {/* ── مودال‌ها ── */}
+   542→      {createOpen && (
+   543→        <ChequeCreateModal
+   544→          holidays={holidays} flexRules={flexRules}
+   545→          onClose={() => setCreateOpen(false)}
+   546→          onSaved={() => { setCreateOpen(false); load(); ctx.refreshNotifications() }}
+   547→        />
+   548→      )}
+   549→      {standaloneOpen && (
+   550→        <StandaloneChequeModal
+   551→          holidays={holidays} reps={reps} isOwnerSigner={['OWNER', 'ADMIN'].includes(role)}
+   552→          onClose={() => setStandaloneOpen(false)}
+   553→          onSaved={() => { setStandaloneOpen(false); load(); ctx.refreshNotifications() }}
+   554→        />
+   555→      )}
+   556→      {payOpen && (
+   557→        <PaymentModal
+   558→          holidays={holidays} reps={reps}
+   559→          onClose={() => setPayOpen(false)}
+   560→          onSaved={() => { setPayOpen(false); load(); ctx.refreshNotifications() }}
+   561→        />
+   562→      )}
+   563→      {detailCheque && (
+   564→        <ChequeDetailModal
+   565→          cheque={detailCheque} holidays={holidays} reps={reps}
+   566→          canEdit={detailCheque.createdById === ctx.user!.id || isExec || role === 'ACC'}
+   567→          onClose={() => setDetailId(null)}
+   568→          onSaved={() => { load(); ctx.refreshNotifications() }}
+   569→        />
+   570→      )}
+   571→    </div>
+   572→  )
+   573→}
+   574→
+   575→function FilterChip({ active, label, onClick, color }: { active: boolean; label: string; onClick: () => void; color?: string }) {
+   576→  return (
+   577→    <button onClick={onClick} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', active ? 'border-transparent text-white' : 'border-border bg-card text-foreground/70')} style={active ? { background: color || '#0e7a4a' } : {}}>
+   578→      {label}
+   579→    </button>
+   580→  )
+   581→}
+   582→
+   583→/** month calendar with per-day amounts + click-to-detail (+ schedule preview dots) */
+   584→function ChequeCalendar({ byDate, holidays, flexRules, schedOverlay, jy, jm, setJy, setJm, selDay, onPick }: any) {
+   585→  const cells: (number | null)[] = []
+   586→  const len = jMonthLength(jy, jm)
+   587→  const start = jMonthStartWeekday(jy, jm)
+   588→  for (let i = 0; i < start; i++) cells.push(null)
+   589→  for (let d = 1; d <= len; d++) cells.push(d)
+   590→  const move = (dir: number) => {
+   591→    let m = jm + dir, y = jy
+   592→    if (m > 12) { m = 1; y++ }
+   593→    if (m < 1) { m = 12; y-- }
+   594→    setJm(m); setJy(y)
+   595→  }
+   596→  const previewByDate = useMemo(() => {
+   597→    const m = new Map<string, { amount: number; opts: Set<string> }>()
+   598→    for (const o of schedOverlay || []) {
+   599→      const cur = m.get(o.dateIso) || { amount: 0, opts: new Set<string>() }
+   600→      cur.amount += o.amount
+   601→      cur.opts.add(o.option)
+   602→      m.set(o.dateIso, cur)
+   603→    }
+   604→    return m
+   605→  }, [schedOverlay])
+   606→  return (
+   607→    <div className="w-full max-w-[340px]">
+   608→      <div className="mb-2 flex items-center justify-between">
+   609→        <button onClick={() => move(1)} className="rounded-lg px-2 py-1 hover:bg-muted">›</button>
+   610→        <span className="text-sm font-extrabold">{J_MONTHS[jm - 1]} {faNum(jy)}</span>
+   611→        <button onClick={() => move(-1)} className="rounded-lg px-2 py-1 hover:bg-muted">‹</button>
+   612→      </div>
+   613→      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-muted-foreground">
+   614→        {WEEKDAY_SHORT.map((d, i) => <span key={i} className={cn(i === 6 && 'text-[#b3372f]')}>{d}</span>)}
+   615→      </div>
+   616→      <div className="mt-1 grid grid-cols-7 gap-1">
+   617→        {cells.map((d, i) => {
+   618→          if (d === null) return <span key={i} />
+   619→          const iso = jalaliToIso(jy, jm, d)
+   620→          const cheques = byDate.get(iso) || []
+   621→          const hol = holidays.get(iso)
+   622→          const fri = new Date(iso + 'T12:00:00').getDay() === 5
+   623→          const dayTotal = cheques.reduce((s: number, c: Cheque) => s + c.amount, 0)
+   624→          const preview = previewByDate.get(iso)
+   625→          const isSel = selDay === iso
+   626→          let hijriTiny = ''
+   627→          try { hijriTiny = faNum(isoToHijri(iso).hd) } catch { /* ignore */ }
+   628→          return (
+   629→            <button
+   630→              key={i}
+   631→              type="button"
+   632→              onClick={() => onPick(iso)}
+   633→              title={[
+   634→                formatJalaliFull(iso),
+   635→                formatHijri(iso) && `هجری: ${formatHijri(iso)}`,
+   636→                hol && `تعطیل رسمی: ${hol}`,
+   637→                cheques.map((c: Cheque) => `${c.recipientName}: ${faMoney(c.amount)}`).join('\n'),
+   638→                preview && `پیش‌نمایش مشاور (${Array.from(preview.opts).map((o) => faNum(o === 'A' ? 1 : o === 'B' ? 2 : 3)).join('+')}): ${faMoney(preview.amount)}`,
+   639→              ].filter(Boolean).join(' • ')}
+   640→              className={cn(
+   641→                'relative flex h-11 w-full flex-col items-center justify-center rounded-lg text-[11px] font-bold transition',
+   642→                isSel ? 'ring-2 ring-[#c9a227]' : '',
+   643→                cheques.length ? 'bg-[#c9a227]/20 ring-1 ring-[#c9a227]/70' : preview ? 'bg-[#c9a227]/10 ring-1 ring-dashed ring-[#b8860b]/60' : hol ? 'bg-[#b3372f]/8 text-[#b3372f]' : 'hover:bg-muted',
+   644→                (hol || fri) && !cheques.length && 'text-[#b3372f]/70',
+   645→              )}
+   646→            >
+   647→              <span>{faNum(d)}</span>
+   648→              {hijriTiny && (
+   649→                <span className="absolute left-1 top-0.5 text-[6.5px] font-bold leading-none text-muted-foreground/70">{hijriTiny}</span>
+   650→              )}
+   651→              {preview && (
+   652→                <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full border border-dashed border-[#b8860b] bg-[#c9a227]/60" title={`پیش‌نمایش: ${faMoney(preview.amount)}`} />
+   653→              )}
+   654→              {cheques.length > 0 && <span className="text-[8px] font-black leading-none text-[#8a5a2b]">{faMoneyShort(dayTotal)}</span>}
+   655→              {cheques.length === 0 && hol && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#b3372f]" />}
+   656→              {cheques.length === 0 && !hol && fri && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#1c2a22]/30" />}
+   657→            </button>
+   658→          )
+   659→        })}
+   660→      </div>
+   661→      <p className="mt-1 text-center text-[8.5px] text-muted-foreground">عدد کوچک گوشهٔ هر خانه = روز هجری قمری (تبدیل واقعی) — نقطهٔ خط‌چین طلایی = پیش‌نمایش مشاور</p>
+   662→    </div>
+   663→  )
+   664→}
+   665→
+   666→/** Alternative-date strip: working-day candidates within the flexibility window */
+   667→function AltDates({ nominalDue, writtenAt, holidays, flexRules, onPick, selected }: {
+   668→  nominalDue: string; writtenAt: string; holidays: Map<string, string>; flexRules: FlexRuleLite[]
+   669→  onPick: (iso: string) => void; selected: string
+   670→}) {
+   671→  const fx = resolveFlex(flexRules, nominalDue)
+   672→  const alts = dueAlternatives(nominalDue, writtenAt, holidays, fx.days)
+   673→  if (fx.days === 0 && alts.length === 0) {
+   674→    return (
+   675→      <p className="text-[11px] text-muted-foreground">
+   676→        پنجرهٔ انعطاف این روز صفر است — سررسید باید دقیقاً روی {formatJalaliFull(nominalDue)} بنشیند.
+   677→      </p>
+   678→    )
+   679→  }
+   680→  return (
+   681→    <div>
+   682→      <p className="mb-1.5 flex items-center gap-1 text-[11px] font-black text-[#8a5a2b]">
+   683→        <Sparkles size={12} /> تاریخ‌های جایگزین مجاز (پنجرهٔ ±{faNum(fx.days)} روز
+   684→        {fx.rule && ` — قانون: ${fx.rule.label}`}):
+   685→      </p>
+   686→      <div className="flex flex-wrap gap-1.5">
+   687→        <button
+   688→          type="button"
+   689→          onClick={() => onPick(nominalDue)}
+   690→          className={cn(
+   691→            'rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition',
+   692→            selected === nominalDue ? 'border-transparent bg-[#0e7a4a] text-white' : 'border-border bg-card hover:border-[#c9a227]',
+   693→          )}
+   694→        >
+   695→          خودِ {faNum(daysBetween(nominalDue, writtenAt))} روز — {wdShort(nominalDue)} {formatJalaliShort(nominalDue)}
+   696→        </button>
+   697→        {alts.map((a) => (
+   698→          <button
+   699→            key={a.iso}
+   700→            type="button"
+   701→            onClick={() => onPick(a.iso)}
+   702→            className={cn(
+   703→              'rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition',
+   704→              selected === a.iso
+   705→                ? 'border-transparent bg-[#0e7a4a] text-white'
+   706→                : a.working
+   707→                  ? 'border-[#0e7a4a]/30 bg-[#0e7a4a]/5 text-[#0e7a4a] hover:border-[#0e7a4a]'
+   708→                  : 'border-[#b3372f]/30 bg-[#b3372f]/5 text-[#b3372f]/80 hover:border-[#b3372f]',
+   709→            )}
+   710→            title={a.working ? 'روز کاری' : a.holidayTitle || 'جمعه — تعطیل'}
+   711→          >
+   712→            {faNum(a.actualDays)} روز — {a.weekday} {formatJalaliShort(a.iso)}
+   713→            {!a.working && ' ⚠️'}
+   714→          </button>
+   715→        ))}
+   716→      </div>
+   717→    </div>
+   718→  )
+   719→}
+   720→
+   721→/** Flexibility rules management panel (treasury tolerance editor) */
+   722→function FlexPanel({ rules, onChanged }: { rules: FlexRuleLite[]; onChanged: () => void }) {
+   723→  const [scope, setScope] = useState<'GLOBAL' | 'YEAR' | 'SEASON' | 'MONTH' | 'WEEK' | 'DAY'>('MONTH')
+   724→  const [days, setDays] = useState('2')
+   725→  const [note, setNote] = useState('')
+   726→  const [jy, setJy] = useState(toJalaliParts(todayIso()).jy)
+   727→  const [jm, setJm] = useState(toJalaliParts(todayIso()).jm)
+   728→  const [season, setSeason] = useState('1')
+   729→  const [dayIso, setDayIso] = useState(todayIso())
+   730→  const [busy, setBusy] = useState(false)
+   731→
+   732→  const dateKey =
+   733→    scope === 'GLOBAL' ? '*' :
+   734→    scope === 'YEAR' ? String(jy) :
+   735→    scope === 'SEASON' ? `${jy}-S${season}` :
+   736→    scope === 'MONTH' ? `${jy}-${String(jm).padStart(2, '0')}` :
+   737→    scope === 'WEEK' ? weekStartIso(dayIso) :
+   738→    dayIso
+   739→
+   740→  const scopeDesc =
+   741→    scope === 'YEAR' ? `${faNum(jy)}` :
+   742→    scope === 'SEASON' ? `${SEASON_NAMES[Number(season) - 1]} ${faNum(jy)}` :
+   743→    scope === 'MONTH' ? `${J_MONTHS[jm - 1]} ${faNum(jy)}` :
+   744→    scope === 'WEEK' ? `هفتهٔ آغازِ ${formatJalaliShort(weekStartIso(dayIso))}` :
+   745→    scope === 'DAY' ? formatJalaliShort(dayIso) : 'همهٔ روزها'
+   746→
+   747→  const save = async () => {
+   748→    setBusy(true)
+   749→    try {
+   750→      await api('/api/cheques/flexibility', {
+   751→        method: 'POST',
+   752→        body: { scope, dateKey, days: Number(days) || 0, note, label: scopeDesc },
+   753→      })
+   754→      toast.success('قانون انعطاف ذخیره شد')
+   755→      onChanged()
+   756→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   757→  }
+   758→
+   759→  const remove = async (id: string) => {
+   760→    try {
+   761→      await api(`/api/cheques/flexibility?id=${id}`, { method: 'DELETE' })
+   762→      toast.success('قانون حذف شد')
+   763→      onChanged()
+   764→    } catch (e: any) { toast.error(e.message) }
+   765→  }
+   766→
+   767→  return (
+   768→    <div className="fade-in-up mb-4 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-4">
+   769→      <p className="flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]">
+   770→        <SlidersHorizontal size={14} /> سطح انعطاف روزهای پرداخت
+   771→        <SciExplain k="flexdays" />
+   772→      </p>
+   773→      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+   774→        برای هر بازهٔ زمانی مشخص کنید سررسید چک‌ها چند روز قابل جابه‌جایی است. قانون دقیق‌تر همیشه بر قانون کلی‌تر مقدم است (روز ← هفته ← ماه ← فصل ← سال ← سراسری).
+   775→      </p>
+   776→
+   777→      {/* existing rules */}
+   778→      <div className="scroll-gold mt-3 max-h-40 space-y-1.5 overflow-y-auto pl-1">
+   779→        {rules.map((r) => (
+   780→          <div key={r.id} className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-1.5 text-[11px]">
+   781→            <span className="font-bold">
+   782→              <span className="rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]">{SCOPE_LABELS[r.scope] || r.scope}</span>
+   783→              {' '}{r.label} {r.note && <span className="text-muted-foreground">— {r.note}</span>}
+   784→            </span>
+   785→            <span className="flex items-center gap-2">
+   786→              <span className="font-black text-[#0e7a4a]">±{faNum(r.days)} روز</span>
+   787→              {r.scope !== 'GLOBAL' && (
+   788→                <button onClick={() => remove(r.id)} className="text-[10px] font-black text-[#b3372f] hover:underline">حذف</button>
+   789→              )}
+   790→            </span>
+   791→          </div>
+   792→        ))}
+   793→      </div>
+   794→
+   795→      {/* editor */}
+   796→      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+   797→        <Labeled label="سطح قانون">
+   798→          <select value={scope} onChange={(e) => setScope(e.target.value as any)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+   799→            {Object.entries(SCOPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+   800→          </select>
+   801→        </Labeled>
+   802→        <Labeled label="مقدار انعطاف (± روز)">
+   803→          <FaPriceInput value={days === '' ? '' : Number(days)} onChange={(v) => setDays(v === '' ? '0' : String(v))} ariaLabel="مقدار انعطاف" className="w-full rounded-xl border border-input p-2.5 text-sm" />
+   804→        </Labeled>
+   805→        {scope !== 'GLOBAL' && scope !== 'DAY' && scope !== 'WEEK' && (
+   806→          <Labeled label="سال شمسی">
+   807→            <FaPriceInput value={jy} onChange={(v) => setJy(Number(v) || jy)} ariaLabel="سال شمسی" className="w-full rounded-xl border border-input p-2.5 text-sm" />
+   808→          </Labeled>
+   809→        )}
+   810→        {scope === 'SEASON' && (
+   811→          <Labeled label="فصل">
+   812→            <select value={season} onChange={(e) => setSeason(e.target.value)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+   813→              {SEASON_NAMES.map((s, i) => <option key={s} value={String(i + 1)}>{s}</option>)}
+   814→            </select>
+   815→          </Labeled>
+   816→        )}
+   817→        {scope === 'MONTH' && (
+   818→          <Labeled label="ماه">
+   819→            <select value={jm} onChange={(e) => setJm(Number(e.target.value))} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+   820→              {J_MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+   821→            </select>
+   822→          </Labeled>
+   823→        )}
+   824→        {(scope === 'WEEK' || scope === 'DAY') && (
+   825→          <Labeled label={scope === 'WEEK' ? 'هر روزی از هفتهٔ هدف' : 'روز دقیق'}>
+   826→            <JalaliDatePicker value={dayIso} onChange={setDayIso} holidays={new Map()} />
+   827→          </Labeled>
+   828→        )}
+   829→        <Labeled label="توضیح (اختیاری)">
+   830→          <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-xl border border-input p-2.5 text-sm" placeholder="مثلاً: فصل فروش بالا، تسویه سخت‌گیرانه" />
+   831→        </Labeled>
+   832→      </div>
+   833→      <p className="mt-2 text-[11px] text-muted-foreground">
+   834→        کلید این قانون: <span className="font-black text-[#8a5a2b]" dir="ltr">{dateKey}</span> — پوشش: {flexScopeDesc({ id: '', scope, label: '', dateKey, days: 0 } as any)}
+   835→      </p>
+   836→      <button onClick={save} disabled={busy} className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white disabled:opacity-50">
+   837→        ذخیرهٔ قانون
+   838→      </button>
+   839→    </div>
+   840→  )
+   841→}
+   842→
+   843→/** Owner actions: sign (with editable date + alternatives), reject, split */
+   844→function OwnerActions({ cheque, holidays, flexRules, act }: { cheque: Cheque; holidays: any; flexRules: FlexRuleLite[]; act: (id: string, body: any, msg: string) => void }) {
+   845→  const [open, setOpen] = useState<'sign' | 'split' | null>(null)
+   846→  const [number, setNumber] = useState('')
+   847→  const [dueDate, setDueDate] = useState(cheque.dueDate)
+   848→  const [parts, setParts] = useState([{ amount: String(cheque.amount), dueDate: cheque.dueDate }])
+   849→
+   850→  const pickedIsOff = !!holidays.get(dueDate) || new Date(dueDate + 'T12:00:00').getDay() === 5
+   851→
+   852→  return (
+   853→    <div className="flex flex-wrap gap-1.5">
+   854→      <button onClick={() => setOpen('sign')} className="flex items-center gap-1 rounded-lg bg-[#0e7a4a] px-3 py-1.5 text-[11px] font-black text-white">
+   855→        <CheckCircle2 size={13} /> امضا و تأیید
+   856→      </button>
+   857→      <button onClick={() => setOpen('split')} className="flex items-center gap-1 rounded-lg bg-[#8a5a2b]/15 px-3 py-1.5 text-[11px] font-black text-[#8a5a2b]">
+   858→        <Scissors size={13} /> تفکیک به چند چک
+   859→      </button>
+   860→      <button onClick={() => act(cheque.id, { action: 'reject' }, 'چک رد شد — مدیر کل مطلع می‌شود')} className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-3 py-1.5 text-[11px] font-black text-[#b3372f]">
+   861→        <XCircle size={13} /> رد
+   862→      </button>
+   863→
+   864→      {open === 'sign' && (
+   865→        <Modal title="امضای چک" onClose={() => setOpen(null)}>
+   866→          <KeyValue k="مبلغ" v={`${faMoney(cheque.amount)} تومان`} />
+   867→          <KeyValue k="گیرنده" v={cheque.recipientName} />
+   868→          {cheque.sayadSerial && <KeyValue k="سریال صیاد" v={<span dir="ltr" className="font-mono text-xs">{cheque.sayadSerial}</span>} />}
+   869→          <Labeled label="شماره چک (اختیاری)"><input value={number} onChange={(e) => setNumber(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   870→          <Labeled label="تاریخ سررسید نهایی (قابل اصلاح)">
+   871→            <JalaliDatePicker value={dueDate} onChange={setDueDate} holidays={holidays} minDate={todayIso()} warnHoliday />
+   872→          </Labeled>
+   873→          <div className="mt-2 rounded-2xl border border-[#c9a227]/30 bg-[#fdf6dd]/50 p-3">
+   874→            <AltDates nominalDue={cheque.dueDate} writtenAt={cheque.writtenAt} holidays={holidays} flexRules={flexRules} onPick={setDueDate} selected={dueDate} />
+   875→          </div>
+   876→          <button
+   877→            onClick={() => { act(cheque.id, { action: 'sign', number, dueDate, note: 'امضا توسط مالک' }, 'چک امضا شد ✅ — مدیر کل می‌تواند تحویل دهد'); setOpen(null) }}
+   878→            className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white"
+   879→          >
+   880→            ثبت امضا ✍️
+   881→          </button>
+   882→        </Modal>
+   883→      )}
+   884→
+   885→      {open === 'split' && (
+   886→        <Modal title="تفکیک مبلغ به چند چک" onClose={() => setOpen(null)}>
+   887→          {parts.map((p, i) => (
+   888→            <div key={i} className="grid grid-cols-2 gap-2">
+   889→              <Labeled label={`مبلغ بخش ${faNum(i + 1)}`}>
+   890→                <FaPriceInput value={p.amount === '' ? '' : Number(p.amount)} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, amount: v === '' ? '' : String(v) } : x)))} ariaLabel={`مبلغ بخش ${faNum(i + 1)}`} className="w-full rounded-xl border border-input p-2.5 text-sm" />
+   891→              </Labeled>
+   892→              <Labeled label="سررسید">
+   893→                <JalaliDatePicker value={p.dueDate} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, dueDate: v } : x)))} holidays={holidays} warnHoliday />
+   894→              </Labeled>
+   895→            </div>
+   896→          ))}
+   897→          <div className="flex gap-2">
+   898→            <button onClick={() => setParts((ps) => [...ps, { amount: '0', dueDate: addDaysIso(30) }])} className="flex-1 rounded-xl border py-2 text-xs font-bold">+ بخش جدید</button>
+   899→            {parts.length > 1 && <button onClick={() => setParts((ps) => ps.slice(0, -1))} className="rounded-xl border py-2 text-xs font-bold text-[#b3372f]">− حذف آخرین</button>}
+   900→          </div>
+   901→          {(() => {
+   902→            const sum = parts.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+   903→            const ok = sum === cheque.amount
+   904→            return (
+   905→              <p className="text-[11px]">
+   906→                جمع: <span className={ok ? 'split-sum-ok font-black' : 'split-sum-bad'}>{faMoney(sum)}</span>
+   907→                {' '}/ {faMoney(cheque.amount)}
+   908→                {!ok && <span className='text-[10px] text-muted-foreground'> — جمع باید دقیقاً برابر مبلغ چک باشد</span>}
+   909→              </p>
+   910→            )
+   911→          })()}
+   912→          <button
+   913→            onClick={() => act(cheque.id, { action: 'split', parts, number: number || undefined }, `به ${faNum(parts.length)} چک تفکیک شد ✂️`)}
+   914→            className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white"
+   915→          >
+   916→            ثبت تفکیک ✂️
+   917→          </button>
+   918→        </Modal>
+   919→      )}
+   920→    </div>
+   921→  )
+   922→}
+   923→
+   924→/** GM create cheque — due-date planner with alternatives + flexibility awareness */
+   925→function ChequeCreateModal({ holidays, flexRules, onClose, onSaved }: {
+   926→  holidays: any; flexRules: FlexRuleLite[]; onClose: () => void; onSaved: () => void
+   927→}) {
+   928→  const [form, setForm] = useState({ amount: '', recipientName: '', recipientPhone: '', orderId: '', orderCode: '' })
+   929→  const [writtenAt, setWrittenAt] = useState(todayIso())
+   930→  const [periodDays, setPeriodDays] = useState('45')
+   931→  const [pickedDue, setPickedDue] = useState<string | null>(null)
+   932→  const [orders, setOrders] = useState<any[]>([])
+   933→  const [busy, setBusy] = useState(false)
+   934→
+   935→  useEffect(() => {
+   936→    api<{ orders: any[] }>('/api/orders').then((d) => setOrders(d.orders.filter((o) => !['DONE', 'CANCELLED'].includes(o.status))))
+   937→  }, [])
+   938→
+   939→  const nominalDue = addDaysIso(Number(periodDays) || 0, writtenAt)
+   940→  const chosenDue = pickedDue || nominalDue
+   941→  const chosenDays = Math.max(0, daysBetween(chosenDue, writtenAt))
+   942→  const nominalOff = !!holidays.get(nominalDue) || new Date(nominalDue + 'T12:00:00').getDay() === 5
+   943→  const chosenOff = !!holidays.get(chosenDue) || new Date(chosenDue + 'T12:00:00').getDay() === 5
+   944→  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
+   945→
+   946→  // when the base date or period changes, reset manual pick
+   947→  const resetPick = () => setPickedDue(null)
+   948→  useEffect(() => { resetPick() }, [writtenAt, periodDays])
+   949→
+   950→  const save = async () => {
+   951→    if (!form.amount || !form.recipientName) return toast.error('مبلغ و نام گیرنده الزامی است')
+   952→    if (chosenOff) return toast.error('سررسید انتخابی روی تعطیل است — یکی از تاریخ‌های کاری را انتخاب کنید')
+   953→    setBusy(true)
+   954→    try {
+   955→      const res = await api<{ warnings: string[] }>('/api/cheques', {
+   956→        method: 'POST',
+   957→        body: { ...form, amount: Number(form.amount), writtenAt, dueDate: chosenDue, periodDays: chosenDays },
+   958→      })
+   959→      res.warnings?.forEach((w) => toast.warning(w))
+   960→      toast.success('چک ثبت شد — در انتظار امضای مالک ✍️')
+   961→      onSaved()
+   962→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   963→  }
+   964→
+   965→  return (
+   966→    <Modal title="ثبت چک جدید — برنامه‌ریز سررسید" onClose={onClose} wide>
+   967→      <div className="grid gap-3 sm:grid-cols-2">
+   968→        <Labeled label="مبلغ (تومان) *"><FaPriceInput value={form.amount === '' ? '' : Number(form.amount)} onChange={(v) => set('amount', v === '' ? '' : String(v))} ariaLabel="مبلغ چک" className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   969→        <Labeled label="گیرنده چک *"><input value={form.recipientName} onChange={(e) => set('recipientName', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="نام نماینده/شرکت" /></Labeled>
+   970→        <Labeled label="تلفن گیرنده"><input value={form.recipientPhone} onChange={(e) => set('recipientPhone', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   971→        <Labeled label="متصل به سفارش (اختیاری)">
+   972→          <select value={form.orderId} onChange={(e) => { const o = orders.find((x) => x.id === e.target.value); setForm((f) => ({ ...f, orderId: e.target.value, orderCode: o?.code || '' })) }} className="w-full rounded-xl border border-input bg-white p-3 text-sm">
+   973→            <option value="">— بدون اتصال —</option>
+   974→            {orders.map((o) => <option key={o.id} value={o.id}>{o.code} — {o.providerName}</option>)}
+   975→          </select>
+   976→        </Labeled>
+   977→        <Labeled label="تاریخ نگارش چک (پیش‌فرض امروز)">
+   978→          <JalaliDatePicker value={writtenAt} onChange={setWrittenAt} holidays={holidays} warnHoliday={false} />
+   979→        </Labeled>
+   980→        <Labeled label="حداکثر مهلت (روز) — سررسید خودکار محاسبه می‌شود">
+   981→          <div className="flex flex-wrap gap-1.5">
+   982→            {[30, 40, 45, 60, 90].map((d) => (
+   983→              <button key={d} type="button" onClick={() => setPeriodDays(String(d))} className={Number(periodDays) === d ? 'rounded-full bg-primary px-3 py-1.5 text-[11px] font-black text-white' : 'rounded-full border px-3 py-1.5 text-[11px] font-bold'}>
+   984→                {faNum(d)} روز
+   985→              </button>
+   986→            ))}
+   987→            <FaPriceInput value={periodDays === '' ? '' : Number(periodDays)} onChange={(v) => setPeriodDays(v === '' ? '0' : String(v))} ariaLabel="مهلت به روز" className="w-16 rounded-xl border border-input p-2 text-xs" />
+   988→          </div>
+   989→        </Labeled>
+   990→      </div>
+   991→
+   992→      {/* planner output */}
+   993→      <div className={cn('mt-3 rounded-2xl border p-3.5', nominalOff ? 'border-[#b3372f]/40 bg-[#b3372f]/5' : 'border-[#c9a227]/40 bg-[#fdf6dd]/50')}>
+   994→        <p className="flex items-center gap-1.5 text-xs font-black">
+   995→          <CalendarCheck size={14} className="text-[#8a5a2b]" />
+   996→          سررسید حداکثری محاسبه‌شده: {formatJalaliFull(nominalDue)} ({faNum(periodDays || 0)} روز)
+   997→        </p>
+   998→        {nominalOff ? (
+   999→          <p className="mt-1 text-[11px] font-black text-[#b3372f]">
+  1000→            ⚠️ این روز غیرکاری است ({holidays.get(nominalDue) || 'جمعه'}) — اعتبار چک حفظ نمی‌شود. یکی از تاریخ‌های جایگزین کاری را انتخاب کنید:
+  1001→          </p>
+  1002→        ) : (
+  1003→          <p className="mt-1 text-[11px] text-muted-foreground">این روز کاری است و چک را می‌توان همان‌جا سررسید داد؛ در صورت نیاز از جایگزین‌ها استفاده کنید.</p>
+  1004→        )}
+  1005→        <div className="mt-2.5">
+  1006→          <AltDates nominalDue={nominalDue} writtenAt={writtenAt} holidays={holidays} flexRules={flexRules} onPick={setPickedDue} selected={chosenDue} />
+  1007→        </div>
+  1008→        <div className="mt-2.5 rounded-xl bg-white/70 px-3 py-2 text-[11px]">
+  1009→          تاریخ نهایی انتخاب‌شده: <span className="font-black text-[#0e7a4a]">{formatJalaliFull(chosenDue)}</span>
+  1010→          {' '}— معادل {faNum(chosenDays)} روز از تاریخ نگارش{pickedDue && chosenDue !== nominalDue ? ' — اصلاح‌شده از سررسید حداکثری' : ''}
+  1011→          {chosenOff && <span className="font-black text-[#b3372f]"> — ⚠️ روز تعطیل، ثبت مجاز نیست</span>}
+  1012→        </div>
+  1013→      </div>
+  1014→
+  1015→      <button onClick={save} disabled={busy || chosenOff} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+  1016→        {busy ? '…' : 'ثبت و ارسال برای امضای مالک'}
+  1017→      </button>
+  1018→    </Modal>
+  1019→  )
+  1020→}
+  1021→
+  1022→/* ═══════════════════════ ۱۴-۵الف: چک و پرداخت ۲٫۰ ═══════════════════════ */
+  1023→
+  1024→/** انتخاب نماینده — اگر فهرست نمایندگان در دسترس نبود، تایپ آزاد */
+  1025→function RepSelect({ reps, value, onChange }: { reps: RepLite[]; value: { repId: string; repName: string }; onChange: (v: { repId: string; repName: string }) => void }) {
+  1026→  if (reps.length === 0) {
+  1027→    return <input value={value.repName} onChange={(e) => onChange({ repId: '', repName: e.target.value })} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="نام نمایندهٔ طرف‌حساب (اختیاری)" />
+  1028→  }
+  1029→  return (
+  1030→    <select
+  1031→      value={value.repId}
+  1032→      onChange={(e) => { const r = reps.find((x) => x.id === e.target.value); onChange({ repId: e.target.value, repName: r?.fullName || '' }) }}
+  1033→      className="w-full rounded-xl border border-input bg-white p-3 text-sm"
+  1034→    >
+  1035→      <option value="">— بدون نماینده —</option>
+  1036→      {reps.map((r) => <option key={r.id} value={r.id}>{r.fullName}{r.providerName ? ` — ${r.providerName}` : ''}</option>)}
+  1037→    </select>
+  1038→  )
+  1039→}
+  1040→
+  1041→/** مودال ثبت چک مستقل — مالک/مدیران؛ مالک و مدیر سامانه مستقیم «امضاشده» ثبت می‌شود */
+  1042→function StandaloneChequeModal({ holidays, reps, isOwnerSigner, onClose, onSaved }: {
+  1043→  holidays: Map<string, string>; reps: RepLite[]; isOwnerSigner: boolean; onClose: () => void; onSaved: () => void
+  1044→}) {
+  1045→  const [form, setForm] = useState({ number: '', amount: '', recipientName: '', recipientPhone: '', dueDate: '', sayadSerial: '', holooReceiptNo: '' })
+  1046→  const [rep, setRep] = useState({ repId: '', repName: '' })
+  1047→  const [busy, setBusy] = useState(false)
+  1048→  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
+  1049→  const dueOff = form.dueDate ? !!holidays.get(form.dueDate) || new Date(form.dueDate + 'T12:00:00').getDay() === 5 : false
+  1050→
+  1051→  const save = async () => {
+  1052→    if (!form.amount || !form.recipientName || !form.dueDate) return toast.error('مبلغ، گیرنده و تاریخ سررسید الزامی است')
+  1053→    if (dueOff) return toast.error('سررسید روی تعطیل است — روز کاری دیگری انتخاب کنید (مادهٔ ۳۱۵)')
+  1054→    setBusy(true)
+  1055→    try {
+  1056→      const res = await api<{ warnings: string[] }>('/api/cheques', {
+  1057→        method: 'POST',
+  1058→        body: {
+  1059→          selfIssued: true,
+  1060→          number: form.number,
+  1061→          amount: Number(form.amount),
+  1062→          recipientName: form.recipientName,
+  1063→          recipientPhone: form.recipientPhone,
+  1064→          dueDate: form.dueDate,
+  1065→          writtenAt: todayIso(),
+  1066→          periodDays: daysBetween(form.dueDate, todayIso()),
+  1067→          sayadSerial: form.sayadSerial,
+  1068→          holooReceiptNo: form.holooReceiptNo,
+  1069→          repId: rep.repId,
+  1070→          repName: rep.repName,
+  1071→        },
+  1072→      })
+  1073→      res.warnings?.forEach((w) => toast.warning(w))
+  1074→      toast.success(isOwnerSigner ? 'چک مستقل ثبت و امضا شد ✍️ — آمادهٔ تحویل' : 'چک مستقل ثبت شد — در انتظار امضای مالک')
+  1075→      onSaved()
+  1076→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+  1077→  }
+  1078→
+  1079→  return (
+  1080→    <Modal title="ثبت چک مستقل — بدون سفارش" onClose={onClose} wide>
+  1081→      <p className="mb-2 rounded-xl bg-[#fdf6dd]/60 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+  1082→        چک مستقل به سفارشی متصل نیست — برای تسویه‌های آزاد، تنخواه یا تعهدات خارج از چرخهٔ سفارش.
+  1083→        {isOwnerSigner ? ' چون شما مالک و امضاکننده هستید، چک مستقیماً «امضاشده» ثبت می‌شود.' : ' چک برای امضای مالک ارسال می‌شود.'}
+  1084→      </p>
+  1085→      <div className="grid gap-3 sm:grid-cols-2">
+  1086→        <Labeled label="مبلغ (تومان) *"><FaPriceInput value={form.amount === '' ? '' : Number(form.amount)} onChange={(v) => set('amount', v === '' ? '' : String(v))} ariaLabel="مبلغ چک مستقل" className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+  1087→        <Labeled label="شماره چک"><input value={form.number} onChange={(e) => set('number', e.target.value)} dir="ltr" className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+  1088→        <Labeled label="گیرنده چک *"><input value={form.recipientName} onChange={(e) => set('recipientName', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="نام شرکت / شخص" /></Labeled>
+  1089→        <Labeled label="تلفن گیرنده"><input value={form.recipientPhone} onChange={(e) => set('recipientPhone', e.target.value)} dir="ltr" className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+  1090→        <Labeled label="تاریخ سررسید *" hint="روزهای جمعه و تعطیل رسمی مجاز نیست — سامانه هشدار می‌دهد">
+  1091→          <JalaliDatePicker value={form.dueDate} onChange={(v) => set('dueDate', v)} holidays={holidays} minDate={todayIso()} warnHoliday />
+  1092→        </Labeled>
+  1093→        <Labeled label="نمایندهٔ طرف‌حساب (چه کسی چک را می‌گیرد)">
+  1094→          <RepSelect reps={reps} value={rep} onChange={setRep} />
+  1095→        </Labeled>
+  1096→        <Labeled label="سریال صیاد (قانون جدید چک ۱۳۹۷)" hint="۱۶ رقمی — از سامانهٔ صیاد بانک">
+  1097→          <input value={form.sayadSerial} onChange={(e) => set('sayadSerial', e.target.value)} dir="ltr" inputMode="numeric" className="w-full rounded-xl border border-input p-3 font-mono text-sm" placeholder="۱۶ رقم" />
+  1098→        </Labeled>
+  1099→        <Labeled label="شماره رسید هلو (اختیاری)">
+  1100→          <input value={form.holooReceiptNo} onChange={(e) => set('holooReceiptNo', e.target.value)} dir="ltr" className="w-full rounded-xl border border-input p-3 text-sm" />
+  1101→        </Labeled>
+  1102→      </div>
+  1103→      {dueOff && <p className="mt-2 rounded-lg bg-[#b3372f]/10 px-3 py-2 text-[11px] font-black text-[#b3372f]">⚠️ این روز تعطیل است — ثبت مسدود است</p>}
+  1104→      <button onClick={save} disabled={busy || dueOff} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+  1105→        {busy ? '…' : isOwnerSigner ? 'ثبت و امضا ✍️' : 'ثبت و ارسال برای امضای مالک'}
+  1106→      </button>
+  1107→    </Modal>
+  1108→  )
+  1109→}
+  1110→
+  1111→/** مودال جزئیات چک — شناسنامهٔ کامل + ویرایش سریال صیاد/نماینده/رسید هلو */
+  1112→function ChequeDetailModal({ cheque, holidays, reps, canEdit, onClose, onSaved }: {
+  1113→  cheque: Cheque; holidays: Map<string, string>; reps: RepLite[]; canEdit: boolean; onClose: () => void; onSaved: () => void
+  1114→}) {
+  1115→  const [editing, setEditing] = useState(false)
+  1116→  const [form, setForm] = useState({
+  1117→    number: cheque.number || '', sayadSerial: cheque.sayadSerial || '', holooReceiptNo: cheque.holooReceiptNo || '',
+  1118→    repId: cheque.repId || '', repName: cheque.repName || '', recipientName: cheque.recipientName, recipientPhone: cheque.recipientPhone || '',
+  1119→  })
+  1120→  const [busy, setBusy] = useState(false)
+  1121→  const st = CHEQUE_STATUSES[cheque.status]
+  1122→
+  1123→  const save = async () => {
+  1124→    setBusy(true)
+  1125→    try {
+  1126→      await api(`/api/cheques/${cheque.id}`, { method: 'PATCH', body: { action: 'update', ...form } })
+  1127→      toast.success('اطلاعات چک به‌روزرسانی شد')
+  1128→      setEditing(false)
+  1129→      onSaved()
+  1130→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+  1131→  }
+  1132→
+  1133→  return (
+  1134→    <Modal title={`جزئیات چک ${cheque.number ? `شماره ${faNum(cheque.number)}` : ''}`} onClose={onClose} wide>
+  1135→      <div className="mb-2 flex items-center justify-between">
+  1136→        <Pill label={st.label} color={st.color} bg={st.bg} />
+  1137→        {canEdit && !editing && (
+  1138→          <button onClick={() => setEditing(true)} className="flex items-center gap-1 rounded-lg border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-1.5 text-[11px] font-black text-[#8a5a2b]">
+  1139→            <Pencil size={12} /> ویرایش
+  1140→          </button>
+  1141→        )}
+  1142→      </div>
+  1143→      {!editing ? (
+  1144→        <div className="grid gap-1.5 sm:grid-cols-2">
+  1145→          <KeyValue k="مبلغ" v={`${faMoney(cheque.amount)} تومان`} />
+  1146→          <KeyValue k="گیرنده" v={cheque.recipientName} />
+  1147→          <KeyValue k="تلفن گیرنده" v={cheque.recipientPhone ? faNum(cheque.recipientPhone) : '—'} />
+  1148→          <KeyValue k="شماره چک" v={cheque.number ? faNum(cheque.number) : '—'} />
+  1149→          <KeyValue k="سریال صیاد" v={cheque.sayadSerial ? <span dir="ltr" className="font-mono text-xs">{faNum(cheque.sayadSerial)}</span> : <span className="text-[10px] text-muted-foreground">ثبت نشده</span>} />
+  1150→          <KeyValue k="رسید هلو" v={cheque.holooReceiptNo ? faNum(cheque.holooReceiptNo) : '—'} />
+  1151→          <KeyValue k="نمایندهٔ طرف‌حساب" v={cheque.repName || '—'} />
+  1152→          <KeyValue k="سفارش" v={cheque.orderCode || 'بدون اتصال (مستقل)'} />
+  1153→          <KeyValue k="تاریخ نگارش" v={formatJalaliFull(cheque.writtenAt)} />
+  1154→          <KeyValue k="سررسید" v={formatJalaliFull(cheque.dueDate)} />
+  1155→          <KeyValue k="ثبت‌کننده" v={cheque.createdByName} />
+  1156→          <KeyValue k="نوع" v={cheque.selfIssued ? 'مستقل' : 'متصل به سفارش'} />
+  1157→        </div>
+  1158→      ) : (
+  1159→        <div className="grid gap-3 sm:grid-cols-2">
+  1160→          <Labeled label="شماره چک"><input value={form.number} onChange={(e) => setForm((f) => ({ ...f, number: e.target.value }))} dir="ltr" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1161→          <Labeled label="گیرنده"><input value={form.recipientName} onChange={(e) => setForm((f) => ({ ...f, recipientName: e.target.value }))} className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1162→          <Labeled label="تلفن گیرنده"><input value={form.recipientPhone} onChange={(e) => setForm((f) => ({ ...f, recipientPhone: e.target.value }))} dir="ltr" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1163→          <Labeled label="سریال صیاد"><input value={form.sayadSerial} onChange={(e) => setForm((f) => ({ ...f, sayadSerial: e.target.value }))} dir="ltr" inputMode="numeric" className="w-full rounded-xl border border-input p-2.5 font-mono text-sm" /></Labeled>
+  1164→          <Labeled label="رسید هلو"><input value={form.holooReceiptNo} onChange={(e) => setForm((f) => ({ ...f, holooReceiptNo: e.target.value }))} dir="ltr" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1165→          <Labeled label="نمایندهٔ طرف‌حساب"><RepSelect reps={reps} value={{ repId: form.repId, repName: form.repName }} onChange={(v) => setForm((f) => ({ ...f, ...v }))} /></Labeled>
+  1166→          <div className="flex gap-2 sm:col-span-2">
+  1167→            <button onClick={save} disabled={busy} className="flex-1 rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white disabled:opacity-50">ذخیرهٔ تغییرات</button>
+  1168→            <button onClick={() => setEditing(false)} className="rounded-xl border px-4 py-2.5 text-xs font-bold">انصراف</button>
+  1169→          </div>
+  1170→        </div>
+  1171→      )}
+  1172→
+  1173→      {cheque.ownerNote && <p className="mt-2 rounded-lg bg-[#fdf6dd]/60 px-3 py-2 text-[11px]">📝 یادداشت مالک: {cheque.ownerNote}</p>}
+  1174→
+  1175→      {/* تاریخچه */}
+  1176→      <p className="mt-3 mb-1 text-[11px] font-black text-[#8a5a2b]">تاریخچه</p>
+  1177→      <div className="scroll-gold max-h-40 space-y-1 overflow-y-auto pl-1">
+  1178→        {(cheque.history || []).map((h: any, i: number) => (
+  1179→          <div key={i} className="rounded-lg bg-muted/40 px-2.5 py-1.5 text-[10.5px]">
+  1180→            <span className="font-bold">{h.action}</span> — {h.userName || ''} <span className="text-muted-foreground">{h.at ? formatJalaliShort(h.at) : ''}</span>
+  1181→            {h.detail && <span className="text-muted-foreground"> • {h.detail}</span>}
+  1182→          </div>
+  1183→        ))}
+  1184→      </div>
+  1185→      {(holidays.get(cheque.dueDate) || new Date(cheque.dueDate + 'T12:00:00').getDay() === 5) && !['CLEARED', 'REJECTED'].includes(cheque.status) && (
+  1186→        <p className="mt-2 rounded-lg bg-[#b3372f]/10 px-3 py-2 text-[11px] font-black text-[#b3372f]">
+  1187→          ⚠️ سررسید روی {holidays.get(cheque.dueDate) || 'جمعه'} است — طبق مادهٔ ۳۱۵ به روز کاری بعد منتقل می‌شود
+  1188→        </p>
+  1189→      )}
+  1190→    </Modal>
+  1191→  )
+  1192→}
+  1193→
+  1194→/** مودال ثبت پرداخت غیرچکی */
+  1195→function PaymentModal({ holidays, reps, onClose, onSaved }: {
+  1196→  holidays: Map<string, string>; reps: RepLite[]; onClose: () => void; onSaved: () => void
+  1197→}) {
+  1198→  const [kind, setKind] = useState('CASH')
+  1199→  const [amount, setAmount] = useState('')
+  1200→  const [providerName, setProviderName] = useState('')
+  1201→  const [rep, setRep] = useState({ repId: '', repName: '' })
+  1202→  const [paidAt, setPaidAt] = useState(todayIso())
+  1203→  const [holooReceiptNo, setHolooReceiptNo] = useState('')
+  1204→  const [note, setNote] = useState('')
+  1205→  const [orders, setOrders] = useState<any[]>([])
+  1206→  const [orderId, setOrderId] = useState('')
+  1207→  const [busy, setBusy] = useState(false)
+  1208→
+  1209→  useEffect(() => {
+  1210→    api<{ orders: any[] }>('/api/orders').then((d) => setOrders(d.orders.filter((o) => !['DONE', 'CANCELLED'].includes(o.status)))).catch(() => {})
+  1211→  }, [])
+  1212→
+  1213→  const save = async () => {
+  1214→    if (!amount || Number(amount) <= 0) return toast.error('مبلغ پرداخت الزامی است')
+  1215→    setBusy(true)
+  1216→    try {
+  1217→      const order = orders.find((o) => o.id === orderId)
+  1218→      await api('/api/payments', {
+  1219→        method: 'POST',
+  1220→        body: {
+  1221→          kind, amount: Number(amount), providerName: providerName || order?.providerName || '',
+  1222→          repId: rep.repId, repName: rep.repName, paidAt, holooReceiptNo, note,
+  1223→          orderId: order?.id || '', orderCode: order?.code || '',
+  1224→        },
+  1225→      })
+  1226→      toast.success('پرداخت ثبت شد ✅')
+  1227→      onSaved()
+  1228→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+  1229→  }
+  1230→
+  1231→  return (
+  1232→    <Modal title="ثبت پرداخت — نقدی / کارت‌خوان / کارت به کارت" onClose={onClose} wide>
+  1233→      <Labeled label="روش پرداخت">
+  1234→        <div className="flex flex-wrap gap-1.5">
+  1235→          {Object.entries(PAY_KIND_META).map(([k, m]) => (
+  1236→            <button key={k} type="button" onClick={() => setKind(k)} className={cn('rounded-full px-3.5 py-2 text-[11px] font-extrabold transition', kind === k ? 'text-white' : 'border border-border bg-card text-foreground/70')} style={kind === k ? { background: m.color } : {}}>
+  1237→              {m.icon} {m.label}
+  1238→            </button>
+  1239→          ))}
+  1240→        </div>
+  1241→      </Labeled>
+  1242→      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+  1243→        <Labeled label="مبلغ (تومان) *"><FaPriceInput value={amount === '' ? '' : Number(amount)} onChange={(v) => setAmount(v === '' ? '' : String(v))} ariaLabel="مبلغ پرداخت" className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+  1244→        <Labeled label="طرف‌حساب / بابت"><input value={providerName} onChange={(e) => setProviderName(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً پخش گلدیس — تسویه نقدی" /></Labeled>
+  1245→        <Labeled label="اتصال به سفارش (اختیاری)">
+  1246→          <select value={orderId} onChange={(e) => setOrderId(e.target.value)} className="w-full rounded-xl border border-input bg-white p-3 text-sm">
+  1247→            <option value="">— بدون اتصال —</option>
+  1248→            {orders.map((o) => <option key={o.id} value={o.id}>{o.code} — {o.providerName}</option>)}
+  1249→          </select>
+  1250→        </Labeled>
+  1251→        <Labeled label="تاریخ پرداخت">
+  1252→          <JalaliDatePicker value={paidAt} onChange={setPaidAt} holidays={holidays} warnHoliday={false} />
+  1253→        </Labeled>
+  1254→        <Labeled label="نمایندهٔ طرف‌حساب">
+  1255→          <RepSelect reps={reps} value={rep} onChange={setRep} />
+  1256→        </Labeled>
+  1257→        <Labeled label="شماره رسید هلو (اختیاری)">
+  1258→          <input value={holooReceiptNo} onChange={(e) => setHolooReceiptNo(e.target.value)} dir="ltr" className="w-full rounded-xl border border-input p-3 text-sm" />
+  1259→        </Labeled>
+  1260→        <Labeled label="توضیح">
+  1261→          <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" />
+  1262→        </Labeled>
+  1263→      </div>
+  1264→      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+  1265→        {busy ? '…' : 'ثبت پرداخت ✅'}
+  1266→      </button>
+  1267→    </Modal>
+  1268→  )
+  1269→}
+  1270→
+  1271→/** تب سقف‌ها — فرم ثبت + فهرست مصرف + پارامترهای مشاور (فقط cap cheques.limits) */
+  1272→function LimitsPanel({ limits, params, onChanged }: { limits: LimitRow[]; params: SchedParams; onChanged: () => void }) {
+  1273→  const [period, setPeriod] = useState('MONTH')
+  1274→  const [method, setMethod] = useState('CHEQUE')
+  1275→  const [dayIso, setDayIso] = useState(todayIso())
+  1276→  const [jy, setJy] = useState(toJalaliParts(todayIso()).jy)
+  1277→  const [jm, setJm] = useState(toJalaliParts(todayIso()).jm)
+  1278→  const [season, setSeason] = useState('2')
+  1279→  const [maxAmount, setMaxAmount] = useState('')
+  1280→  const [maxCheques, setMaxCheques] = useState('')
+  1281→  const [note, setNote] = useState('')
+  1282→  const [busy, setBusy] = useState(false)
+  1283→
+  1284→  // پارامترهای مشاور
+  1285→  const [pMaxDue, setPMaxDue] = useState(String(params.maxDueDays))
+  1286→  const [pMaxPerDay, setPMaxPerDay] = useState(String(params.maxPerDay))
+  1287→  const [bands, setBands] = useState(() => {
+  1288→    const b = params.sizeBands
+  1289→    return [
+  1290→      { max: String(b[0]?.max ?? 50_000_000), n: String(b[0]?.n ?? 2) },
+  1291→      { max: String(b[1]?.max ?? 200_000_000), n: String(b[1]?.n ?? 3) },
+  1292→      { max: '', n: String(b[2]?.n ?? 5) },
+  1293→    ]
+  1294→  })
+  1295→  useEffect(() => {
+  1296→    setPMaxDue(String(params.maxDueDays))
+  1297→    setPMaxPerDay(String(params.maxPerDay))
+  1298→    const b = params.sizeBands
+  1299→    setBands([
+  1300→      { max: String(b[0]?.max ?? 50_000_000), n: String(b[0]?.n ?? 2) },
+  1301→      { max: String(b[1]?.max ?? 200_000_000), n: String(b[1]?.n ?? 3) },
+  1302→      { max: '', n: String(b[2]?.n ?? 5) },
+  1303→    ])
+  1304→  }, [params])
+  1305→
+  1306→  const dateKey = resolvePeriodKey(period, dayIso)
+  1307→  const dateKeyHint =
+  1308→    period === 'MONTH' ? `${jy}-${String(jm).padStart(2, '0')}` :
+  1309→    period === 'SEASON' ? `${jy}-S${season}` :
+  1310→    period === 'YEAR' ? String(jy) :
+  1311→    period === 'WEEK' ? resolvePeriodKey('WEEK', dayIso) :
+  1312→    dayIso
+  1313→
+  1314→  const save = async () => {
+  1315→    if (!maxAmount || Number(maxAmount) <= 0) return toast.error('سقف مبلغ الزامی است')
+  1316→    setBusy(true)
+  1317→    try {
+  1318→      await api('/api/paylimits', {
+  1319→        method: 'POST',
+  1320→        body: {
+  1321→          period, method,
+  1322→          dateKey: period === 'DAY' || period === 'WEEK' ? dateKey : dateKeyHint,
+  1323→          maxAmount: Number(maxAmount),
+  1324→          maxCheques: Number(maxCheques) || 0,
+  1325→          note,
+  1326→        },
+  1327→      })
+  1328→      toast.success('سقف ثبت شد — از این پس مصرف در نوار بالای صفحه و مشاور پرداخت لحاظ می‌شود')
+  1329→      setMaxAmount(''); setMaxCheques(''); setNote('')
+  1330→      onChanged()
+  1331→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+  1332→  }
+  1333→
+  1334→  const saveParams = async () => {
+  1335→    setBusy(true)
+  1336→    try {
+  1337→      await api('/api/paylimits', {
+  1338→        method: 'POST',
+  1339→        body: {
+  1340→          schedParams: {
+  1341→            maxDueDays: Number(pMaxDue) || 45,
+  1342→            maxPerDay: Number(pMaxPerDay) || 2,
+  1343→            sizeBands: bands.map((b, i) => ({ max: i < 2 ? Number(b.max) || 0 : undefined, n: Number(b.n) || 1 })),
+  1344→          },
+  1345→        },
+  1346→      })
+  1347→      toast.success('پارامترهای مشاور پرداخت ذخیره شد')
+  1348→      onChanged()
+  1349→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+  1350→  }
+  1351→
+  1352→  const remove = async (id: string) => {
+  1353→    try {
+  1354→      await api(`/api/paylimits?id=${id}`, { method: 'DELETE' })
+  1355→      toast.success('سقف حذف شد')
+  1356→      onChanged()
+  1357→    } catch (e: any) { toast.error(e.message) }
+  1358→  }
+  1359→
+  1360→  const bandLabels = ['تا سقف اول (تومان)', 'تا سقف دوم (تومان)', 'بیشتر از سقف دوم']
+  1361→
+  1362→  return (
+  1363→    <div className="space-y-4">
+  1364→      <SectionCard
+  1365→        title="سقف هزینه‌کرد پرداخت‌ها"
+  1366→        subtitle="برای هر دوره (روز/هفته/ماه/فصل/سال) و هر روش، حداکثر مبلغ قابل تعهد را تعیین کنید — اعتبار بازار حفظ می‌شود"
+  1367→        icon={<ShieldCheck size={18} />}
+  1368→        actions={<SciExplain k="paylimits" />}
+  1369→      >
+  1370→        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+  1371→          <Labeled label="دوره">
+  1372→            <select value={period} onChange={(e) => setPeriod(e.target.value)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+  1373→              {Object.entries(PAY_PERIOD_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+  1374→            </select>
+  1375→          </Labeled>
+  1376→          <Labeled label="روش پرداخت">
+  1377→            <select value={method} onChange={(e) => setMethod(e.target.value)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+  1378→              {Object.entries(PAY_METHOD_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+  1379→            </select>
+  1380→          </Labeled>
+  1381→          {(period === 'DAY' || period === 'WEEK') && (
+  1382→            <Labeled label={period === 'DAY' ? 'روز هدف' : 'هر روزی از هفتهٔ هدف'}>
+  1383→              <JalaliDatePicker value={dayIso} onChange={setDayIso} holidays={new Map()} />
+  1384→            </Labeled>
+  1385→          )}
+  1386→          {period === 'MONTH' && (
+  1387→            <>
+  1388→              <Labeled label="سال شمسی"><FaPriceInput value={jy} onChange={(v) => setJy(Number(v) || jy)} ariaLabel="سال" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1389→              <Labeled label="ماه">
+  1390→                <select value={jm} onChange={(e) => setJm(Number(e.target.value))} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+  1391→                  {J_MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+  1392→                </select>
+  1393→              </Labeled>
+  1394→            </>
+  1395→          )}
+  1396→          {period === 'SEASON' && (
+  1397→            <>
+  1398→              <Labeled label="سال شمسی"><FaPriceInput value={jy} onChange={(v) => setJy(Number(v) || jy)} ariaLabel="سال" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1399→              <Labeled label="فصل">
+  1400→                <select value={season} onChange={(e) => setSeason(e.target.value)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+  1401→                  {SEASON_NAMES.map((s, i) => <option key={s} value={String(i + 1)}>{s}</option>)}
+  1402→                </select>
+  1403→              </Labeled>
+  1404→            </>
+  1405→          )}
+  1406→          {period === 'YEAR' && (
+  1407→            <Labeled label="سال شمسی"><FaPriceInput value={jy} onChange={(v) => setJy(Number(v) || jy)} ariaLabel="سال" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1408→          )}
+  1409→          <Labeled label="حداکثر مبلغ (تومان) *"><FaPriceInput value={maxAmount === '' ? '' : Number(maxAmount)} onChange={(v) => setMaxAmount(v === '' ? '' : String(v))} ariaLabel="سقف مبلغ" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1410→          <Labeled label="حداکثر تعداد چک (۰ = بی‌حد)"><FaPriceInput value={maxCheques === '' ? '' : Number(maxCheques)} onChange={(v) => setMaxCheques(v === '' ? '' : String(v))} ariaLabel="سقف تعداد" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1411→          <Labeled label="توضیح"><input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-xl border border-input p-2.5 text-sm" placeholder="مثلاً: فصل تعطیلات، جریان نقدی محدود" /></Labeled>
+  1412→        </div>
+  1413→        <p className="mt-2 text-[11px] text-muted-foreground">
+  1414→          کلید دوره: <span className="font-black text-[#8a5a2b]" dir="ltr">{period === 'DAY' || period === 'WEEK' ? dateKey : dateKeyHint}</span> — {period === 'DAY' ? 'همان روز' : period === 'WEEK' ? `هفتهٔ آغازِ ${formatJalaliShort(resolvePeriodKey('WEEK', dayIso))}` : period === 'MONTH' ? `${J_MONTHS[jm - 1]} ${faNum(jy)}` : period === 'SEASON' ? `${SEASON_NAMES[Number(season) - 1]} ${faNum(jy)}` : `کل سال ${faNum(jy)}`}
+  1415→        </p>
+  1416→        <button onClick={save} disabled={busy} className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white disabled:opacity-50 sm:w-auto sm:px-8">
+  1417→          ثبت سقف
+  1418→        </button>
+  1419→
+  1420→        {/* فهرست سقف‌ها با مصرف */}
+  1421→        <div className="mt-4 space-y-2">
+  1422→          <p className="text-xs font-black">سقف‌های ثبت‌شده و مصرف واقعی</p>
+  1423→          {limits.length === 0 && <EmptyState emoji="🛡️" title="سقفی ثبت نشده" hint="مثلاً: ماهانه چک حداکثر ۵۰۰ میلیون تومان" />}
+  1424→          {limits.map((l) => {
+  1425→            const hot = l.overRatio > 90
+  1426→            const warm = l.overRatio > 70 && !hot
+  1427→            return (
+  1428→              <div key={l.id} className="rounded-2xl bg-white/80 p-3 ring-1 ring-border/60">
+  1429→                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+  1430→                  <span className="font-black">
+  1431→                    {PAY_PERIOD_LABELS[l.period] || l.period} • {PAY_METHOD_LABELS[l.method] || l.method}
+  1432→                    <span className="mr-1.5 font-mono text-[9.5px] text-muted-foreground" dir="ltr">{l.dateKey || '—'}</span>
+  1433→                    {l.maxCheques > 0 && <span className="mr-1.5 text-[10px] text-muted-foreground">حداکثر {faNum(l.maxCheques)} فقره</span>}
+  1434→                  </span>
+  1435→                  <span className="flex items-center gap-2">
+  1436→                    <span className="font-bold">{faMoney(l.used)} / {faMoney(l.maxAmount)} تومان</span>
+  1437→                    <button onClick={() => remove(l.id)} className="rounded-lg bg-[#b3372f]/10 px-2 py-1 text-[10px] font-black text-[#b3372f]">حذف</button>
+  1438→                  </span>
+  1439→                </div>
+  1440→                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
+  1441→                  <div className={cn('h-full rounded-full transition-all', hot ? 'bg-[#b3372f]' : warm ? 'bg-[#c9a227]' : 'bg-[#0e7a4a]/70')} style={{ width: `${Math.min(100, l.overRatio)}%` }} />
+  1442→                </div>
+  1443→                {l.note && <p className="mt-1 text-[10px] text-muted-foreground">{l.note}</p>}
+  1444→              </div>
+  1445→            )
+  1446→          })}
+  1447→        </div>
+  1448→      </SectionCard>
+  1449→
+  1450→      <SectionCard title="پارامترهای مشاور پرداخت" subtitle="تعداد چک بر اساس اندازهٔ مبلغ، حداکثر مهلت پیش‌فرض و حداکثر چک در روز" icon={<Gauge size={18} />}>
+  1451→        <div className="grid gap-3 sm:grid-cols-2">
+  1452→          <Labeled label="حداکثر مهلت پیش‌فرض (روز)"><FaPriceInput value={pMaxDue === '' ? '' : Number(pMaxDue)} onChange={(v) => setPMaxDue(v === '' ? '' : String(v))} ariaLabel="حداکثر مهلت" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1453→          <Labeled label="حداکثر تعداد چک در یک روز"><FaPriceInput value={pMaxPerDay === '' ? '' : Number(pMaxPerDay)} onChange={(v) => setPMaxPerDay(v === '' ? '' : String(v))} ariaLabel="چک در روز" className="w-full rounded-xl border border-input p-2.5 text-sm" /></Labeled>
+  1454→        </div>
+  1455→        <p className="mt-3 text-[11px] font-black text-[#8a5a2b]">تعداد چک بر اساس اندازهٔ مبلغ</p>
+  1456→        <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
+  1457→          {bands.map((b, i) => (
+  1458→            <div key={i} className="rounded-2xl bg-muted/40 p-3">
+  1459→              <p className="text-[10.5px] font-bold text-muted-foreground">{bandLabels[i]}</p>
+  1460→              {i < 2 && <FaPriceInput value={b.max === '' ? '' : Number(b.max)} onChange={(v) => setBands((bs) => bs.map((x, j) => (j === i ? { ...x, max: v === '' ? '' : String(v) } : x)))} ariaLabel={bandLabels[i]} className="mt-1 w-full rounded-xl border border-input p-2 text-sm" />}
+  1461→              <Labeled label="حداکثر تعداد چک">
+  1462→                <FaPriceInput value={b.n === '' ? '' : Number(b.n)} onChange={(v) => setBands((bs) => bs.map((x, j) => (j === i ? { ...x, n: v === '' ? '' : String(v) } : x)))} ariaLabel={`تعداد چک بند ${faNum(i + 1)}`} className="mt-1 w-full rounded-xl border border-input p-2 text-sm" />
+  1463→              </Labeled>
+  1464→            </div>
+  1465→          ))}
+  1466→        </div>
+  1467→        <button onClick={saveParams} disabled={busy} className="mt-3 w-full rounded-xl bg-[#8a5a2b] py-2.5 text-xs font-extrabold text-white disabled:opacity-50 sm:w-auto sm:px-8">
+  1468→          ذخیرهٔ پارامترها
+  1469→        </button>
+  1470→      </SectionCard>
+  1471→    </div>
+  1472→  )
+  1473→}
+  1474→
+  1475→/** گوزن نمرهٔ اعتبار — دایرهٔ ۰..۱۰۰ */
+  1476→function ScoreGauge({ score }: { score: number }) {
+  1477→  const R = 25
+  1478→  const C = 2 * Math.PI * R
+  1479→  const color = score >= 85 ? '#0e7a4a' : score >= 60 ? '#c9a227' : '#b3372f'
+  1480→  return (
+  1481→    <div className="relative h-16 w-16 shrink-0">
+  1482→      <svg width="64" height="64" viewBox="0 0 64 64">
+  1483→        <circle cx="32" cy="32" r={R} fill="none" stroke="#ece7d8" strokeWidth="6" />
+  1484→        <circle cx="32" cy="32" r={R} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - score / 100)} transform="rotate(-90 32 32)" />
+  1485→      </svg>
+  1486→      <span className="absolute inset-0 flex items-center justify-center text-sm font-black" style={{ color }}>{faNum(score)}</span>
+  1487→    </div>
+  1488→  )
+  1489→}
+  1490→
+  1491→/** نوار کوچک روزهای پنجره با نقاط سررسید */
+  1492→function DueStrip({ startIso, days, dues, holidays }: { startIso: string; days: number; dues: Map<string, number>; holidays: Map<string, string> }) {
+  1493→  const cells = Array.from({ length: days }, (_, i) => addDaysIso(i, startIso))
+  1494→  return (
+  1495→    <div className="flex gap-[1.5px]" dir="ltr" title="نوار جریان نقدی پنجره — ستون طلایی = سررسید چک">
+  1496→      {cells.map((iso) => {
+  1497→        const wd = new Date(iso + 'T12:00:00').getDay()
+  1498→        const hol = holidays.get(iso)
+  1499→        const due = dues.get(iso)
+  1500→        return (
+  1501→          <span
+  1502→            key={iso}
+  1503→            className={cn(
+  1504→              'h-4 flex-1 rounded-[2px]',
+  1505→              due ? 'bg-[#c9a227]' : hol ? 'bg-[#b3372f]/60' : wd === 5 ? 'bg-[#b3372f]/25' : wd === 4 ? 'bg-[#8a5a2b]/15' : 'bg-muted',
+  1506→            )}
+  1507→            title={`${formatJalaliShort(iso)}${due ? ` — سررسید ${faMoney(due)} تومان` : hol ? ` — ${hol}` : wd === 5 ? ' — جمعه' : ''}`}
+  1508→          />
+  1509→        )
+  1510→      })}
+  1511→    </div>
+  1512→  )
+  1513→}
+  1514→
+  1515→/** تب مشاور پرداخت — سه گزینهٔ نردبان + نمرهٔ اعتبار + اعمال برنامه */
+  1516→function AdvisorPanel({ params, limits, holidays, role, canApply, onApplied }: {
+  1517→  params: SchedParams; limits: LimitRow[]; holidays: Map<string, string>
+  1518→  role: string; canApply: boolean; onApplied: () => void
+  1519→}) {
+  1520→  const [amount, setAmount] = useState('')
+  1521→  const [purpose, setPurpose] = useState('')
+  1522→  const [maxDueDays, setMaxDueDays] = useState(params.maxDueDays)
+  1523→  const [orderId, setOrderId] = useState('')
+  1524→  const [orders, setOrders] = useState<any[]>([])
+  1525→  const [sched, setSched] = useState<SchedResult | null>(null)
+  1526→  const [applying, setApplying] = useState(false)
+  1527→
+  1528→  useEffect(() => {
+  1529→    api<{ orders: any[] }>('/api/orders').then((d) => setOrders(d.orders.filter((o) => !['DONE', 'CANCELLED'].includes(o.status)))).catch(() => {})
+  1530→  }, [])
+  1531→
+  1532→  const amountN = Number(amount) || 0
+  1533→  const order = orders.find((o) => o.id === orderId)
+  1534→
+  1535→  const compute = () => {
+  1536→    if (amountN <= 0) return toast.error('مبلغ را وارد کنید')
+  1537→    const result = generateSchedule({
+  1538→      amount: amountN,
+  1539→      maxDueDays,
+  1540→      todayIso: todayIso(),
+  1541→      params,
+  1542→      payLimits: limits.map((l) => ({ id: l.id, period: l.period, dateKey: l.dateKey, method: l.method, maxAmount: l.maxAmount, used: l.used }) as PayLimitLite),
+  1543→      holidays: new Set(holidays.keys()),
+  1544→    })
+  1545→    setSched(result)
+  1546→  }
+  1547→
+  1548→  const apply = async (opt: SchedOption) => {
+  1549→    if (!canApply) return toast.error('ثبت چک نیازمند دسترسی «cheques.create» است')
+  1550→    if (!order && !purpose.trim()) return toast.error('«بابت / گیرنده» را بنویسید یا سفارش هدف را انتخاب کنید')
+  1551→    setApplying(true)
+  1552→    const tid = toast.loading(`ثبت ${faNum(opt.cheques.length)} چک برنامه…`)
+  1553→    try {
+  1554→      for (let i = 0; i < opt.cheques.length; i++) {
+  1555→        const c = opt.cheques[i]
+  1556→        toast.loading(`ثبت چک ${faNum(i + 1)} از ${faNum(opt.cheques.length)}…`, { id: tid })
+  1557→        const useOrderFlow = !!order && ['GM', 'OM', 'ACC'].includes(role)
+  1558→        await api('/api/cheques', {
+  1559→          method: 'POST',
+  1560→          body: {
+  1561→            ...(useOrderFlow ? { orderId: order.id, orderCode: order.code } : { selfIssued: true, orderCode: order?.code || '' }),
+  1562→            amount: c.amount,
+  1563→            recipientName: order ? order.providerName : purpose.trim(),
+  1564→            dueDate: c.dueDateIso,
+  1565→            writtenAt: todayIso(),
+  1566→            periodDays: daysBetween(c.dueDateIso, todayIso()),
+  1567→          },
+  1568→        })
+  1569→      }
+  1570→      toast.success(`برنامهٔ «${opt.name}» با ${faNum(opt.cheques.length)} چک ثبت شد 🏆`, { id: tid })
+  1571→      setSched(null)
+  1572→      setAmount('')
+  1573→      onApplied()
+  1574→    } catch (e: any) {
+  1575→      toast.error(e.message, { id: tid })
+  1576→    } finally {
+  1577→      setApplying(false)
+  1578→    }
+  1579→  }
+  1580→
+  1581→  const bandHint = amountN > 0 ? `بر اساس سیاست مالک: حداکثر ${faNum(maxChequesFor(amountN, params.sizeBands))} فقره چک` : ''
+  1582→
+  1583→  return (
+  1584→    <SectionCard
+  1585→      title="مشاور پرداخت — حفظ اعتبار بازار"
+  1586→      subtitle="مبلغ و حداکثر مهلت را بدهید؛ سه برنامهٔ نردبانی با نمرهٔ اعتبار می‌سازد و بهترین را پیشنهاد می‌کند"
+  1587→      icon={<Sparkles size={18} />}
+  1588→      actions={<SciExplain k="schedscore" />}
+  1589→    >
+  1590→      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+  1591→        <Labeled label="مبلغ کل (تومان) *">
+  1592→          <FaPriceInput value={amount === '' ? '' : Number(amount)} onChange={(v) => setAmount(v === '' ? '' : String(v))} ariaLabel="مبلغ برنامه" className="w-full rounded-xl border border-input p-3 text-sm" />
+  1593→        </Labeled>
+  1594→        <Labeled label="بابت / گیرنده *">
+  1595→          <input value={purpose} onChange={(e) => setPurpose(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً پخش گلدیس — تسویه فصل" />
+  1596→        </Labeled>
+  1597→        <Labeled label="سفارش هدف (اختیاری — گیرنده از سفارش گرفته می‌شود)">
+  1598→          <select value={orderId} onChange={(e) => setOrderId(e.target.value)} className="w-full rounded-xl border border-input bg-white p-3 text-sm">
+  1599→            <option value="">— بدون سفارش (مستقل) —</option>
+  1600→            {orders.map((o) => <option key={o.id} value={o.id}>{o.code} — {o.providerName}</option>)}
+  1601→          </select>
+  1602→        </Labeled>
+  1603→        <Labeled label={`حداکثر مهلت: ${faNum(maxDueDays)} روز`} hint={bandHint}>
+  1604→          <input
+  1605→            type="range" min={15} max={90} step={5} value={maxDueDays}
+  1606→            onChange={(e) => setMaxDueDays(Number(e.target.value))}
+  1607→            className="w-full accent-[#0e7a4a]"
+  1608→            aria-label="حداکثر مهلت به روز"
+  1609→          />
+  1610→          <div className="flex justify-between text-[9px] font-bold text-muted-foreground"><span>۱۵</span><span>۴۵</span><span>۹۰</span></div>
+  1611→        </Labeled>
+  1612→      </div>
+  1613→      <button onClick={compute} className="mt-3 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white sm:w-auto sm:px-10">
+  1614→        ✨ ساخت سه گزینهٔ پرداخت
+  1615→      </button>
+  1616→
+  1617→      {!sched && (
+  1618→        <p className="mt-3 rounded-2xl border border-dashed border-[#c9a227]/40 bg-[#fdf6dd]/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
+  1619→          مشاور سه استراتژی می‌سازد: <b>نردبان مساوی</b> (کمترین فشار روزانه — کمترین واریانس)، <b>پیش‌رو ۶۰/۴۰</b> (تسویهٔ سنگین‌تر زودتر — اعتبار بالاتر) و <b>پس‌رو ۳۰/۷۰</b> (حفظ نقدینگی، هزینهٔ اعتباری).
+  1620→          تاریخ‌ها هرگز روی جمعه و تعطیل رسمی نمی‌افتند (مادهٔ ۳۱۵ قانون تجارت) و سقف‌های هزینه‌کرد شما در رتبه‌بندی لحاظ می‌شود.
+  1621→        </p>
+  1622→      )}
+  1623→
+  1624→      {sched && (
+  1625→        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+  1626→          {sched.options.map((opt) => {
+  1627→            const dues = new Map<string, number>()
+  1628→            for (const c of opt.cheques) dues.set(c.dueDateIso, (dues.get(c.dueDateIso) || 0) + c.amount)
+  1629→            const bd = opt.breakdown
+  1630→            return (
+  1631→              <div key={opt.key} className={cn('glow-card rounded-2xl bg-white/85 p-4', opt.best && 'gold-glow-border ring-1 ring-[#c9a227]/60')}>
+  1632→                <div className="flex items-start justify-between gap-2">
+  1633→                  <div>
+  1634→                    <p className="flex items-center gap-1.5 text-sm font-black">
+  1635→                      {opt.best && <Trophy size={15} className="text-[#c9a227]" />}
+  1636→                      {faNum(opt.rank)}. {opt.name}
+  1637→                    </p>
+  1638→                    <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted-foreground">{opt.desc}</p>
+  1639→                    {opt.best && <p className="mt-1 inline-block rounded-md bg-[#c9a227]/20 px-2 py-0.5 text-[9.5px] font-black text-[#8a6d10]">🏆 پیشنهاد سامانه برای حفظ اعتبار</p>}
+  1640→                  </div>
+  1641→                  <ScoreGauge score={opt.score} />
+  1642→                </div>
+  1643→
+  1644→                {/* چیپ‌های چک */}
+  1645→                <div className="mt-2.5 flex flex-wrap gap-1.5">
+  1646→                  {opt.cheques.map((c, i) => (
+  1647→                    <span key={i} className={cn('rounded-xl border px-2.5 py-1.5 text-[10.5px] font-bold', c.shifted ? 'border-[#c9a227]/60 bg-[#fdf6dd]/70' : 'border-[#0e7a4a]/30 bg-[#0e7a4a]/5')} title={c.shifted ? 'به‌خاطر تعطیل/جمعه جابه‌جا شد' : 'روز کاری'}>
+  1648→                      {wdShort(c.dueDateIso)} {formatJalaliShort(c.dueDateIso)} — {faMoneyShort(c.amount)}
+  1649→                      {c.shifted && ' ↷'}
+  1650→                    </span>
+  1651→                  ))}
+  1652→                  <span className="rounded-xl bg-muted px-2.5 py-1.5 text-[10.5px] font-black">جمع: {faMoney(opt.cheques.reduce((s, c) => s + c.amount, 0))}</span>
+  1653→                </div>
+  1654→
+  1655→                {/* نوار تقویم کوچک */}
+  1656→                <div className="mt-2.5">
+  1657→                  <DueStrip startIso={todayIso()} days={maxDueDays} dues={dues} holidays={holidays} />
+  1658→                </div>
+  1659→
+  1660→                {/* سنجاق‌های تحلیلی */}
+  1661→                <div className="mt-2.5 space-y-1 text-[10px] leading-relaxed text-muted-foreground">
+  1662→                  <p>حداکثر بار یک روز: <b className="text-foreground">{faMoneyShort(bd.dailyMax)}</b> • میانگین فاصله: <b className="text-foreground">{faNum(bd.avgInterval)} روز</b></p>
+  1663→                  {(bd.breaches.daily > 0 || bd.breaches.weekly > 0 || bd.breaches.monthly > 0) && (
+  1664→                    <p className="font-black text-[#b3372f]">
+  1665→                      ⚠️ نقض سقف: {bd.breaches.daily > 0 && `روزانه (${faNum(bd.breaches.daily)}) `}{bd.breaches.weekly > 0 && `هفتگی (${faNum(bd.breaches.weekly)}) `}{bd.breaches.monthly > 0 && `ماهانه (${faNum(bd.breaches.monthly)})`}
+  1666→                    </p>
+  1667→                  )}
+  1668→                  {bd.holidayShifts > 0 && <p className="text-[#8a6d10]">↷ {faNum(bd.holidayShifts)} تاریخ به‌خاطر جمعه/تعطیل جابه‌جا شد</p>}
+  1669→                  {bd.chequesBeyond3 && <p className="text-[#8a6d10]">بیش از ۳ فقره چک — هزینهٔ اعتباری دارد</p>}
+  1670→                  {bd.backloadIndex > 0 && <p className="text-[#8a6d10]">پس‌روی: {faNum(Math.round(bd.backloadIndex * 100))}٪ بار در نیمهٔ دوم پنجره</p>}
+  1671→                  {bd.intervalVariance > 0 && <p className="text-[#8a6d10]">ناهمواری فاصله‌ها: {faNum(Math.round(bd.intervalVariance * 100))}٪</p>}
+  1672→                </div>
+  1673→
+  1674→                <button
+  1675→                  onClick={() => apply(opt)}
+  1676→                  disabled={applying}
+  1677→                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-extrabold text-white disabled:opacity-50"
+  1678→                  style={{ background: opt.best ? '#0e7a4a' : '#8a5a2b' }}
+  1679→                >
+  1680→                  <CalendarCheck size={14} /> {applying ? '…' : `اعمال این گزینه (${faNum(opt.cheques.length)} چک)`}
+  1681→                </button>
+  1682→              </div>
+  1683→            )
+  1684→          })}
+  1685→        </div>
+  1686→      )}
+  1687→      {!canApply && (
+  1688→        <p className="mt-3 rounded-xl bg-[#b3372f]/5 px-3 py-2 text-[11px] font-bold text-[#b3372f]">
+  1689→          🔒 اعمال برنامه نیازمند دسترسی ثبت چک مستقل است (مالک / مدیر کل / حسابدار / مدیر سامانه) — محاسبه و مقایسه برای همه آزاد است.
+  1690→        </p>
+  1691→      )}
+  1692→    </SectionCard>
+  1693→  )
+  1694→}
+  1695→

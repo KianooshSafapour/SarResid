@@ -1,0 +1,1100 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faNum, formatJalaliDateTime, formatJalaliLong, J_MONTHS, toJalaliParts } from '@/lib/jalali'
+     7→import { ROLE_LABELS, SECONDARY_LABELS } from '@/lib/constants'
+     8→import { SectionCard, Pill, EmptyState, Avatar, SearchInput, Labeled, KeyValue } from '@/components/app/ui-bits'
+     9→import type { AppCtx } from '@/components/app/ui-bits'
+    10→import { JalaliDatePicker, useHolidays } from '@/components/app/jalali-widgets'
+    11→import { Modal } from '@/components/views/Orders'
+    12→import { cn } from '@/lib/utils'
+    13→import {
+    14→  Users, CalendarDays, ScrollText, Settings, Plus, Pencil, UserX, RefreshCw, Trash2, ShieldCheck, Info, Download,
+    15→  Server, Database, Package, Truck, Layers, History, RotateCcw, ChevronDown, ChevronUp,
+    16→} from 'lucide-react'
+    17→
+    18→type User = {
+    19→  id: string; name: string; username: string; role: string; secondaryRoles: string[]
+    20→  color: string; active: boolean; points: number; pin?: string
+    21→}
+    22→type Holiday = { id: string; date: string; title: string; source: string }
+    23→type LogRow = { id: string; userName: string; action: string; entity: string; detail: string; createdAt: string }
+    24→
+    25→const ROLE_COLORS: Record<string, string> = {
+    26→  OWNER: '#b3372f', GM: '#0e7a4a', OM: '#207a63', PM: '#8a6d10', ACC: '#77934a',
+    27→  HC: '#a04c2a', CASHIER: '#8a5a2b', SK: '#5c7236', MERCH: '#c96f4a', SALES: '#6d7a6e',
+    28→}
+    29→
+    30→const SECONDARY_KEYS = ['RECEIVER', 'MERCH', 'SALES', 'IT']
+    31→const COLOR_SWATCHES = ['#0e7a4a', '#c9a227', '#c96f4a', '#77934a', '#b3372f', '#8a5a2b', '#207a63', '#6d7a6e']
+    32→
+    33→const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+    34→  manual: { label: 'دستی', color: '#6d7a6e' },
+    35→  seed: { label: 'پایگاه اولیه', color: '#8a6d10' },
+    36→  keybit: { label: 'اینترنت', color: '#207a63' },
+    37→}
+    38→
+    39→const ENTITY_LABELS: Record<string, string> = {
+    40→  order: 'سفارش', product: 'کالا', task: 'وظیفه', cheque: 'چک', user: 'کاربر',
+    41→  message: 'پیام', feedback: 'بازخورد', wall: 'دیوار تیمی', preOrder: 'پیش‌فاکتور',
+    42→  customer: 'مشتری', customerRequest: 'درخواست کالا', planogram: 'پلانوگرام',
+    43→  holiday: 'تعطیلی', award: 'امتیاز', sop: 'دستورالعمل', note: 'یادداشت', stockCount: 'انبارگردانی',
+    44→}
+    45→const ENTITY_CHIPS = ['order', 'product', 'task', 'cheque', 'user', 'message', 'feedback', 'wall']
+    46→
+    47→export default function AdminView({ ctx }: { ctx: AppCtx }) {
+    48→  const allowed = ['OM', 'GM', 'OWNER'].includes(ctx.user!.role)
+    49→  const [tab, setTab] = useState('users')
+    50→
+    51→  if (!allowed) {
+    52→    return (
+    53→      <div className="py-10">
+    54→        <EmptyState
+    55→          emoji="🔒"
+    56→          title="دسترسی محدود"
+    57→          hint="این بخش فقط برای مدیران سامانه (مدیر عملیات، مدیر کل و مالک) باز است"
+    58→        />
+    59→      </div>
+    60→    )
+    61→  }
+    62→
+    63→  const TABS = [
+    64→    { key: 'users', label: 'کاربران و نقش‌ها 👥', icon: <Users size={14} /> },
+    65→    { key: 'holidays', label: 'تعطیلات رسمی 📅', icon: <CalendarDays size={14} /> },
+    66→    { key: 'activity', label: 'گزارش فعالیت 📜', icon: <ScrollText size={14} /> },
+    67→    { key: 'settings', label: 'تنظیمات ⚙️', icon: <Settings size={14} /> },
+    68→    { key: 'holoo', label: 'هلو آپکس و همگام‌سازی 🔄', icon: <Server size={14} /> },
+    69→  ]
+    70→
+    71→  return (
+    72→    <div className="space-y-4">
+    73→      <div className="scroll-gold flex gap-1.5 overflow-x-auto pb-1">
+    74→        {TABS.map((t) => (
+    75→          <button
+    76→            key={t.key}
+    77→            onClick={() => setTab(t.key)}
+    78→            className={cn(
+    79→              'flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-extrabold transition',
+    80→              tab === t.key
+    81→                ? 'bg-primary text-white shadow-md'
+    82→                : 'border border-border bg-card text-foreground/70 hover:border-primary/50'
+    83→            )}
+    84→          >
+    85→            {t.icon}
+    86→            {t.label}
+    87→          </button>
+    88→        ))}
+    89→      </div>
+    90→
+    91→      {tab === 'users' && <UsersTab meId={ctx.user!.id} />}
+    92→      {tab === 'holidays' && <HolidaysTab isGMOM={['GM', 'OM'].includes(ctx.user!.role)} />}
+    93→      {tab === 'activity' && <ActivityTab />}
+    94→      {tab === 'settings' && <SettingsTab />}
+    95→      {tab === 'holoo' && <HolooTab />}
+    96→    </div>
+    97→  )
+    98→}
+    99→
+   100→/* ═══════════════════════════ Tab 1: کاربران و نقش‌ها ═══════════════════════════ */
+   101→function UsersTab({ meId }: { meId: string }) {
+   102→  const [users, setUsers] = useState<User[]>([])
+   103→  const [loading, setLoading] = useState(true)
+   104→  const [editUser, setEditUser] = useState<User | 'NEW' | null>(null)
+   105→  const [deactivate, setDeactivate] = useState<User | null>(null)
+   106→
+   107→  const load = async () => {
+   108→    try {
+   109→      const d = await api<{ users: User[] }>('/api/users')
+   110→      setUsers(d.users)
+   111→    } catch (e: any) {
+   112→      toast.error(e.message)
+   113→    } finally {
+   114→      setLoading(false)
+   115→    }
+   116→  }
+   117→  useEffect(() => { load() }, [])
+   118→
+   119→  return (
+   120→    <>
+   121→      <SectionCard
+   122→        title="کاربران و نقش‌ها 👥"
+   123→        subtitle="نقش هر همکار، نقش‌های دوم، امتیاز و وضعیت ورود — دموی ورود با پین است"
+   124→        icon={<Users size={18} />}
+   125→        actions={
+   126→          <button
+   127→            onClick={() => setEditUser('NEW')}
+   128→            className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white"
+   129→          >
+   130→            <Plus size={14} /> کاربر جدید
+   131→          </button>
+   132→        }
+   133→      >
+   134→        {loading ? (
+   135→          <p className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری کاربران…</p>
+   136→        ) : (
+   137→          <div className="scroll-gold max-h-[62vh] space-y-2 overflow-y-auto pl-1">
+   138→            {users.map((u) => (
+   139→              <div
+   140→                key={u.id}
+   141→                className={cn(
+   142→                  'flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-white/80 p-3.5',
+   143→                  !u.active && 'opacity-55'
+   144→                )}
+   145→              >
+   146→                <div className="flex min-w-0 items-center gap-3">
+   147→                  <Avatar name={u.name} color={u.color} size={42} />
+   148→                  <div className="min-w-0">
+   149→                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-black">
+   150→                      {u.name}
+   151→                      <Pill label={ROLE_LABELS[u.role] || u.role} color={ROLE_COLORS[u.role] || '#6d7a6e'} />
+   152→                      {u.secondaryRoles.map((s) => (
+   153→                        <span key={s} className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-bold text-muted-foreground">
+   154→                          {SECONDARY_LABELS[s] || s}
+   155→                        </span>
+   156→                      ))}
+   157→                    </p>
+   158→                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+   159→                      {faNum(u.points)} امتیاز • {u.active ? (
+   160→                        <span className="font-bold text-[#0e7a4a]">● فعال</span>
+   161→                      ) : (
+   162→                        <span className="font-bold text-[#b3372f]">● غیرفعال</span>
+   163→                      )}
+   164→                    </p>
+   165→                  </div>
+   166→                </div>
+   167→                <div className="flex items-center gap-1.5">
+   168→                  <button
+   169→                    onClick={() => setEditUser(u)}
+   170→                    className="flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-[11px] font-extrabold text-foreground/70 hover:border-primary/50"
+   171→                  >
+   172→                    <Pencil size={12} /> ویرایش
+   173→                  </button>
+   174→                  {u.active && u.id !== meId && (
+   175→                    <button
+   176→                      onClick={() => setDeactivate(u)}
+   177→                      className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-3 py-2 text-[11px] font-extrabold text-[#b3372f] hover:bg-[#b3372f]/20"
+   178→                    >
+   179→                      <UserX size={12} /> غیرفعال‌سازی
+   180→                    </button>
+   181→                  )}
+   182→                </div>
+   183→              </div>
+   184→            ))}
+   185→          </div>
+   186→        )}
+   187→      </SectionCard>
+   188→
+   189→      {editUser && (
+   190→        <UserFormModal
+   191→          user={editUser === 'NEW' ? null : editUser}
+   192→          onClose={() => setEditUser(null)}
+   193→          onSaved={() => { setEditUser(null); load() }}
+   194→        />
+   195→      )}
+   196→
+   197→      {deactivate && (
+   198→        <Modal title="غیرفعال‌سازی کاربر" onClose={() => setDeactivate(null)}>
+   199→          <p className="text-sm text-foreground/80">
+   200→            «{deactivate.name}» کاربر غیرفعال می‌شود و دیگر وارد نمی‌شود.
+   201→          </p>
+   202→          <div className="flex gap-2">
+   203→            <button
+   204→              onClick={async () => {
+   205→                try {
+   206→                  await api(`/api/users/${deactivate.id}`, { method: 'DELETE' })
+   207→                  toast.success('کاربر غیرفعال شد')
+   208→                  setDeactivate(null)
+   209→                  await load()
+   210→                } catch (e: any) {
+   211→                  toast.error(e.message)
+   212→                }
+   213→              }}
+   214→              className="flex-1 rounded-xl bg-[#b3372f] py-2.5 text-xs font-extrabold text-white"
+   215→            >
+   216→              غیرفعال کن
+   217→            </button>
+   218→            <button onClick={() => setDeactivate(null)} className="flex-1 rounded-xl border py-2.5 text-xs font-bold">
+   219→              انصراف
+   220→            </button>
+   221→          </div>
+   222→        </Modal>
+   223→      )}
+   224→    </>
+   225→  )
+   226→}
+   227→
+   228→/** create / edit user modal */
+   229→function UserFormModal({ user, onClose, onSaved }: { user: User | null; onClose: () => void; onSaved: () => void }) {
+   230→  const [form, setForm] = useState({
+   231→    name: user?.name || '',
+   232→    role: user?.role || 'SALES',
+   233→    pin: user?.pin || '1234',
+   234→    color: user?.color || COLOR_SWATCHES[0],
+   235→  })
+   236→  const [secondary, setSecondary] = useState<string[]>(user?.secondaryRoles || [])
+   237→  const [active, setActive] = useState(user?.active ?? true)
+   238→  const [busy, setBusy] = useState(false)
+   239→
+   240→  const toggleSecondary = (k: string) =>
+   241→    setSecondary((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]))
+   242→
+   243→  const save = async () => {
+   244→    if (!form.name.trim()) return toast.error('نام کاربر الزامی است')
+   245→    setBusy(true)
+   246→    try {
+   247→      if (user) {
+   248→        await api(`/api/users/${user.id}`, {
+   249→          method: 'PATCH',
+   250→          body: { name: form.name.trim(), role: form.role, pin: form.pin, color: form.color, secondaryRoles: secondary, active },
+   251→        })
+   252→        toast.success('اطلاعات کاربر ذخیره شد ✅')
+   253→      } else {
+   254→        await api('/api/users', {
+   255→          method: 'POST',
+   256→          body: { name: form.name.trim(), role: form.role, pin: form.pin || '1234', color: form.color, secondaryRoles: secondary },
+   257→        })
+   258→        toast.success('کاربر جدید ساخته شد ✅ — پین ورودش را به او بگویید')
+   259→      }
+   260→      onSaved()
+   261→    } catch (e: any) {
+   262→      toast.error(e.message)
+   263→      setBusy(false)
+   264→    }
+   265→  }
+   266→
+   267→  return (
+   268→    <Modal title={user ? `ویرایش «${user.name}»` : 'کاربر جدید'} onClose={onClose}>
+   269→      <Labeled label="نام و نام خانوادگی *">
+   270→        <input
+   271→          value={form.name}
+   272→          onChange={(e) => setForm({ ...form, name: e.target.value })}
+   273→          className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm"
+   274→          placeholder="مثلاً: زهرا محمدی"
+   275→        />
+   276→      </Labeled>
+   277→
+   278→      <Labeled label="نقش اصلی *">
+   279→        <select
+   280→          value={form.role}
+   281→          onChange={(e) => setForm({ ...form, role: e.target.value })}
+   282→          className="w-full rounded-xl border border-input bg-white p-3 text-sm"
+   283→        >
+   284→          {Object.entries(ROLE_LABELS).map(([k, v]) => (
+   285→            <option key={k} value={k}>{v}</option>
+   286→          ))}
+   287→        </select>
+   288→      </Labeled>
+   289→
+   290→      <Labeled label="نقش‌های دوم (اختیاری)" hint="همکار می‌تواند چند نقش را هم‌زمان داشته باشد">
+   291→        <div className="flex flex-wrap gap-1.5">
+   292→          {SECONDARY_KEYS.map((k) => (
+   293→            <button
+   294→              key={k}
+   295→              type="button"
+   296→              onClick={() => toggleSecondary(k)}
+   297→              className={cn(
+   298→                'rounded-full border px-3.5 py-2 text-[11px] font-extrabold transition',
+   299→                secondary.includes(k)
+   300→                  ? 'border-[#77934a] bg-[#77934a] text-white'
+   301→                  : 'border-border bg-card text-foreground/70 hover:border-primary/50'
+   302→              )}
+   303→            >
+   304→              {SECONDARY_LABELS[k]}
+   305→            </button>
+   306→          ))}
+   307→        </div>
+   308→      </Labeled>
+   309→
+   310→      <div className="grid grid-cols-2 gap-3">
+   311→        <Labeled label="پین ورود" hint="پیش‌فرض ۱۲۳۴">
+   312→          <input
+   313→            value={form.pin}
+   314→            onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+   315→            dir="ltr"
+   316→            className="w-full rounded-xl border border-input bg-white/90 p-3 text-center text-sm font-black"
+   317→          />
+   318→        </Labeled>
+   319→        <Labeled label="رنگ آواتار">
+   320→          <div className="flex flex-wrap gap-1.5 pt-1">
+   321→            {COLOR_SWATCHES.map((c) => (
+   322→              <button
+   323→                key={c}
+   324→                type="button"
+   325→                onClick={() => setForm({ ...form, color: c })}
+   326→                className={cn('h-8 w-8 rounded-full border-2 transition', form.color === c ? 'scale-110 border-foreground/70' : 'border-transparent')}
+   327→                style={{ background: c }}
+   328→                title={c}
+   329→              />
+   330→            ))}
+   331→          </div>
+   332→        </Labeled>
+   333→      </div>
+   334→
+   335→      {user && (
+   336→        <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-muted/40 px-3 py-2.5">
+   337→          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 accent-[#0e7a4a]" />
+   338→          <span className="text-xs font-bold">کاربر فعال است (اجازهٔ ورود دارد)</span>
+   339→        </label>
+   340→      )}
+   341→
+   342→      <button onClick={save} disabled={busy} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   343→        {busy ? '…' : user ? 'ذخیره تغییرات' : 'ساخت کاربر'}
+   344→      </button>
+   345→    </Modal>
+   346→  )
+   347→}
+   348→
+   349→/* ═══════════════════════════ Tab 2: تعطیلات رسمی ═══════════════════════════ */
+   350→function HolidaysTab({ isGMOM }: { isGMOM: boolean }) {
+   351→  const [holidays, setHolidays] = useState<Holiday[]>([])
+   352→  const [loading, setLoading] = useState(true)
+   353→  const [syncing, setSyncing] = useState(false)
+   354→  const [addOpen, setAddOpen] = useState(false)
+   355→  const [delTarget, setDelTarget] = useState<Holiday | null>(null)
+   356→
+   357→  const load = async () => {
+   358→    try {
+   359→      const d = await api<{ holidays: Holiday[] }>('/api/holidays')
+   360→      setHolidays(d.holidays)
+   361→    } catch (e: any) {
+   362→      toast.error(e.message)
+   363→    } finally {
+   364→      setLoading(false)
+   365→    }
+   366→  }
+   367→  useEffect(() => { load() }, [])
+   368→
+   369→  const groups = useMemo(() => {
+   370→    const m = new Map<string, { jy: number; jm: number; items: Holiday[] }>()
+   371→    for (const h of holidays) {
+   372→      const { jy, jm } = toJalaliParts(h.date)
+   373→      const key = `${jy}-${String(jm).padStart(2, '0')}`
+   374→      if (!m.has(key)) m.set(key, { jy, jm, items: [] })
+   375→      m.get(key)!.items.push(h)
+   376→    }
+   377→    return [...m.values()].sort((a, b) => (a.jy - b.jy) || (a.jm - b.jm))
+   378→  }, [holidays])
+   379→
+   380→  const sync = async () => {
+   381→    setSyncing(true)
+   382→    try {
+   383→      const res = await api<{ ok: boolean; added: number; errors: string[] }>('/api/holidays/sync', { method: 'POST' })
+   384→      if (res.added > 0) toast.success(`${faNum(res.added)} تعطیلی جدید از اینترنت افزوده شد ✅`)
+   385→      else if (res.ok) toast.info('تعطیلات به‌روز است — مورد جدیدی پیدا نشد')
+   386→      else toast.error(res.errors?.[0] || 'همگام‌سازی ناموفق بود')
+   387→      await load()
+   388→    } catch (e: any) {
+   389→      toast.error(e.message)
+   390→    } finally {
+   391→      setSyncing(false)
+   392→    }
+   393→  }
+   394→
+   395→  return (
+   396→    <>
+   397→      <SectionCard
+   398→        title="تعطیلات رسمی 📅"
+   399→        subtitle="برنامه‌ریزی سررسید چک و سفارش بر اساس تقویم رسمی ایران"
+   400→        icon={<CalendarDays size={18} />}
+   401→        actions={
+   402→          <>
+   403→            <button
+   404→              onClick={sync}
+   405→              disabled={syncing}
+   406→              className="flex items-center gap-1.5 rounded-xl border border-[#207a63]/40 bg-[#207a63]/10 px-4 py-2.5 text-xs font-extrabold text-[#207a63] disabled:opacity-50"
+   407→            >
+   408→              <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
+   409→              {syncing ? 'در حال همگام‌سازی…' : 'همگام‌سازی از اینترنت'}
+   410→            </button>
+   411→            <button
+   412→              onClick={() => setAddOpen(true)}
+   413→              className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white"
+   414→            >
+   415→              <Plus size={14} /> افزودن تعطیلی
+   416→            </button>
+   417→          </>
+   418→        }
+   419→      >
+   420→        {loading ? (
+   421→          <p className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری تعطیلات…</p>
+   422→        ) : groups.length === 0 ? (
+   423→          <EmptyState emoji="📅" title="تعطیلی ثبت نشده" hint="با دکمهٔ همگام‌سازی یا افزودن دستی شروع کنید" />
+   424→        ) : (
+   425→          <div className="scroll-gold max-h-[62vh] space-y-4 overflow-y-auto pl-1">
+   426→            {groups.map((g) => (
+   427→              <div key={`${g.jy}-${g.jm}`}>
+   428→                <div className="mb-1.5 flex items-center gap-2">
+   429→                  <h3 className="text-sm font-black text-foreground">
+   430→                    {J_MONTHS[g.jm - 1]} {faNum(g.jy)}
+   431→                  </h3>
+   432→                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+   433→                    {faNum(g.items.length)} مورد
+   434→                  </span>
+   435→                </div>
+   436→                <div className="space-y-1.5">
+   437→                  {g.items.map((h) => {
+   438→                    const src = SOURCE_LABELS[h.source] || SOURCE_LABELS.manual
+   439→                    return (
+   440→                      <div key={h.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-white/80 px-3 py-2.5">
+   441→                        <div className="flex min-w-0 items-center gap-2.5">
+   442→                          <span className="shrink-0 rounded-lg bg-[#b3372f]/10 px-2.5 py-1 text-[11px] font-black text-[#b3372f]">
+   443→                            {formatJalaliLong(h.date)}
+   444→                          </span>
+   445→                          <span className="min-w-0 truncate text-xs font-bold">{h.title}</span>
+   446→                        </div>
+   447→                        <div className="flex shrink-0 items-center gap-1.5">
+   448→                          <Pill label={src.label} color={src.color} />
+   449→                          {isGMOM && (
+   450→                            <button
+   451→                              onClick={() => setDelTarget(h)}
+   452→                              className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#b3372f]/10 text-[#b3372f]"
+   453→                              title="حذف تعطیلی"
+   454→                            >
+   455→                              <Trash2 size={13} />
+   456→                            </button>
+   457→                          )}
+   458→                        </div>
+   459→                      </div>
+   460→                    )
+   461→                  })}
+   462→                </div>
+   463→              </div>
+   464→            ))}
+   465→          </div>
+   466→        )}
+   467→      </SectionCard>
+   468→
+   469→      {addOpen && (
+   470→        <AddHolidayModal
+   471→          onClose={() => setAddOpen(false)}
+   472→          onSaved={() => { setAddOpen(false); load() }}
+   473→        />
+   474→      )}
+   475→
+   476→      {delTarget && (
+   477→        <Modal title="حذف تعطیلی" onClose={() => setDelTarget(null)}>
+   478→          <p className="text-sm text-foreground/80">
+   479→            «{delTarget.title}» ({formatJalaliLong(delTarget.date)}) از تقویم حذف می‌شود.
+   480→          </p>
+   481→          <div className="flex gap-2">
+   482→            <button
+   483→              onClick={async () => {
+   484→                try {
+   485→                  await api(`/api/holidays?id=${delTarget.id}`, { method: 'DELETE' })
+   486→                  toast.success('تعطیلی حذف شد')
+   487→                  setDelTarget(null)
+   488→                  await load()
+   489→                } catch (e: any) {
+   490→                  toast.error(e.message)
+   491→                }
+   492→              }}
+   493→              className="flex-1 rounded-xl bg-[#b3372f] py-2.5 text-xs font-extrabold text-white"
+   494→            >
+   495→              حذف
+   496→            </button>
+   497→            <button onClick={() => setDelTarget(null)} className="flex-1 rounded-xl border py-2.5 text-xs font-bold">
+   498→              انصراف
+   499→            </button>
+   500→          </div>
+   501→        </Modal>
+   502→      )}
+   503→    </>
+   504→  )
+   505→}
+   506→
+   507→function AddHolidayModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+   508→  const holMap = useHolidays()
+   509→  const [date, setDate] = useState('')
+   510→  const [title, setTitle] = useState('')
+   511→  const [busy, setBusy] = useState(false)
+   512→
+   513→  const save = async () => {
+   514→    if (!date || !title.trim()) return toast.error('تاریخ و عنوان الزامی است')
+   515→    setBusy(true)
+   516→    try {
+   517→      await api('/api/holidays', { method: 'POST', body: { date, title: title.trim() } })
+   518→      toast.success('تعطیلی به تقویم اضافه شد 📅')
+   519→      onSaved()
+   520→    } catch (e: any) {
+   521→      toast.error(e.message)
+   522→      setBusy(false)
+   523→    }
+   524→  }
+   525→
+   526→  return (
+   527→    <Modal title="افزودن تعطیلی رسمی" onClose={onClose}>
+   528→      <Labeled label="تاریخ *">
+   529→        <JalaliDatePicker value={date} onChange={setDate} holidays={holMap} />
+   530→      </Labeled>
+   531→      <Labeled label="عنوان تعطیلی *">
+   532→        <input
+   533→          value={title}
+   534→          onChange={(e) => setTitle(e.target.value)}
+   535→          className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm"
+   536→          placeholder="مثلاً: عید نوروز"
+   537→        />
+   538→      </Labeled>
+   539→      <button onClick={save} disabled={busy} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   540→        {busy ? '…' : 'ثبت تعطیلی 📅'}
+   541→      </button>
+   542→    </Modal>
+   543→  )
+   544→}
+   545→
+   546→/* ═══════════════════════════ Tab 3: گزارش فعالیت ═══════════════════════════ */
+   547→function ActivityTab() {
+   548→  const [logs, setLogs] = useState<LogRow[]>([])
+   549→  const [loading, setLoading] = useState(true)
+   550→  const [q, setQ] = useState('')
+   551→  const [entity, setEntity] = useState('')
+   552→
+   553→  useEffect(() => {
+   554→    api<{ logs: LogRow[] }>('/api/activity?take=120')
+   555→      .then((d) => setLogs(d.logs))
+   556→      .catch((e) => toast.error(e.message))
+   557→      .finally(() => setLoading(false))
+   558→  }, [])
+   559→
+   560→  const filtered = useMemo(() => {
+   561→    const needle = q.trim()
+   562→    return logs.filter(
+   563→      (l) =>
+   564→        (!entity || l.entity === entity) &&
+   565→        (!needle || l.userName.includes(needle) || l.action.includes(needle) || l.detail.includes(needle))
+   566→    )
+   567→  }, [logs, q, entity])
+   568→
+   569→  return (
+   570→    <SectionCard
+   571→      title="گزارش فعالیت 📜"
+   572→      subtitle="هر اقدام در سامانه با نام و زمان ثبت می‌شود — شفافیت برای حمایت از تیم"
+   573→      icon={<ScrollText size={18} />}
+   574→    >
+   575→      <div className="mb-3 flex flex-wrap items-center gap-2">
+   576→        <SearchInput value={q} onChange={setQ} placeholder="جستجوی نام، اقدام یا جزئیات…" className="min-w-[220px] flex-1" />
+   577→        <div className="flex flex-wrap gap-1.5">
+   578→          <button
+   579→            onClick={() => setEntity('')}
+   580→            className={cn('rounded-full border px-3.5 py-1.5 text-[11px] font-extrabold', !entity ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70')}
+   581→          >
+   582→            همه
+   583→          </button>
+   584→          {ENTITY_CHIPS.map((e) => (
+   585→            <button
+   586→              key={e}
+   587→              onClick={() => setEntity(entity === e ? '' : e)}
+   588→              className={cn('rounded-full border px-3.5 py-1.5 text-[11px] font-extrabold', entity === e ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70')}
+   589→            >
+   590→              {ENTITY_LABELS[e]}
+   591→            </button>
+   592→          ))}
+   593→        </div>
+   594→      </div>
+   595→
+   596→      {loading ? (
+   597→        <p className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری گزارش…</p>
+   598→      ) : filtered.length === 0 ? (
+   599→        <EmptyState emoji="📜" title="فعالیتی یافت نشد" hint="فیلتر یا عبارت جستجو را تغییر دهید" />
+   600→      ) : (
+   601→        <div className="scroll-gold max-h-[55vh] space-y-1 overflow-y-auto pl-1">
+   602→          {filtered.map((l) => (
+   603→            <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-white/70 px-3 py-2">
+   604→              <div className="flex min-w-0 items-center gap-2.5">
+   605→                <Avatar name={l.userName} color="#5c7236" size={28} />
+   606→                <div className="min-w-0">
+   607→                  <p className="text-xs">
+   608→                    <b className="text-foreground">{l.userName}</b>
+   609→                    <span className="text-foreground/80"> — {l.action}</span>
+   610→                  </p>
+   611→                  {l.detail && <p className="truncate text-[10px] text-muted-foreground">{l.detail}</p>}
+   612→                </div>
+   613→              </div>
+   614→              <div className="flex shrink-0 items-center gap-2">
+   615→                {l.entity && (
+   616→                  <span className="rounded-full bg-[#77934a]/12 px-2.5 py-0.5 text-[10px] font-bold text-[#5c7236]">
+   617→                    {ENTITY_LABELS[l.entity] || l.entity}
+   618→                  </span>
+   619→                )}
+   620→                <span className="text-[10px] text-muted-foreground">{formatJalaliDateTime(l.createdAt)}</span>
+   621→              </div>
+   622→            </div>
+   623→          ))}
+   624→        </div>
+   625→      )}
+   626→    </SectionCard>
+   627→  )
+   628→}
+   629→
+   630→/* ═══════════════════════════ Tab 4: تنظیمات ═══════════════════════════ */
+   631→
+   632→type Health = {
+   633→  counts: { users: number; activeUsers: number; orders: number; products: number; cheques: number; tasks: number; activities: number; messages: number; holidays: number }
+   634→  lastActivity: { at: string; who: string; what: string } | null
+   635→  db: { file: string; sizeBytes: number }
+   636→  holidayCoverage: { futureHolidays: number; coveredThrough: string }
+   637→  server: { node: string; env: string; uptimeSec: number; platform: string }
+   638→}
+   639→
+   640→function faBytes(b: number) {
+   641→  if (b <= 0) return '۰'
+   642→  if (b < 1024 * 1024) return `${faNum(Math.round(b / 1024))} کیلوبایت`
+   643→  return `${faNum((b / 1024 / 1024).toFixed(1))} مگابایت`
+   644→}
+   645→
+   646→function SettingsTab() {
+   647→  const [health, setHealth] = useState<Health | null>(null)
+   648→  useEffect(() => {
+   649→    api<Health>('/api/admin/health').then(setHealth).catch(() => {})
+   650→  }, [])
+   651→
+   652→  return (
+   653→    <div className="space-y-4">
+   654→      <SectionCard
+   655→        title="اطلاعات فروشگاه 🏪"
+   656→        subtitle="مشخصات پایهٔ سامانه — نسخهٔ نمایشی، مقادیر ثابت"
+   657→        icon={<Settings size={18} />}
+   658→      >
+   659→        <div className="grid gap-3 sm:grid-cols-2">
+   660→          <KeyValue k="نام فروشگاه" v="هایپر زیتون 🫒" />
+   661→          <KeyValue k="شهر" v="کرمان" />
+   662→          <KeyValue k="نرخ ارزش افزوده" v="۹٪" />
+   663→          <KeyValue k="هشدار حاشیه سود" v="کمتر از ۱۰٪" />
+   664→          <KeyValue k="حاشیه سود خوب" v="بیش از ۲۵٪" />
+   665→          <KeyValue k="واحد پول" v="تومان" />
+   666→        </div>
+   667→      </SectionCard>
+   668→
+   669→      {/* System health — for the internal-server admin */}
+   670→      <SectionCard
+   671→        title="سلامت سامانه 🩺"
+   672→        subtitle="نمای کلی داده‌ها و سرور — برای نگهداری سرور داخلی"
+   673→        icon={<ShieldCheck size={18} />}
+   674→      >
+   675→        {!health ? (
+   676→          <div className="h-24 animate-pulse rounded-xl bg-muted" />
+   677→        ) : (
+   678→          <>
+   679→            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-5">
+   680→              {[
+   681→                { label: 'کاربران', value: `${faNum(health.counts.activeUsers)} / ${faNum(health.counts.users)}`, hint: 'فعال / کل' },
+   682→                { label: 'سفارش‌ها', value: faNum(health.counts.orders), hint: 'از ابتدا' },
+   683→                { label: 'کالاها', value: faNum(health.counts.products), hint: 'فعال' },
+   684→                { label: 'چک‌ها', value: faNum(health.counts.cheques), hint: 'ثبت‌شده' },
+   685→                { label: 'وظایف', value: faNum(health.counts.tasks), hint: 'کل' },
+   686→                { label: 'رویدادهای ثبت‌شده', value: faNum(health.counts.activities), hint: 'گزارش فعالیت' },
+   687→                { label: 'پیام‌ها', value: faNum(health.counts.messages), hint: 'کل پیام‌ها' },
+   688→                { label: 'تعطیلات تقویم', value: faNum(health.counts.holidays), hint: `${faNum(health.holidayCoverage.futureHolidays)} تعطیلی پیش‌رو` },
+   689→                { label: 'حجم پایگاه‌داده', value: faBytes(health.db.sizeBytes), hint: health.db.file || 'db' },
+   690→                { label: 'کارکرد سرور', value: health.server.uptimeSec < 3600 ? `${faNum(Math.floor(health.server.uptimeSec / 60))} دقیقه` : `${faNum(Math.floor(health.server.uptimeSec / 3600))} ساعت`, hint: `Node ${faNum(health.server.node.replace('v', ''))}` },
+   691→              ].map((c) => (
+   692→                <div key={c.label} className="rounded-xl border border-border bg-white/70 p-3">
+   693→                  <p className="text-[10px] font-bold text-muted-foreground">{c.label}</p>
+   694→                  <p className="mt-0.5 text-base font-black text-foreground">{c.value}</p>
+   695→                  <p className="text-[9px] text-muted-foreground">{c.hint}</p>
+   696→                </div>
+   697→              ))}
+   698→            </div>
+   699→            {health.lastActivity && (
+   700→              <p className="mt-3 rounded-xl bg-secondary/60 p-3 text-[11px] font-bold text-[#24402f]">
+   701→                🕒 آخرین فعالیت ثبت‌شده: <b>{health.lastActivity.who}</b> — {health.lastActivity.what} ({formatJalaliDateTime(health.lastActivity.at)})
+   702→              </p>
+   703→            )}
+   704→            {/* پشتیبان‌گیری فوری — فایل دیتابیس را همین حالا دانلود کن */}
+   705→            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#0e7a4a]/30 bg-[#e9f0e4]/60 p-4">
+   706→              <div>
+   707→                <p className="text-xs font-black text-[#24402f]">💾 پشتیبان‌گیری فوری</p>
+   708→                <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
+   709→                  کل داده‌ها (سفارش‌ها، چک‌ها، کاربران، لاگ‌ها) در یک فایل — هر شب بعد از بستن فروشگاه یک نسخه بگیرید.
+   710→                </p>
+   711→              </div>
+   712→              <a
+   713→                href="/api/admin/backup"
+   714→                download
+   715→                onClick={() => toast.success('دانلود نسخه پشتیبان آغاز شد 💾')}
+   716→                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg"
+   717→              >
+   718→                <Download size={14} /> دانلود نسخه پشتیبان
+   719→              </a>
+   720→            </div>
+   721→          </>
+   722→        )}
+   723→      </SectionCard>
+   724→
+   725→      <div className="flex items-start gap-2.5 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-4">
+   726→        <Info size={16} className="mt-0.5 shrink-0 text-[#8a6d10]" />
+   727→        <p className="text-xs leading-5 text-foreground/80">
+   728→          نرخ ارزش افزوده در محاسبات حسابداری و حاشیه سود کالاها استفاده می‌شود؛ هشدار حاشیه سود در صفحهٔ
+   729→          کالاها و تأیید سفارش‌ها نمایش داده می‌شود تا فروش زیان‌ده اتفاق نیفتد.
+   730→        </p>
+   731→      </div>
+   732→
+   733→      <div className="flex items-center gap-2 rounded-2xl border border-border bg-card p-4">
+   734→        <ShieldCheck size={18} className="text-[#0e7a4a]" />
+   735→        <p className="text-xs font-bold text-foreground/80">
+   736→          نسخهٔ سامانه: ۱.۱ — داده‌ها روی پایگاه‌دادهٔ محلی فروشگاه نگهداری می‌شود؛ هر شب از فایل پایگاه‌داده پشتیبان بگیرید.
+   737→        </p>
+   738→      </div>
+   739→    </div>
+   740→  )
+   741→}
+   742→
+   743→/* ═══════════════════════════ Tab 5: هلو آپکس و همگام‌سازی ═══════════════════════════ */
+   744→
+   745→type BridgeHealth = { ok: boolean; mode: string; upstream: string | null; version: string; uptime: number }
+   746→type LedgerRow = {
+   747→  id: string; kind: string; source: string; status: string
+   748→  stats: { created: number; updated: number; skipped: number; errors: number }
+   749→  log: { at: string; line: string }[]
+   750→  snapshotCount: number
+   751→  startedByName: string; startedAt: string; finishedAt: string | null
+   752→}
+   753→type HolooData = {
+   754→  config: { url: string; tokenSet: boolean; bridgeUrl: string; bridgeHealth: BridgeHealth | null }
+   755→  ledger: LedgerRow[]
+   756→}
+   757→
+   758→const HOLOO_KINDS: Record<string, { label: string; color: string }> = {
+   759→  PRODUCTS: { label: 'کالاها', color: '#0e7a4a' },
+   760→  SUPPLIERS: { label: 'تأمین‌کنندگان', color: '#c9a227' },
+   761→  FULL: { label: 'کامل', color: '#77934a' },
+   762→}
+   763→const HOLOO_STATUS: Record<string, { label: string; color: string }> = {
+   764→  SUCCESS: { label: 'موفق', color: '#0e7a4a' },
+   765→  FAILED: { label: 'ناموفق', color: '#b3372f' },
+   766→  RUNNING: { label: 'در حال اجرا', color: '#c9a227' },
+   767→  ROLLED_BACK: { label: 'بازگردانی‌شده', color: '#6d7a6e' },
+   768→}
+   769→
+   770→function HolooTab() {
+   771→  const [data, setData] = useState<HolooData | null>(null)
+   772→  const [url, setUrl] = useState('')
+   773→  const [token, setToken] = useState('')
+   774→  const [bridgeUrl, setBridgeUrl] = useState('http://127.0.0.1:3020')
+   775→  const [saving, setSaving] = useState(false)
+   776→  const [running, setRunning] = useState(false)
+   777→  const [armRun, setArmRun] = useState<string | null>(null)
+   778→  const [armRollback, setArmRollback] = useState<string | null>(null)
+   779→  const [armPurge, setArmPurge] = useState<string | null>(null)
+   780→  const [openLog, setOpenLog] = useState<string | null>(null)
+   781→
+   782→  const load = async () => {
+   783→    try {
+   784→      const d = await api<HolooData>('/api/admin/holoo')
+   785→      setData(d)
+   786→      setUrl(d.config.url || '')
+   787→      setBridgeUrl(d.config.bridgeUrl || 'http://127.0.0.1:3020')
+   788→    } catch (e: any) {
+   789→      toast.error(e.message)
+   790→    }
+   791→  }
+   792→  useEffect(() => { load() }, [])
+   793→
+   794→  const health = data?.config.bridgeHealth || null
+   795→  const connected = Boolean(health?.ok)
+   796→
+   797→  const saveConfig = async () => {
+   798→    setSaving(true)
+   799→    try {
+   800→      await api('/api/admin/holoo', { method: 'POST', body: { action: 'config', url, token, bridgeUrl } })
+   801→      toast.success('تنظیمات اتصال ذخیره شد و تست اتصال انجام شد')
+   802→      setToken('')
+   803→      await load()
+   804→    } catch (e: any) {
+   805→      toast.error(e.message)
+   806→    } finally {
+   807→      setSaving(false)
+   808→    }
+   809→  }
+   810→
+   811→  const runSync = async (kind: string, label: string) => {
+   812→    if (armRun !== kind) {
+   813→      setArmRun(kind)
+   814→      toast('برای تأیید اجرا، دکمه را دوباره بزنید')
+   815→      return
+   816→    }
+   817→    setArmRun(null)
+   818→    setRunning(true)
+   819→    const tid = toast.loading(`همگام‌سازی ${label} در حال اجراست…`)
+   820→    try {
+   821→      const d = await api<{ run: { status: string; stats: { created: number; updated: number; skipped: number; errors: number }; error: string | null } }>(
+   822→        '/api/admin/holoo',
+   823→        { method: 'POST', body: { action: 'run', kind } }
+   824→      )
+   825→      if (d.run.status === 'FAILED') {
+   826→        toast.error(`همگام‌سازی ناموفق: ${d.run.error || 'خطای نامشخص'} — ردیف در دفتر زمانی ثبت شد`, { id: tid, duration: 8000 })
+   827→      } else {
+   828→        toast.success(
+   829→          `همگام‌سازی انجام شد — ${faNum(d.run.stats.created)} جدید، ${faNum(d.run.stats.updated)} بروزرسانی، ${faNum(d.run.stats.errors)} خطا`,
+   830→          { id: tid, duration: 6000 }
+   831→        )
+   832→      }
+   833→    } catch (e: any) {
+   834→      toast.error(e.message, { id: tid })
+   835→    } finally {
+   836→      setRunning(false)
+   837→      await load()
+   838→    }
+   839→  }
+   840→
+   841→  const rollback = async (row: LedgerRow) => {
+   842→    if (armRollback !== row.id) {
+   843→      setArmRollback(row.id)
+   844→      toast('برای تأیید بازگردانی، دکمه را دوباره بزنید')
+   845→      return
+   846→    }
+   847→    setArmRollback(null)
+   848→    try {
+   849→      const d = await api<{ restored: number; missing: number }>('/api/admin/holoo', { method: 'POST', body: { action: 'rollback', id: row.id } })
+   850→      toast.success(`بازگردانی انجام شد — ${faNum(d.restored)} کالا به وضعیت اسنپ‌شات برگشت`)
+   851→      await load()
+   852→    } catch (e: any) {
+   853→      toast.error(e.message)
+   854→    }
+   855→  }
+   856→
+   857→  const purge = async (row: LedgerRow) => {
+   858→    if (armPurge !== row.id) {
+   859→      setArmPurge(row.id)
+   860→      toast('برای تأیید حذف، دکمه را دوباره بزنید')
+   861→      return
+   862→    }
+   863→    setArmPurge(null)
+   864→    try {
+   865→      await api('/api/admin/holoo', { method: 'POST', body: { action: 'purge', id: row.id } })
+   866→      toast.success('ردیف ناموفق از دفتر حذف شد')
+   867→      await load()
+   868→    } catch (e: any) {
+   869→      toast.error(e.message)
+   870→    }
+   871→  }
+   872→
+   873→  return (
+   874→    <div className="space-y-4">
+   875→      {/* اتصال */}
+   876→      <SectionCard
+   877→        title="اتصال به هلو آپکس"
+   878→        subtitle="نرم‌افزار حسابداری هلو (Apex Edition) — نشانی سرور، توکن دسترسی و پل داخلی"
+   879→        icon={<Server size={18} />}
+   880→        actions={
+   881→          <Pill
+   882→            label={connected ? `متصل — ${health?.mode === 'live' ? 'مستقیم' : 'شبیه‌ساز'}` : 'قطع'}
+   883→            color={connected ? '#0e7a4a' : '#b3372f'}
+   884→          />
+   885→        }
+   886→      >
+   887→        <div className="grid gap-3 sm:grid-cols-3">
+   888→          <Labeled label="آدرس سرور هلو آپکس">
+   889→            <input
+   890→              dir="ltr"
+   891→              value={url}
+   892→              onChange={(e) => setUrl(e.target.value)}
+   893→              placeholder="http://192.168.1.10:8080"
+   894→              className="w-full rounded-xl border border-input bg-white/90 px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+   895→            />
+   896→          </Labeled>
+   897→          <Labeled
+   898→            label="توکن"
+   899→            hint={data?.config.tokenSet ? 'توکن ثبت شده است — برای تغییر، مقدار جدید وارد کنید' : undefined}
+   900→          >
+   901→            <input
+   902→              dir="ltr"
+   903→              type="password"
+   904→              value={token}
+   905→              onChange={(e) => setToken(e.target.value)}
+   906→              placeholder={data?.config.tokenSet ? '••••••••' : 'توکن وب‌سرویس هلو'}
+   907→              className="w-full rounded-xl border border-input bg-white/90 px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+   908→            />
+   909→          </Labeled>
+   910→          <Labeled label="آدرس پل (holoo-bridge)">
+   911→            <input
+   912→              dir="ltr"
+   913→              value={bridgeUrl}
+   914→              onChange={(e) => setBridgeUrl(e.target.value)}
+   915→              placeholder="http://127.0.0.1:3020"
+   916→              className="w-full rounded-xl border border-input bg-white/90 px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+   917→            />
+   918→          </Labeled>
+   919→        </div>
+   920→        <div className="mt-3 flex flex-wrap items-center gap-3">
+   921→          <button
+   922→            onClick={saveConfig}
+   923→            disabled={saving}
+   924→            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg disabled:opacity-60"
+   925→          >
+   926→            <RefreshCw size={14} className={saving ? 'animate-spin' : ''} />
+   927→            {saving ? 'در حال ذخیره…' : 'ذخیره و تست اتصال'}
+   928→          </button>
+   929→          {health && (
+   930→            <span className="text-[11px] font-bold text-muted-foreground">
+   931→              نسخهٔ پل {faNum(health.version)} — کارکرد {faNum(health.uptime)} ثانیه
+   932→            </span>
+   933→          )}
+   934→        </div>
+   935→        {!connected && (
+   936→          <p className="mt-3 rounded-xl bg-[#b3372f]/10 p-3 text-[11px] leading-5 font-bold text-[#b3372f]">
+   937→            پل قطع است — سرویس holoo-bridge را اجرا کنید:{' '}
+   938→            <code dir="ltr" className="rounded bg-white/70 px-1.5 py-0.5 font-black">cd mini-services/holoo-bridge && bun run dev</code>
+   939→          </p>
+   940→        )}
+   941→      </SectionCard>
+   942→
+   943→      {/* اجرای همگام‌سازی */}
+   944→      <SectionCard
+   945→        title="اجرای همگام‌سازی"
+   946→        subtitle="دریافت خودکار کالاها و تأمین‌کنندگان از هلو — پیش از هر اجرا نقطهٔ بازیابی ثبت می‌شود؛ موجودی فروشگاه دست‌نخورده می‌ماند"
+   947→        icon={<Database size={18} />}
+   948→      >
+   949→        <div className="grid gap-2.5 sm:grid-cols-3">
+   950→          {[
+   951→            { kind: 'PRODUCTS', label: 'همگام‌سازی کالاها', icon: <Package size={15} />, hint: 'کاتالوگ و قیمت‌ها از هلو' },
+   952→            { kind: 'SUPPLIERS', label: 'همگام‌سازی تأمین‌کنندگان', icon: <Truck size={15} />, hint: 'شرکت‌های پخش' },
+   953→            { kind: 'FULL', label: 'همگام‌سازی کامل', icon: <Layers size={15} />, hint: 'کالا + تأمین‌کننده' },
+   954→          ].map((b) => (
+   955→            <button
+   956→              key={b.kind}
+   957→              disabled={running}
+   958→              onClick={() => runSync(b.kind, b.label)}
+   959→              className={cn(
+   960→                'rounded-2xl border p-4 text-right transition disabled:opacity-60',
+   961→                armRun === b.kind ? 'border-[#b3372f] bg-[#b3372f]/10' : 'border-border bg-white/70 hover:border-primary/50'
+   962→              )}
+   963→            >
+   964→              <div className="flex items-center gap-2 text-sm font-black text-foreground">
+   965→                {b.icon}
+   966→                {armRun === b.kind ? 'مطمئنید؟ دوباره بزنید' : b.label}
+   967→              </div>
+   968→              <p className="mt-1 text-[11px] text-muted-foreground">
+   969→                {armRun === b.kind ? 'با زدن دوباره، همگام‌سازی شروع می‌شود' : b.hint}
+   970→              </p>
+   971→            </button>
+   972→          ))}
+   973→        </div>
+   974→        {running && (
+   975→          <p className="mt-3 animate-pulse text-xs font-bold text-[#8a6d10]">
+   976→            ⏳ همگام‌سازی در جریان است — صفحه را نبندید؛ هر صفحه بلافاصله در دفتر زمانی ذخیره می‌شود
+   977→          </p>
+   978→        )}
+   979→      </SectionCard>
+   980→
+   981→      {/* دفتر زمانی (timeline) */}
+   982→      <SectionCard
+   983→        title="دفتر زمانی همگام‌سازی"
+   984→        subtitle="تاریخچهٔ افزایشی با نقطهٔ بازیابی — مثل کامیت‌های گیت؛ هر ردیف یک نقطهٔ برگشت‌پذیر است"
+   985→        icon={<History size={18} />}
+   986→      >
+   987→        {!data ? (
+   988→          <div className="h-40 animate-pulse rounded-xl bg-muted" />
+   989→        ) : data.ledger.length === 0 ? (
+   990→          <EmptyState
+   991→            emoji="🗄️"
+   992→            title="هنوز همگام‌سازی‌ای ثبت نشده"
+   993→            hint="با دکمه‌های بالا اولین همگام‌سازی را اجرا کنید تا اولین نقطهٔ بازیابی ساخته شود"
+   994→          />
+   995→        ) : (
+   996→          <div className="border-r-2 border-dashed border-[#c9a227]/50 pr-5">
+   997→            <div className="space-y-3">
+   998→              {data.ledger.map((r) => {
+   999→                const st = HOLOO_STATUS[r.status] || { label: r.status, color: '#6d7a6e' }
+  1000→                const kd = HOLOO_KINDS[r.kind] || { label: r.kind, color: '#6d7a6e' }
+  1001→                const isOpen = openLog === r.id
+  1002→                return (
+  1003→                  <div key={r.id} className="relative rounded-2xl border border-border bg-white/70 p-3.5">
+  1004→                    <span
+  1005→                      className="absolute -right-[27px] top-5 h-3.5 w-3.5 rounded-full border-2 border-white shadow"
+  1006→                      style={{ background: st.color }}
+  1007→                    />
+  1008→                    <div className="flex flex-wrap items-center gap-2">
+  1009→                      <code dir="ltr" className="rounded-lg bg-muted px-2 py-0.5 text-[11px] font-black text-foreground">
+  1010→                        {r.id.slice(0, 6)}
+  1011→                      </code>
+  1012→                      <Pill label={kd.label} color={kd.color} />
+  1013→                      <Pill label={st.label} color={st.color} />
+  1014→                      <span className="text-[11px] text-muted-foreground">
+  1015→                        {r.startedByName} — {formatJalaliDateTime(r.startedAt)}
+  1016→                      </span>
+  1017→                    </div>
+  1018→                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold">
+  1019→                      <span className="text-[#0e7a4a]">+{faNum(r.stats.created)} جدید</span>
+  1020→                      <span className="text-[#8a6d10]">~{faNum(r.stats.updated)} بروزرسانی</span>
+  1021→                      <span className="text-foreground/60">{faNum(r.stats.skipped)} صرف‌نظر</span>
+  1022→                      <span className={cn(r.stats.errors > 0 ? 'text-[#b3372f]' : 'text-foreground/60')}>
+  1023→                        {faNum(r.stats.errors)} خطا
+  1024→                      </span>
+  1025→                      {r.snapshotCount > 0 && (
+  1026→                        <span className="text-[#5c7236]">نقطهٔ بازیابی: {faNum(r.snapshotCount)} کالا</span>
+  1027→                      )}
+  1028→                    </div>
+  1029→                    {r.log.length > 0 && (
+  1030→                      <>
+  1031→                        <button
+  1032→                          onClick={() => setOpenLog(isOpen ? null : r.id)}
+  1033→                          className="mt-2 flex items-center gap-1 text-[11px] font-extrabold text-[#0e7a4a]"
+  1034→                        >
+  1035→                          {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+  1036→                          {isOpen ? 'بستن لاگ' : 'نمایش لاگ'}
+  1037→                        </button>
+  1038→                        {isOpen && (
+  1039→                          <div className="scroll-gold mt-2 max-h-44 space-y-1 overflow-y-auto rounded-xl bg-[#0b2e20] p-3 text-[11px] leading-5">
+  1040→                            {r.log.slice(-8).map((l, i) => (
+  1041→                              <p key={i} className="text-emerald-50/90">
+  1042→                                <span className="ml-2 font-bold text-[#c9a227]">{formatJalaliDateTime(l.at)}</span>
+  1043→                                {l.line}
+  1044→                              </p>
+  1045→                            ))}
+  1046→                          </div>
+  1047→                        )}
+  1048→                      </>
+  1049→                    )}
+  1050→                    <div className="mt-2 flex flex-wrap gap-2">
+  1051→                      {r.status === 'SUCCESS' && r.snapshotCount > 0 && (
+  1052→                        <button
+  1053→                          onClick={() => rollback(r)}
+  1054→                          className={cn(
+  1055→                            'flex items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold transition',
+  1056→                            armRollback === r.id
+  1057→                              ? 'bg-[#b3372f] text-white shadow'
+  1058→                              : 'border border-[#b3372f]/40 text-[#b3372f] hover:bg-[#b3372f]/10'
+  1059→                          )}
+  1060→                        >
+  1061→                          <RotateCcw size={12} />
+  1062→                          {armRollback === r.id ? 'مطمئنید؟ دوباره بزنید' : 'بازگردانی از این نقطه (Rollback)'}
+  1063→                        </button>
+  1064→                      )}
+  1065→                      {r.status === 'FAILED' && (
+  1066→                        <button
+  1067→                          onClick={() => purge(r)}
+  1068→                          className={cn(
+  1069→                            'flex items-center gap-1 rounded-xl px-3 py-1.5 text-[11px] font-extrabold transition',
+  1070→                            armPurge === r.id
+  1071→                              ? 'bg-[#b3372f] text-white shadow'
+  1072→                              : 'border border-border text-muted-foreground hover:border-[#b3372f]/50 hover:text-[#b3372f]'
+  1073→                          )}
+  1074→                        >
+  1075→                          <Trash2 size={12} />
+  1076→                          {armPurge === r.id ? 'مطمئنید؟ دوباره بزنید' : 'حذف ردیف ناموفق'}
+  1077→                        </button>
+  1078→                      )}
+  1079→                    </div>
+  1080→                  </div>
+  1081→                )
+  1082→              })}
+  1083→            </div>
+  1084→          </div>
+  1085→        )}
+  1086→      </SectionCard>
+  1087→
+  1088→      {/* تضمین علمی */}
+  1089→      <div className="flex items-start gap-2.5 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-4">
+  1090→        <Info size={16} className="mt-0.5 shrink-0 text-[#8a6d10]" />
+  1091→        <p className="text-xs leading-5 text-foreground/80">
+  1092→          تضمین صحت داده: پیش از هر همگام‌سازی یک اسنپ‌شات کامل از موجودی و قیمت کالاها ثبت می‌شود و دفتر زمانی فقط
+  1093→          افزودنی (append-only) است؛ بنابراین هر تغییر قابل ردیابی و هر نقطه قابل بازگشت است — در صورت قطع برق، خطای
+  1094→          شبکه یا دادهٔ معیوب از هلو، با یک کلیک به آخرین نقطهٔ سالم برمی‌گردید.
+  1095→        </p>
+  1096→      </div>
+  1097→    </div>
+  1098→  )
+  1099→}
+  1100→

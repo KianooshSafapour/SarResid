@@ -1,0 +1,541 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useRef, useState } from 'react'
+     4→import { api } from '@/lib/client'
+     5→import { faMoney, faNum, formatJalaliShort } from '@/lib/jalali'
+     6→import { ORDER_STATUSES, canAccess } from '@/lib/constants'
+     7→import { SectionCard, Pill, EmptyState, Avatar, SearchInput } from '@/components/app/ui-bits'
+     8→import { BarChart, Donut, LineChart, RankBars } from '@/components/app/charts'
+     9→import type { AppCtx } from '@/components/app/ui-bits'
+    10→import { cn } from '@/lib/utils'
+    11→import { ClipboardList, Truck, Banknote, ShoppingBasket, ListChecks, MessageCircle, Calculator, Warehouse, Sparkles, TrendingUp, Newspaper, AlertTriangle, BadgePercent, Archive, MapPin, Users, PieChart, BarChart3 } from 'lucide-react'
+    12→
+    13→type Dash = any
+    14→
+    15→/** کارت آماری فشرده دوم line — مقدار + برچسب؛ جزئیات در tooltip */
+    16→function KpiMini({
+    17→  label,
+    18→  value,
+    19→  hint,
+    20→  tone = 'emerald',
+    21→  icon,
+    22→  onClick,
+    23→}: {
+    24→  label: string
+    25→  value: React.ReactNode
+    26→  hint?: string
+    27→  tone?: 'emerald' | 'gold' | 'terra' | 'rose' | 'olive'
+    28→  icon: React.ReactNode
+    29→  onClick?: () => void
+    30→}) {
+    31→  const tones: Record<string, string> = {
+    32→    emerald: 'bg-[#0e7a4a]/10 text-[#0e7a4a]',
+    33→    gold: 'bg-[#c9a227]/15 text-[#8a6d10]',
+    34→    terra: 'bg-[#c96f4a]/15 text-[#a04c2a]',
+    35→    rose: 'bg-[#b3372f]/10 text-[#b3372f]',
+    36→    olive: 'bg-[#77934a]/15 text-[#5c7236]',
+    37→  }
+    38→  return (
+    39→    <button
+    40→      type="button"
+    41→      onClick={onClick}
+    42→      title={hint}
+    43→      className={cn('glow-card flex min-w-0 items-center gap-2.5 rounded-xl bg-card p-2.5 text-right transition-all sm:p-3', onClick && 'cursor-pointer hover:-translate-y-0.5')}
+    44→    >
+    45→      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tones[tone])}>{icon}</span>
+    46→      <span className="min-w-0">
+    47→        <span className="block truncate text-lg font-black leading-6 text-foreground">{value}</span>
+    48→        <span className="block truncate text-[11px] font-bold text-muted-foreground">{label}</span>
+    49→      </span>
+    50→    </button>
+    51→  )
+    52→}
+    53→
+    54→/** کاشی صف اقدام — جای کارت‌های بلند قبلی، فشرده و قابل کلیک */
+    55→function QueueTile({
+    56→  title,
+    57→  count,
+    58→  desc,
+    59→  tone,
+    60→  onClick,
+    61→  cta,
+    62→  children,
+    63→}: {
+    64→  title: string
+    65→  count: number
+    66→  desc: string
+    67→  tone: string
+    68→  onClick: () => void
+    69→  cta: string
+    70→  children?: React.ReactNode
+    71→}) {
+    72→  return (
+    73→    <div className="glow-card flex flex-col rounded-2xl bg-card p-3">
+    74→      <div className="flex items-center justify-between gap-2">
+    75→        <p className="truncate text-xs font-black text-foreground">{title}</p>
+    76→        <span className="shrink-0 rounded-lg px-2 py-0.5 text-base font-black" style={{ color: tone, background: `${tone}1a` }}>
+    77→          {faNum(count)}
+    78→        </span>
+    79→      </div>
+    80→      <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{desc}</p>
+    81→      {children}
+    82→      <button onClick={onClick} className="mt-2 w-full rounded-lg py-1.5 text-[10px] font-black transition" style={{ color: tone, background: `${tone}14` }}>
+    83→        {cta} ←
+    84→      </button>
+    85→    </div>
+    86→  )
+    87→}
+    88→
+    89→export default function DashboardView({ ctx }: { ctx: AppCtx }) {
+    90→  const [data, setData] = useState<Dash | null>(null)
+    91→  const [abc, setAbc] = useState<{ rows: { name: string; category: string; annualValue: number; cls: string }[] } | null>(null)
+    92→  const [err, setErr] = useState('')
+    93→
+    94→  const load = () =>
+    95→    api<Dash>('/api/dashboard')
+    96→      .then(setData)
+    97→      .catch((e) => setErr(e.message))
+    98→
+    99→  useEffect(() => {
+   100→    load()
+   101→    api<any>('/api/science?tool=abc')
+   102→      .then((d) => setAbc(d.abc))
+   103→      .catch(() => {
+   104→        /* تحلیل ABC غیرحیاتی است — در صورت خطا فقط پنهان می‌شود */
+   105→      })
+   106→    const t = setInterval(load, 60000)
+   107→    return () => clearInterval(t)
+   108→  }, [])
+   109→
+   110→  if (err) return <EmptyState emoji="⚠️" title="خطا در بارگذاری داشبورد" hint={err} />
+   111→  if (!data) {
+   112→    return (
+   113→      <div className="grid gap-3 md:grid-cols-4">
+   114→        {Array.from({ length: 8 }).map((_, i) => (
+   115→          <div key={i} className="glow-card h-20 animate-pulse rounded-2xl bg-card/60" />
+   116→        ))}
+   117→      </div>
+   118→    )
+   119→  }
+   120→
+   121→  const k = data.kpi
+   122→  const role = ctx.user!.role
+   123→  const isManager = ['GM', 'OM', 'OWNER', 'PM'].includes(role)
+   124→  const canScience = canAccess('science', role, ctx.user!.secondaryRoles)
+   125→
+   126→  const pipelineData = ['SUBMITTED', 'APPROVED', 'RECEIVING', 'RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE'].map((s) => ({
+   127→    label: ORDER_STATUSES[s].label,
+   128→    value: k.byStatus[s] || 0,
+   129→  }))
+   130→
+   131→  // ── سری‌های ۱۴روزه: دو خط کوچک کنار هم (تعداد سفارش + مبلغ فروش) ──
+   132→  const dayLabel = (iso: string) => formatJalaliShort(iso).slice(5)
+   133→  const seriesOrders = (data.series || []).map((s: any) => ({ label: dayLabel(s.day), value: s.count, extra: `${faNum(s.count)} سفارش در این روز` }))
+   134→  const seriesSales = (data.series || []).map((s: any) => ({ label: dayLabel(s.day), value: s.amount, extra: `${faMoney(s.amount)} تومان` }))
+   135→  const compactToman = (v: number) => (v >= 1e6 ? `${faNum(Math.round(v / 1e6))} م` : faMoney(v))
+   136→
+   137→  // ── تحلیل ABC: سهم دسته‌ها + پرفروش‌ترین کالاها (ارزش تقاضای سالانه) ──
+   138→  const abcRows = abc?.rows || []
+   139→  const catAgg: Record<string, number> = {}
+   140→  for (const r of abcRows) catAgg[r.category] = (catAgg[r.category] || 0) + (r.annualValue || 0)
+   141→  const catDonut = Object.entries(catAgg)
+   142→    .sort((a, b) => b[1] - a[1])
+   143→    .slice(0, 6)
+   144→    .map(([label, value]) => ({ label, value: Math.round(value / 1e6) }))
+   145→  const topProducts = abcRows.slice(0, 6).map((r) => ({
+   146→    label: r.name,
+   147→    value: Math.round((r.annualValue || 0) / 1e6),
+   148→    color: r.cls === 'A' ? '#0e7a4a' : r.cls === 'B' ? '#c9a227' : '#c96f4a',
+   149→  }))
+   150→
+   151→  return (
+   152→    <div className="space-y-3">
+   153→      {/* Greeting hero — فشرده */}
+   154→      <section className="hero-emerald gold-glow-border relative overflow-hidden rounded-2xl p-4 sm:p-5">
+   155→        <svg className="hero-ornament tl" width="150" height="84" viewBox="0 0 150 84" fill="none" stroke="#c9a227" strokeWidth="1.4">
+   156→          <path d="M6 62 C28 60 42 44 48 24 C54 44 66 58 88 62 M48 24 C50 36 56 50 68 58" />
+   157→          <circle cx="48" cy="21" r="3.5" fill="#c9a227" stroke="none" />
+   158→          <ellipse cx="26" cy="58" rx="6" ry="3" transform="rotate(-18 26 58)" opacity="0.8" />
+   159→          <ellipse cx="72" cy="56" rx="6" ry="3" transform="rotate(14 72 56)" opacity="0.8" />
+   160→          <path d="M100 70 C116 66 126 54 132 40 C136 54 144 62 148 64" opacity="0.6" />
+   161→          <circle cx="132" cy="36" r="2.5" fill="#93c572" stroke="none" />
+   162→        </svg>
+   163→        <svg className="hero-ornament br" width="150" height="84" viewBox="0 0 150 84" fill="none" stroke="#c9a227" strokeWidth="1.4">
+   164→          <path d="M6 62 C28 60 42 44 48 24 C54 44 66 58 88 62 M48 24 C50 36 56 50 68 58" />
+   165→          <circle cx="48" cy="21" r="3.5" fill="#c9a227" stroke="none" />
+   166→          <ellipse cx="26" cy="58" rx="6" ry="3" transform="rotate(-18 26 58)" opacity="0.8" />
+   167→          <ellipse cx="72" cy="56" rx="6" ry="3" transform="rotate(14 72 56)" opacity="0.8" />
+   168→          <path d="M100 70 C116 66 126 54 132 40 C136 54 144 62 148 64" opacity="0.6" />
+   169→          <circle cx="132" cy="36" r="2.5" fill="#93c572" stroke="none" />
+   170→        </svg>
+   171→        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+   172→          <div>
+   173→            <p className="text-[11px] font-bold text-[#93c572]">{new Intl.DateTimeFormat('fa-IR', { dateStyle: 'full' }).format(new Date())}</p>
+   174→            <h2 className="mt-0.5 text-lg font-black text-white sm:text-xl">
+   175→              سلام {ctx.user!.name.split(' ')[0]} عزیز 👋
+   176→            </h2>
+   177→            <p className="mt-1 max-w-lg text-[11px] leading-5 text-[#cfe3d4]">
+   178→              {k.myOpenTasks > 0
+   179→                ? `${faNum(k.myOpenTasks)} وظیفه باز دارید و ${faNum(k.todayDeliveries)} مرسوله امروز به فروشگاه می‌رسد. با هم پیش می‌رویم! 🌿`
+   180→                : 'امروز وظیفه‌ای بر عهده شما نیست — وقت خوبی برای ایده‌های تازه است ✨'}
+   181→            </p>
+   182→          </div>
+   183→          <div className="flex flex-wrap items-center gap-2">
+   184→            {isManager && (
+   185→              <button
+   186→                onClick={() => ctx.navigate('briefing')}
+   187→                className="flex items-center gap-2 rounded-xl border border-[#c9a227]/50 bg-[#c9a227]/15 px-3 py-2 text-right backdrop-blur transition hover:bg-[#c9a227]/25"
+   188→              >
+   189→                <span className="text-xl">🌅</span>
+   190→                <span>
+   191→                  <span className="block text-[11px] font-black text-white">صبح‌نامه امروز</span>
+   192→                  <span className="block text-[9px] text-[#93c572]">گزارش چاپی جلسه صبح</span>
+   193→                </span>
+   194→              </button>
+   195→            )}
+   196→            <div className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 backdrop-blur">
+   197→              <Sparkles className="text-[#c9a227]" size={18} />
+   198→              <div>
+   199→                <p className="text-[11px] font-black leading-4 text-white">{faNum(ctx.user!.points)}</p>
+   200→                <p className="block text-[9px] text-[#93c572]">امتیاز شما — آفرین!</p>
+   201→              </div>
+   202→            </div>
+   203→          </div>
+   204→        </div>
+   205→        <div className="shimmer-line absolute bottom-0 right-0 h-1 w-full" />
+   206→      </section>
+   207→
+   208→      {/* KPI row — فشرده ۲خطی، همه بالای صفحه */}
+   209→      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+   210→        <KpiMini label="سفارش‌های فعال" value={faNum(k.ordersTotal - (k.byStatus['DONE'] || 0) - (k.byStatus['CANCELLED'] || 0))} hint="در جریان در چرخهٔ تأمین" tone="emerald" icon={<ClipboardList size={16} />} onClick={() => ctx.navigate('orders')} />
+   211→        {k.overdueCount > 0 ? (
+   212→          <KpiMini label="سفارش سرآمده ⚠️" value={faNum(k.overdueCount)} hint="تحویل با تأخیر — فالوآپ" tone="rose" icon={<Truck size={16} />} onClick={() => ctx.navigate('orders')} />
+   213→        ) : (
+   214→          <KpiMini label="مرسوله‌های امروز" value={faNum(k.todayDeliveries)} hint="برای دریافت امروز" tone="olive" icon={<Truck size={16} />} onClick={() => ctx.navigate('receiving')} />
+   215→        )}
+   216→        <KpiMini label="کم‌موجودی" value={faNum(k.lowStockCount)} hint={`${faNum(k.outOfStockCount)} قلم ناموجود`} tone={k.lowStockCount > 0 ? 'gold' : 'emerald'} icon={<ShoppingBasket size={16} />} onClick={() => ctx.navigate('products')} />
+   217→        <KpiMini label="چک در انتظار" value={faNum(k.pendingCheques)} hint={`${faMoney(k.pendingChequesAmount)} تومان — ${faNum(k.signedCheques)} چک آماده تحویل`} tone="terra" icon={<Banknote size={16} />} onClick={() => ctx.navigate('cheques')} />
+   218→        <KpiMini label="وظایف باز من" value={faNum(k.myOpenTasks)} hint="وظایف باز امروز شما" tone="emerald" icon={<ListChecks size={16} />} onClick={() => ctx.navigate('tasks')} />
+   219→        <KpiMini label="پیام ناخوانده" value={faNum(k.unreadMessages)} hint="پیام‌های ناخواندهٔ صندوق پیام" tone={k.unreadMessages > 0 ? 'rose' : 'emerald'} icon={<MessageCircle size={16} />} onClick={() => ctx.navigate('messages')} />
+   220→      </div>
+   221→
+   222→      {/* صف‌های اقدام نقش‌محور — فشرده در یک ردیف */}
+   223→      {(canAccess('pricecheck', role, ctx.user!.secondaryRoles) && k.priceCheckRemaining > 0) ||
+   224→      (['ACC', 'OM', 'OWNER'].includes(role) && k.toAccountCount > 0) ||
+   225→      (['SK', 'OM', 'GM'].includes(role) && k.toVerifyCount > 0) ||
+   226→      (k.cashierQueue > 0 && ['HC', 'CASHIER', 'GM'].includes(role)) ? (
+   227→        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+   228→          {canAccess('pricecheck', role, ctx.user!.secondaryRoles) && k.priceCheckRemaining > 0 && (
+   229→            <QueueTile
+   230→              title="کنترل قیمت امروز ⏳"
+   231→              count={k.priceCheckRemaining}
+   232→              desc={k.priceCheckRed > 0 ? `${faNum(k.priceCheckRed)} کالا حاشیه بحرانی زیر ۱۰٪ دارد` : 'قیمت چاپ‌شده هنوز امروز تأیید نشده'}
+   233→              tone={k.priceCheckRed > 0 ? '#b3372f' : '#a16207'}
+   234→              onClick={() => ctx.navigate('pricecheck')}
+   235→              cta="بازکردن تابلوی کنترل قیمت"
+   236→            />
+   237→          )}
+   238→          {['ACC', 'OM', 'OWNER'].includes(role) && k.toAccountCount > 0 && (
+   239→            <div className="glow-card flex flex-col rounded-2xl bg-card p-3 sm:col-span-2 xl:col-span-2">
+   240→              <div className="flex items-center justify-between gap-2">
+   241→                <p className="truncate text-xs font-black text-foreground">در انتظار ثبت در هلو</p>
+   242→                <span className="shrink-0 rounded-lg bg-[#c9a227]/10 px-2 py-0.5 text-base font-black text-[#8a6d10]">{faNum(k.toAccountCount)}</span>
+   243→              </div>
+   244→              <div className="mt-1.5 min-h-0 flex-1 space-y-1">
+   245→                {data.toAccount.map((o: any) => (
+   246→                  <button key={o.id} onClick={() => ctx.navigate('accounting', o.id)} className="flex w-full items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-right transition hover:bg-white">
+   247→                    <span className="min-w-0 truncate text-[11px] font-bold">
+   248→                      <span dir="ltr" className="font-mono text-[10px] text-[#8a5a2b]">{o.code}</span> · {o.providerName}
+   249→                    </span>
+   250→                    <span className="shrink-0 text-[10px] font-black text-[#8a6d10]">{faMoney(o.totalAmount)}</span>
+   251→                  </button>
+   252→                ))}
+   253→              </div>
+   254→              <button onClick={() => ctx.navigate('accounting')} className="mt-2 w-full rounded-lg bg-[#c9a227]/15 py-1.5 text-[10px] font-black text-[#8a6d10] transition hover:bg-[#c9a227]/25">
+   255→                بازکردن حسابداری ←
+   256→              </button>
+   257→            </div>
+   258→          )}
+   259→          {['SK', 'OM', 'GM'].includes(role) && k.toVerifyCount > 0 && (
+   260→            <QueueTile
+   261→              title="در انتظار تأیید انبار"
+   262→              count={k.toVerifyCount}
+   263→              desc="مرسوله‌های دریافتی که سرپرست انبار باید تأیید کند"
+   264→              tone="#77934a"
+   265→              onClick={() => ctx.navigate('verify')}
+   266→              cta="بازکردن تأیید انبار"
+   267→            />
+   268→          )}
+   269→          {k.cashierQueue > 0 && ['HC', 'CASHIER', 'GM'].includes(role) && (
+   270→            <QueueTile
+   271→              title="صف پیش‌فاکتورهای فروش"
+   272→              count={k.cashierQueue}
+   273→              desc="فروشندگان برای مشتریان سفارش ثبت کرده‌اند — آمادهٔ پردازش صندوق"
+   274→              tone="#c9a227"
+   275→              onClick={() => ctx.navigate('sales')}
+   276→              cta="بازکردن بخش فروش"
+   277→            />
+   278→          )}
+   279→        </div>
+   280→      ) : null}
+   281→
+   282→      {/* Archive quick-search — فشرده: ورودی حداکثر-xs + تراشه‌های کنار هم */}
+   283→      {canAccess('archive', role, ctx.user!.secondaryRoles) && <ArchiveQuickSearch ctx={ctx} />}
+   284→
+   285→      {/* ── تحلیل‌ها — شبکهٔ ۱۲ ستونی ── */}
+   286→      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+   287→        <SectionCard title="سفارش‌ها و فروش ۱۴ روز اخیر" subtitle="تعداد سفارش و مبلغ فروش هر روز — روند دو هفته" icon={<TrendingUp size={18} />} className="xl:col-span-8 sm:p-4">
+   288→          <div className="grid gap-4 sm:grid-cols-2">
+   289→            <div>
+   290→              <p className="mb-1 text-[11px] font-black text-[#0e7a4a]">تعداد سفارش روزانه</p>
+   291→              <LineChart data={seriesOrders} color="#0e7a4a" height={130} formatValue={(v) => `${faNum(v)} سفارش`} formatLabel={(l) => l} />
+   292→            </div>
+   293→            <div>
+   294→              <p className="mb-1 text-[11px] font-black text-[#8a6d10]">مبلغ فروش روزانه (تومان)</p>
+   295→              <LineChart data={seriesSales} color="#c9a227" height={130} formatValue={compactToman} formatLabel={(l) => l} />
+   296→            </div>
+   297→          </div>
+   298→        </SectionCard>
+   299→
+   300→        <SectionCard title="گردش سفارش‌ها" subtitle="وضعیت همهٔ سفارش‌ها در یک نگاه" icon={<BarChart3 size={18} />} className="xl:col-span-4 sm:p-4">
+   301→          <Donut data={pipelineData} centerLabel="کل سفارش‌ها" centerValue={faNum(k.ordersTotal)} size={150} />
+   302→        </SectionCard>
+   303→      </div>
+   304→
+   305→      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+   306→        <SectionCard title="سررسید چک‌ها (۸ هفته آینده)" subtitle="برنامهٔ مالی هفتگی — مبلغ تومان" icon={<Banknote size={18} />} className="xl:col-span-8 sm:p-4">
+   307→          <BarChart
+   308→            data={data.chequeSeries.map((s: any) => ({ label: formatJalaliShort(s.week).slice(5), value: s.amount }))}
+   309→            color="#c9a227"
+   310→            height={150}
+   311→            formatValue={(v) => `${faMoney(v)} تومان`}
+   312→          />
+   313→        </SectionCard>
+   314→
+   315→        <SectionCard title="جدول امتیاز تیم 🏆" subtitle="قدردانی مدیران از تلاش همکاران" icon={<Sparkles size={18} />} className="xl:col-span-4 sm:p-4">
+   316→          <RankBars data={data.leaderboard.map((l: any) => ({ label: l.name, value: l.points, color: l.color }))} formatValue={(v) => faNum(v)} />
+   317→        </SectionCard>
+   318→      </div>
+   319→
+   320→      {canScience && (catDonut.length > 0 || topProducts.length > 0) && (
+   321→        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+   322→          {catDonut.length > 0 && (
+   323→            <SectionCard
+   324→              title="سهم دسته‌بندی کالا از تقاضا"
+   325→              subtitle="تحلیل ABC — ارزش تقاضای سالانه (میلیون تومان)"
+   326→              icon={<PieChart size={18} />}
+   327→              className="xl:col-span-7 sm:p-4"
+   328→            >
+   329→              <Donut data={catDonut} centerLabel="دسته‌ها" size={150} />
+   330→            </SectionCard>
+   331→          )}
+   332→          {topProducts.length > 0 && (
+   333→            <SectionCard
+   334→              title="پرفروش‌ترین کالاها"
+   335→              subtitle="برترین‌ها بر پایهٔ ارزش تقاضای سالانه (میلیون تومان) — رنگ بر پایهٔ کلاس A/B/C"
+   336→              icon={<ShoppingBasket size={18} />}
+   337→              className="xl:col-span-5 sm:p-4"
+   338→            >
+   339→              <RankBars data={topProducts} formatValue={(v) => `${faNum(v)} م`} />
+   340→            </SectionCard>
+   341→          )}
+   342→        </div>
+   343→      )}
+   344→
+   345→      {/* Expiring items — recorded at receiving */}
+   346→      {['GM', 'OM', 'SK', 'ACC', 'HC'].includes(role) && data.expiring?.length > 0 && (
+   347→        <SectionCard
+   348→          title="نزدیک به انقضا ⏳"
+   349→          subtitle="اقلام ثبت‌شده در دریافت که تا ۱۴ روز آینده تمام می‌شوند — جلوتر از قفسه بفروشید یا تخفیف بزنید"
+   350→          icon={<AlertTriangle size={18} />}
+   351→          className="border-[#c96f4a]/40 sm:p-4"
+   352→        >
+   353→          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+   354→            {data.expiring.map((e: any) => (
+   355→              <div key={e.id} className={`rounded-xl border p-2.5 ${e.daysLeft <= 3 ? 'border-[#b3372f]/40 bg-[#fee2e2]/50' : e.daysLeft <= 7 ? 'border-[#a16207]/40 bg-[#fef9c3]/50' : 'border-border bg-white/70'}`}>
+   356→                <p className="line-clamp-2 text-xs font-extrabold">{e.productName}</p>
+   357→                <div className="mt-1.5 flex items-center justify-between">
+   358→                  <span className="text-[10px] text-muted-foreground">{faNum(e.qty)} قلم</span>
+   359→                  <span className={`text-[11px] font-black ${e.daysLeft <= 3 ? 'text-[#b3372f]' : e.daysLeft <= 7 ? 'text-[#a16207]' : 'text-[#0e7a4a]'}`}>
+   360→                    {e.daysLeft < 0 ? 'منقضی شده!' : `${faNum(e.daysLeft)} روز مانده`}
+   361→                  </span>
+   362→                </div>
+   363→              </div>
+   364→            ))}
+   365→          </div>
+   366→        </SectionCard>
+   367→      )}
+   368→
+   369→      {/* Lists row */}
+   370→      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+   371→        <SectionCard title="وظایف من" subtitle="امروز چه کاری دارم؟" icon={<ListChecks size={18} />} className="sm:p-4">
+   372→          {data.myTasks.length === 0 ? (
+   373→            <EmptyState emoji="🌤️" title="فعلاً وظیفه‌ای ندارید" hint="وقت خوبی برای یادگیری بخش راهنماست" />
+   374→          ) : (
+   375→            <ul className="space-y-2">
+   376→              {data.myTasks.map((t: any) => (
+   377→                <li key={t.id} className="flex items-center justify-between rounded-xl border border-border/60 bg-white/60 p-2.5">
+   378→                  <span className="text-xs font-bold">{t.title}</span>
+   379→                  <Pill label={t.priority === 'URGENT' ? 'فوری' : t.priority === 'HIGH' ? 'مهم' : 'معمولی'} color={t.priority === 'URGENT' ? '#b3372f' : t.priority === 'HIGH' ? '#a16207' : '#166534'} />
+   380→                </li>
+   381→              ))}
+   382→            </ul>
+   383→          )}
+   384→          <button onClick={() => ctx.navigate('tasks')} className="mt-3 w-full rounded-xl bg-secondary py-2 text-xs font-extrabold text-secondary-foreground transition hover:bg-[#dcead4]">
+   385→            همه وظایف →
+   386→          </button>
+   387→        </SectionCard>
+   388→
+   389→        <SectionCard title="دیجیتال‌وال" subtitle="آخرین خبرهای تیم" icon={<Newspaper size={18} />} className="sm:p-4">
+   390→          <ul className="space-y-2">
+   391→            {data.wall.map((w: any) => (
+   392→              <li key={w.id} className="rounded-xl border border-border/60 bg-white/60 p-2.5">
+   393→                <p className="text-xs font-extrabold">{w.pinned ? '📌 ' : ''}{w.title}</p>
+   394→                <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{w.content}</p>
+   395→                <p className="mt-1 text-[10px] font-bold text-primary">{w.authorName}</p>
+   396→              </li>
+   397→            ))}
+   398→          </ul>
+   399→        </SectionCard>
+   400→
+   401→        <SectionCard title="پرتقاضاترین درخواست‌های مشتری" subtitle="کالاهایی که مشتری دنبالش بود و نداشتیم" icon={<MessageCircle size={18} />} className="sm:p-4">
+   402→          {data.customerReqs.length === 0 ? (
+   403→            <EmptyState emoji="🛒" title="درخواستی ثبت نشده" />
+   404→          ) : (
+   405→            <ul className="space-y-2">
+   406→              {data.customerReqs.map((r: any) => (
+   407→                <li key={r.id} className="flex items-center justify-between rounded-xl border border-border/60 bg-white/60 p-2.5">
+   408→                  <span className="text-xs font-bold">{r.productName}</span>
+   409→                  <span className="rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[11px] font-black text-[#b3372f]">{faNum(r.count)} بار</span>
+   410→                </li>
+   411→              ))}
+   412→            </ul>
+   413→          )}
+   414→        </SectionCard>
+   415→      </div>
+   416→
+   417→      {/* Activity feed for managers */}
+   418→      {isManager && (
+   419→        <SectionCard title="تازه‌ترین فعالیت تیم" subtitle="شفافیت کامل — هر اقدامی ثبت می‌شود" icon={<TrendingUp size={18} />} className="sm:p-4">
+   420→          <ul className="scroll-gold max-h-72 space-y-1.5 overflow-y-auto pl-1">
+   421→            {data.activities.map((a: any) => (
+   422→              <li key={a.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/60">
+   423→                <Avatar name={a.userName} color="#5c7236" size={26} />
+   424→                <span className="text-xs"><b>{a.userName}</b> — {a.action}</span>
+   425→                <span className="mr-auto text-[10px] text-muted-foreground">{formatJalaliShort(a.createdAt)}</span>
+   426→              </li>
+   427→            ))}
+   428→          </ul>
+   429→        </SectionCard>
+   430→      )}
+   431→    </div>
+   432→  )
+   433→}
+   434→
+   435→/** آرشیو اسناد — جست‌وجوی فوری طرف حساب: مسیر فیزیکی سند در یک ثانیه (فشرده) */
+   436→function ArchiveQuickSearch({ ctx }: { ctx: AppCtx }) {
+   437→  const [q, setQ] = useState('')
+   438→  const [res, setRes] = useState<{ docs: any[]; parties: any[]; binderMap: Map<string, { cabinet: string; shelf: string }>; binders: number } | null>(null)
+   439→  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+   440→
+   441→  const run = (query: string) => {
+   442→    const params = new URLSearchParams()
+   443→    if (query) params.set('q', query)
+   444→    return api<any>(`/api/archive?${params}`)
+   445→      .then((d) =>
+   446→        setRes({
+   447→          docs: d.docs || [],
+   448→          parties: d.parties || [],
+   449→          binderMap: new Map((d.binders || []).map((b: any) => [b.id, { cabinet: b.cabinet, shelf: b.shelf }])),
+   450→          binders: d.stats?.binders || 0,
+   451→        }),
+   452→      )
+   453→      .catch(() => { /* widget is non-critical — stay silent */ })
+   454→  }
+   455→
+   456→  useEffect(() => { run('') }, [])
+   457→  useEffect(
+   458→    () => () => {
+   459→      if (timer.current) clearTimeout(timer.current)
+   460→    },
+   461→    [],
+   462→  )
+   463→
+   464→  const onType = (v: string) => {
+   465→    setQ(v)
+   466→    if (timer.current) clearTimeout(timer.current)
+   467→    timer.current = setTimeout(() => run(v.trim()), 300)
+   468→  }
+   469→
+   470→  const hasQuery = q.trim().length > 0
+   471→  const docResults = hasQuery && res ? res.docs.slice(0, 5) : []
+   472→  const partyChips = res ? res.parties.slice(0, 3) : []
+   473→
+   474→  return (
+   475→    <SectionCard
+   476→      title="آرشیو اسناد — جست‌وجوی فوری طرف حساب"
+   477→      subtitle={`${faNum(res?.binders ?? 0)} زونکن فعال (ISO 15489) — مسیر فیزیکی سند در یک ثانیه`}
+   478→      icon={<Archive size={18} />}
+   479→      className="sm:p-4"
+   480→      actions={
+   481→        <button onClick={() => ctx.navigate('archive')} className="min-h-[44px] rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-2 text-[11px] font-extrabold text-[#8a5a2b]">
+   482→          بازکردن آرشیو کامل
+   483→        </button>
+   484→      }
+   485→    >
+   486→      <div className="flex flex-wrap items-center gap-2">
+   487→        <SearchInput value={q} onChange={onType} placeholder="طرف حساب یا شماره سند…" className="w-full max-w-xs" />
+   488→        {!hasQuery &&
+   489→          partyChips.map((p: any) => (
+   490→            <button
+   491→              key={p.party}
+   492→              onClick={() => ctx.navigate('archive')}
+   493→              className="min-h-[44px] rounded-xl bg-[#0e7a4a]/10 px-3 py-2 text-[11px] font-black text-[#0e7a4a] transition hover:bg-[#0e7a4a]/20"
+   494→              title={`پروندهٔ کامل «${p.party}» در آرشیو`}
+   495→            >
+   496→              <Users size={11} className="ml-1 inline" /> {p.party} · {faNum(p.docCount)} سند
+   497→            </button>
+   498→          ))}
+   499→      </div>
+   500→      {!hasQuery && (
+   501→        <p className="mt-2 text-[10px] font-bold leading-relaxed text-[#8a5a2b]">
+   502→          نام تأمین‌کننده یا شماره سند را بزنید — کابینت › طبقه › زونکن › جایگاه.
+   503→        </p>
+   504→      )}
+   505→
+   506→      {hasQuery && docResults.length === 0 && (
+   507→        <p className="mt-2 rounded-xl bg-card p-2.5 text-[11px] font-bold text-muted-foreground">سندی با این عبارت یافت نشد — بخشی از نام طرف حساب یا شماره فاکتور را امتحان کنید.</p>
+   508→      )}
+   509→
+   510→      {docResults.length > 0 && (
+   511→        <div className="mt-2 space-y-1.5">
+   512→          <p className="text-[10px] font-black text-muted-foreground">اسناد یافت‌شده — برای پروندهٔ کامل، آرشیو را باز کنید:</p>
+   513→          {docResults.map((d: any) => {
+   514→            const b = res?.binderMap.get(d.binderId)
+   515→            return (
+   516→              <button
+   517→                key={d.id}
+   518→                onClick={() => ctx.navigate('archive')}
+   519→                className="glow-card flex w-full items-center justify-between gap-3 rounded-xl bg-white/80 p-2.5 text-right min-h-[44px] transition hover:shadow-md"
+   520→              >
+   521→                <span className="min-w-0">
+   522→                  <span className="flex items-center gap-1.5 truncate text-xs font-black">
+   523→                    🗂 {d.title}
+   524→                    <span className="shrink-0 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{d.code}</span>
+   525→                  </span>
+   526→                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
+   527→                    <span className="truncate">{d.party}{d.invoiceNo ? ` • فاکتور ${d.invoiceNo}` : ''}{d.amount > 0 ? ` • ${faMoney(d.amount)} تومان` : ''}</span>
+   528→                  </span>
+   529→                  <span className="mt-0.5 flex items-center gap-1 text-[10px] font-black text-[#0e7a4a]">
+   530→                    <MapPin size={11} /> کابینت {faNum(b?.cabinet ?? '؟')} › طبقهٔ {faNum(b?.shelf ?? '؟')} › زونکن {d.binderCode} › جایگاه {faNum(d.seq)}
+   531→                  </span>
+   532→                </span>
+   533→              </button>
+   534→            )
+   535→          })}
+   536→        </div>
+   537→      )}
+   538→    </SectionCard>
+   539→  )
+   540→}
+   541→

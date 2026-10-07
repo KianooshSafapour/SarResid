@@ -1,0 +1,10 @@
+:80 {
+  # websocket chat service
+  handle_path /ws/* {
+    reverse_proxy chat:3003
+  }
+  # main app
+  handle {
+    reverse_proxy web:3000
+  }
+}

@@ -1,0 +1,1262 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→/* ═══════════════════════════════════════════════════════════════════════════
+     4→     4→ * مدیریت داده‌ها — وضعیت داده‌ها | بازنشانی و پاک‌سازی | ورود از اکسل با تطبیق ستون‌ها
+     5→     5→ * گاردهای سمت سرور: GET /api/admin/db → canViewApi('data') ، عملیات مخرب → cap «db.reset»
+     6→     6→ * ورود داده → cap «db.import». هر عملیات مخرب با تسلیح دومرحله‌ای و برای
+     7→     7→ * پاک‌سازی‌ها با تأیید تایپیِ عبارت فارسی انجام می‌شود (برگشت‌ناپذیر).
+     8→     8→ * ═══════════════════════════════════════════════════════════════════════════ */
+     9→     9→
+    10→    10→import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+    11→    11→import { toast } from 'sonner'
+    12→    12→import * as XLSX from 'xlsx'
+    13→    13→import { api } from '@/lib/client'
+    14→    14→import { faNum, faMoney, formatJalaliDateTime, formatJalaliShort, parseFaNumber, todayIso } from '@/lib/jalali'
+    15→    15→import { SectionCard, StatCard, Pill, EmptyState, type AppCtx } from '@/components/app/ui-bits'
+    16→    16→import { Modal } from '@/components/views/Orders'
+    17→    17→import { cn } from '@/lib/utils'
+    18→    18→import { MODULE_LABELS, TIER_MODULES, type LicenseTier } from '@/lib/license'
+    19→    19→import { DatabaseBackup, ShieldAlert, FileSpreadsheet, Save, RefreshCw, CheckCircle2, Circle, FlaskConical, KeyRound } from 'lucide-react'
+    20→    20→
+    21→    21→type DbStats = {
+    22→    22→  counts: {
+    23→    23→    products: number; providers: number; customers: number; orders: number; orderItems: number
+    24→    24→    cheques: number; payments: number; preorders: number; users: number; personnel: number
+    25→    25→    zoneCounts: number; tasks: number; messages: number; activities: number; archiveDocs: number
+    26→    26→    customerEvents: number; saleEngagements: number; holidayCount: number
+    27→    27→  }
+    28→    28→  demoFlag: string
+    29→    29→  lastReset: { at: string; by: string }
+    30→    30→  dbSizeMB: number
+    31→    31→  realDataChecklist: { key: string; label: string; done: boolean }[]
+    32→    32→}
+    33→    33→
+    34→    34→type TabKey = 'status' | 'danger' | 'import' | 'sandbox' | 'license'
+    35→    35→
+    36→    36→type FieldDef = { key: string; label: string; required: boolean }
+    37→    37→type DryResult = {
+    38→    38→  valid: number
+    39→    39→  invalid: { row: number; error: string }[]
+    40→    40→  willCreate: number
+    41→    41→  willUpdate: number
+    42→    42→  willSkip: number
+    43→    43→  sample: Record<string, unknown>[]
+    44→    44→}
+    45→    45→type ApplyResult = { ok: boolean; created: number; updated: number; skipped: number; errors: { row: number; error: string }[]; totalInvalid: number }
+    46→    46→
+    47→    47→const ALLOWED_ROLES = ['OWNER', 'GM', 'OM', 'ADMIN', 'IT', 'ACC']
+    48→    48→
+    49→    49→/** برچسب فارسی جدول‌های حذف‌شده در خلاصهٔ نتیجه */
+    50→    50→const TABLE_FA: Record<string, string> = {
+    51→    51→  product: 'کالا', provider: 'تأمین‌کننده', customer: 'مشتری', customerEvent: 'رخداد مشتری',
+    52→    52→  orderItem: 'قلم سفارش', order: 'سفارش', cheque: 'چک', payment: 'پرداخت', preOrder: 'پیش‌فاکتور',
+    53→    53→  saleEngagement: 'پیشنهاد فروش', complaint: 'شکایت', extraActivity: 'فعالیت ویژه', notifOutbox: 'اعلان',
+    54→    54→  zoneCount: 'شمارش زون', laborHour: 'ساعت کاری', leaveRequest: 'مرخصی', urgentQuestion: 'پرسش فوری',
+    55→    55→  archiveDocItem: 'قلم سند', archiveDoc: 'سند آرشیو', archiveCustody: 'امانی', docEvent: 'رخداد سند',
+    56→    56→  activityLog: 'لاگ فعالیت', award: 'قدردانی',
+    57→    57→}
+    58→    58→
+    59→    59→export default function DataAdminView({ ctx }: { ctx: AppCtx }) {
+    60→    60→  const [tab, setTab] = useState<TabKey>('status')
+    61→    61→  const canLicense = !!ctx.user && (ctx.user.role === 'OWNER' || ctx.user.role === 'ADMIN')
+    62→    62→
+    63→    63→  // گارد سمت کلاینت — سرور هم مستقلاً گارد می‌گذارد
+    64→    64→  if (!ctx.user || !ALLOWED_ROLES.includes(ctx.user.role)) {
+    65→    65→    return (
+    66→    66→      <div className="space-y-6">
+    67→    67→        <SectionCard title="مدیریت داده‌ها" subtitle="بازنشانی، پاک‌سازی و ورود دادهٔ واقعی">
+    68→    68→          <EmptyState emoji="🔒" title="دسترسی محدود — فقط مالک، مدیران و IT" hint="این بخش داده‌های کل سامانه را اداره می‌کند و برای نقش‌های عملیاتی باز نیست." />
+    69→    69→        </SectionCard>
+    70→    70→      </div>
+    71→    71→    )
+    72→    72→  }
+    73→    73→
+    74→    74→  return (
+    75→    75→    <div className="space-y-5">
+    76→    76→      {/* سربرگ + نوار تب‌ها */}
+    77→    77→      <div className="glow-card gold-glow-border arch-top rounded-2xl bg-card p-4 sm:p-5 fade-in-up">
+    78→    78→        <div className="flex flex-wrap items-center justify-between gap-3">
+    79→    79→          <div className="flex items-center gap-3">
+    80→    80→            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-primary"><DatabaseBackup size={22} /></span>
+    81→    81→            <div>
+    82→    82→              <h1 className="text-lg font-black text-foreground">مدیریت داده‌ها</h1>
+    83→    83→              <p className="text-xs text-muted-foreground">وضعیت دیتابیس، سندباکس دمو، لایسنس ماژول‌ها، پاک‌سازی و ورود دادهٔ واقعی از اکسل</p>
+    84→    84→            </div>
+    85→    85→          </div>
+    86→    86→          <nav className="flex flex-wrap gap-1.5 rounded-2xl bg-muted/60 p-1.5">
+    87→    87→            {([
+    88→    88→              ['status', '📊 وضعیت داده‌ها'],
+    89→    89→              ['danger', '🧨 بازنشانی و پاک‌سازی'],
+    90→    90→              ['import', '📥 ورود از اکسل (تطبیق ستون‌ها)'],
+    91→    91→              ['sandbox', '🧪 سندباکس دمو'],
+    92→    92→              ...(canLicense ? [['license', '🔑 لایسنس و ماژول‌ها'] as [TabKey, string]] : []),
+    93→    93→            ] as [TabKey, string][]).map(([key, label]) => (
+    94→    94→              <button
+    95→    95→                key={key}
+    96→    96→                onClick={() => setTab(key)}
+    97→    97→                className={cn(
+    98→    98→                  'rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all',
+    99→    99→                  tab === key ? 'bg-primary text-white shadow-md' : 'text-foreground/70 hover:bg-background'
+   100→   100→                )}
+   101→   101→              >
+   102→   102→                {label}
+   103→   103→              </button>
+   104→   104→            ))}
+   105→   105→          </nav>
+   106→   106→        </div>
+   107→   107→      </div>
+   108→   108→
+   109→   109→      {tab === 'status' && <StatusTab onGoto={setTab} />}
+   110→   110→      {tab === 'danger' && <DangerTab />}
+   111→   111→      {tab === 'import' && <ImportWizard onDone={() => { /* آمار در تب وضعیت با ورود دوباره تازه می‌شود */ }} />}
+   112→   112→      {tab === 'sandbox' && <SandboxTab />}
+   113→   113→      {tab === 'license' && canLicense && <LicenseTab />}
+   114→   114→    </div>
+   115→   115→  )
+   116→   116→}
+   117→   117→
+   118→   118→/* ═════════════════════════════ تب ۱ — وضعیت داده‌ها ═════════════════════════════ */
+   119→   119→
+   120→   120→function StatusTab({ onGoto }: { onGoto: (t: TabKey) => void }) {
+   121→   121→  const [stats, setStats] = useState<DbStats | null>(null)
+   122→   122→  const [busy, setBusy] = useState(false)
+   123→   123→
+   124→   124→  const load = useCallback(() => {
+   125→   125→    api<DbStats>('/api/admin/db').then(setStats).catch((e) => toast.error(e.message))
+   126→   126→  }, [])
+   127→   127→  useEffect(load, [load])
+   128→   128→
+   129→   129→  const isReal = stats?.demoFlag === 'real'
+   130→   130→
+   131→   131→  const setMode = async (mode: 'demo' | 'real') => {
+   132→   132→    setBusy(true)
+   133→   133→    try {
+   134→   134→      await api('/api/admin/db', { method: 'POST', body: { action: 'set-mode', mode } })
+   135→   135→      toast.success(mode === 'real' ? 'سامانه به حالت «دادهٔ واقعی» رفت 🌿' : 'سامانه به حالت «دادهٔ نمایشی» برگشت 🟡')
+   136→   136→      load()
+   137→   137→    } catch (e) {
+   138→   138→      toast.error((e as Error).message)
+   139→   139→    } finally {
+   140→   140→      setBusy(false)
+   141→   141→    }
+   142→   142→  }
+   143→   143→
+   144→   144→  const c = stats?.counts
+   145→   145→  const tiles: { label: string; value: number; tone: 'emerald' | 'gold' | 'terra' | 'rose' | 'olive' | 'stone'; icon: string; hint?: string }[] = c ? [
+   146→   146→    { label: 'کالاها', value: c.products, tone: 'emerald', icon: '📦' },
+   147→   147→    { label: 'تأمین‌کنندگان', value: c.providers, tone: 'olive', icon: '🚚' },
+   148→   148→    { label: 'مشتریان', value: c.customers, tone: 'gold', icon: '🧑‍🤝‍🧑' },
+   149→   149→    { label: 'سفارش‌ها', value: c.orders, tone: 'emerald', icon: '🧾' },
+   150→   150→    { label: 'اقلام سفارش', value: c.orderItems, tone: 'stone', icon: '📄' },
+   151→   151→    { label: 'چک‌ها', value: c.cheques, tone: 'gold', icon: '💰' },
+   152→   152→    { label: 'پرداخت‌ها', value: c.payments, tone: 'terra', icon: '💳' },
+   153→   153→    { label: 'پیش‌فاکتورهای فروش', value: c.preorders, tone: 'emerald', icon: '🛒' },
+   154→   154→    { label: 'کاربران', value: c.users, tone: 'stone', icon: '👥' },
+   155→   155→    { label: 'پروندهٔ پرسنل', value: c.personnel, tone: 'olive', icon: '🗂️' },
+   156→   156→    { label: 'شمارش‌های زون', value: c.zoneCounts, tone: 'emerald', icon: '⚖️' },
+   157→   157→    { label: 'وظایف', value: c.tasks, tone: 'gold', icon: '✅' },
+   158→   158→    { label: 'پیام‌ها', value: c.messages, tone: 'stone', icon: '✉️' },
+   159→   159→    { label: 'لاگ فعالیت‌ها', value: c.activities, tone: 'terra', icon: '📜' },
+   160→   160→    { label: 'اسناد آرشیو', value: c.archiveDocs, tone: 'olive', icon: '🗄️' },
+   161→   161→    { label: 'رخدادهای مشتری', value: c.customerEvents, tone: 'gold', icon: '💞' },
+   162→   162→    { label: 'پیشنهادهای فروش', value: c.saleEngagements, tone: 'emerald', icon: '🤝' },
+   163→   163→    { label: 'تعطیلات رسمی', value: c.holidayCount, tone: 'rose', icon: '🗓️' },
+   164→   164→  ] : []
+   165→   165→
+   166→   166→  return (
+   167→   167→    <div className="space-y-5">
+   168→   168→      {/* حالت داده + حجم + آخرین بازنشانی */}
+   169→   169→      <SectionCard
+   170→   170→        title="حالت دادهٔ سامانه"
+   171→   171→        subtitle="این نشان تعیین می‌کند سامانه در فاز تمرین است یا بهره‌برداری واقعی"
+   172→   172→        icon={<span className="text-lg">{isReal ? '🌿' : '🟡'}</span>}
+   173→   173→        actions={
+   174→   174→          <ArmedButton
+   175→   175→            tone="gold"
+   176→   176→            label={isReal ? 'بازگشت به حالت نمایشی' : 'انتقال به دادهٔ واقعی'}
+   177→   177→            onClick={() => setMode(isReal ? 'demo' : 'real')}
+   178→   178→            disabled={busy}
+   179→   179→          />
+   180→   180→        }
+   181→   181→      >
+   182→   182→        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   183→   183→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   184→   184→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">وضعیت فعلی</p>
+   185→   185→            {isReal
+   186→   186→              ? <Pill label="دادهٔ واقعی 🌿" color="#0e7a4a" bg="#dcfce7" className="px-3 py-1 text-xs" />
+   187→   187→              : <Pill label="دادهٔ نمایشی 🟡" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1 text-xs" />}
+   188→   188→            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+   189→   189→              {isReal
+   190→   190→                ? 'دادهٔ واقعی فروشگاه — عملیات با احتیاط و پس از پشتیبان‌گیری.'
+   191→   191→                : 'دادهٔ دمو برای آموزش و تمرین — تا ورود دادهٔ واقعی.'}
+   192→   192→            </p>
+   193→   193→          </div>
+   194→   194→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   195→   195→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">حجم دیتابیس روی دیسک</p>
+   196→   196→            <p className="text-2xl font-black text-[#8a6d10]">{stats ? `${faNum(stats.dbSizeMB)} مگابایت` : '…'}</p>
+   197→   197→            <p className="mt-2 text-[11px] text-muted-foreground">فایل SQLite — پشتیبان‌گیری از «مدیریت سامانه»</p>
+   198→   198→          </div>
+   199→   199→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   200→   200→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">آخرین بازنشانی دادهٔ نمایشی</p>
+   201→   201→            <p className="text-sm font-black text-foreground">
+   202→   202→              {stats?.lastReset?.at ? formatJalaliDateTime(stats.lastReset.at) : 'تاکنون بازنشانی نشده'}
+   203→   203→            </p>
+   204→   204→            {stats?.lastReset?.by && <p className="mt-1 text-[11px] text-muted-foreground">توسط: {stats.lastReset.by}</p>}
+   205→   205→          </div>
+   206→   206→        </div>
+   207→   207→      </SectionCard>
+   208→   208→
+   209→   209→      {/* آمار همهٔ جدول‌ها */}
+   210→   210→      <SectionCard
+   211→   211→        title="آمار جدول‌ها"
+   212→   212→        subtitle="تعداد رکوردهای هر بخش — با ورود و پاک‌سازی، همین‌جا تازه می‌شود"
+   213→   213→        icon={<RefreshCw size={18} />}
+   214→   214→        actions={
+   215→   215→          <button onClick={load} className="rounded-xl border border-border bg-white/60 px-3 py-2 text-xs font-extrabold hover:bg-muted">
+   216→   216→            <RefreshCw size={14} className="inline" /> به‌روزرسانی
+   217→   217→          </button>
+   218→   218→        }
+   219→   219→      >
+   220→   220→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+   221→   221→          {tiles.map((t) => (
+   222→   222→            <StatCard key={t.label} label={t.label} value={faNum(t.value)} tone={t.tone} icon={<span className="text-base">{t.icon}</span>} />
+   223→   223→          ))}
+   224→   224→          {!stats && <p className="col-span-full py-6 text-center text-xs text-muted-foreground">در حال خواندن آمار…</p>}
+   225→   225→        </div>
+   226→   226→      </SectionCard>
+   227→   227→
+   228→   228→      {/* چک‌لیست دادهٔ واقعی */}
+   229→   229→      <SectionCard title="چک‌لیست گذار به دادهٔ واقعی" subtitle="راهنمای گام‌به‌گام برای جایگزینی دادهٔ دمو با دادهٔ واقعی فروشگاه" icon={<CheckCircle2 size={18} />}>
+   230→   230→        <div className="space-y-2">
+   231→   231→          {stats?.realDataChecklist?.map((item) => (
+   232→   232→            <div key={item.key} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
+   233→   233→              <span className="flex items-center gap-2 text-sm font-bold text-foreground">
+   234→   234→                {item.done ? <CheckCircle2 size={18} className="text-[#0e7a4a]" /> : <Circle size={18} className="text-muted-foreground" />}
+   235→   235→                {item.label}
+   236→   236→              </span>
+   237→   237→              {item.done
+   238→   238→                ? <Pill label="انجام شد ✓" color="#0e7a4a" bg="#dcfce7" />
+   239→   239→                : <Pill label="در انتظار" color="#a16207" bg="#fef9c3" />}
+   240→   240→            </div>
+   241→   241→          ))}
+   242→   242→        </div>
+   243→   243→        <div className="mt-4 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/60 p-4">
+   244→   244→          <p className="text-xs font-black text-[#8a6d10]">🌿 برای ورود دادهٔ واقعی فروشگاه:</p>
+   245→   245→          <ol className="mt-2 list-inside list-decimal space-y-1.5 text-xs leading-6 text-foreground/80">
+   246→   246→            <li>سقف دمو را پاک کنید — از تب «🧨 بازنشانی و پاک‌سازی» → «بازنشانی دادهٔ نمایشی».</li>
+   247→   247→            <li>از تب «📥 ورود از اکسل» محصولات واقعی را با تطبیق ستون‌ها وارد کنید (سپس تأمین‌کنندگان و مشتریان).</li>
+   248→   248→            <li>حالت را به «دادهٔ واقعی 🌿» ببرید تا همه یاد بگیرند سامانه در فاز بهره‌برداری است.</li>
+   249→   249→          </ol>
+   250→   250→          <button
+   251→   251→            onClick={() => onGoto('import')}
+   252→   252→            className="mt-3 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white hover:opacity-90"
+   253→   253→          >
+   254→   254→            شروع ورود داده از اکسل
+   255→   255→          </button>
+   256→   256→        </div>
+   257→   257→      </SectionCard>
+   258→   258→    </div>
+   259→   259→  )
+   260→   260→}
+   261→   261→
+   262→   262→/* ═════════════════════════════ تب ۲ — بازنشانی و پاک‌سازی ═════════════════════════════ */
+   263→   263→
+   264→   264→type DangerCard = {
+   265→   265→  action: string
+   266→   266→  title: string
+   267→   267→  icon: string
+   268→   268→  desc: string
+   269→   269→  phrase: string | null // null = فقط تسلیح دومرحله‌ای؛ متن = تأیید تایپی هم لازم است
+   270→   270→  tone: 'rose' | 'gold'
+   271→   271→}
+   272→   272→
+   273→   273→const DANGER_CARDS: DangerCard[] = [
+   274→   274→  {
+   275→   275→    action: 'reset-demo', title: 'بازنشانی دادهٔ نمایشی', icon: '🗄️', tone: 'rose', phrase: null,
+   276→   276→    desc: 'همهٔ داده‌های عملیاتی دمو پاک می‌شود: سفارش‌ها و اقلام، چک‌ها، پرداخت‌ها، پیش‌فاکتورهای فروش، رخدادهای مشتری، پیشنهادهای فروش، شکایت‌ها، اعلان‌ها، شمارش‌های زون، ساعت‌کاری، مرخصی‌ها، پرسش‌های فوری، اسناد آرشیو، لاگ فعالیت‌ها و قدردانی‌ها. کاربران، کالاها، تأمین‌کنندگان، مشتریان، تعطیلات، نقش‌ها، زون‌ها و پرسنل حفظ می‌شوند.',
+   277→   277→  },
+   278→   278→  {
+   279→   279→    action: 'purge-products', title: 'حذف کامل محصولات', icon: '📦', tone: 'rose', phrase: 'حذف محصولات',
+   280→   280→    desc: 'همهٔ کالاها برای همیشه حذف می‌شوند. اگر سفارشی به کالاها وصل باشد سامانه اجازه نمی‌دهد — ابتدا «بازنشانی دادهٔ نمایشی» را اجرا کنید.',
+   281→   281→  },
+   282→   282→  {
+   283→   283→    action: 'purge-providers', title: 'حذف کامل تأمین‌کنندگان', icon: '🚚', tone: 'rose', phrase: 'حذف تأمین‌کنندگان',
+   284→   284→    desc: 'همهٔ تأمین‌کنندگان حذف می‌شوند؛ کدهای طرف‌حساب در اسناد قبلی فقط به‌صورت نام باقی می‌مانند.',
+   285→   285→  },
+   286→   286→  {
+   287→   287→    action: 'purge-customers', title: 'حذف کامل مشتریان', icon: '🧑‍🤝‍🧑', tone: 'rose', phrase: 'حذف مشتریان',
+   288→   288→    desc: 'همهٔ مشتریان و رخدادهای CRM آن‌ها (بازدید، خرید، تولد، کمپین‌ها) برای همیشه حذف می‌شود.',
+   289→   289→  },
+   290→   290→]
+   291→   291→
+   292→   292→function DangerTab() {
+   293→   293→  const [armed, setArmed] = useState<string | null>(null)
+   294→   294→  const [purge, setPurge] = useState<DangerCard | null>(null)
+   295→   295→  const [typed, setTyped] = useState('')
+   296→   296→  const [busy, setBusy] = useState(false)
+   297→   297→
+   298→   298→  useEffect(() => {
+   299→   299→    if (!armed) return
+   300→   300→    const t = setTimeout(() => setArmed(null), 6000)
+   301→   301→    return () => clearTimeout(t)
+   302→   302→  }, [armed])
+   303→   303→
+   304→   304→  const runAction = async (action: string, confirm?: string) => {
+   305→   305→    setBusy(true)
+   306→   306→    try {
+   307→   307→      const res = await api<{ ok: boolean; summary?: { deleted: Record<string, number> } }>('/api/admin/db', {
+   308→   308→        method: 'POST',
+   309→   309→        body: { action, confirm },
+   310→   310→      })
+   311→   311→      const del = res.summary?.deleted || {}
+   312→   312→      const keys = Object.keys(del)
+   313→   313→      if (keys.length) {
+   314→   314→        toast.success(`انجام شد — ${keys.map((k) => `${faNum(del[k])} «${TABLE_FA[k] || k}»`).join('، ')} حذف شد`)
+   315→   315→      } else {
+   316→   316→        toast.info('انجام شد — موردی برای حذف وجود نداشت')
+   317→   317→      }
+   318→   318→      setPurge(null)
+   319→   319→      setTyped('')
+   320→   320→      setArmed(null)
+   321→   321→    } catch (e) {
+   322→   322→      toast.error((e as Error).message)
+   323→   323→    } finally {
+   324→   324→      setBusy(false)
+   325→   325→    }
+   326→   326→  }
+   327→   327→
+   328→   328→  return (
+   329→   329→    <div className="space-y-5">
+   330→   330→      {/* هشدار برگشت‌ناپذیری */}
+   331→   331→      <div className="flex items-start gap-3 rounded-2xl border border-[#b3372f]/40 bg-[#b3372f]/8 p-4 fade-in-up">
+   332→   332→        <ShieldAlert size={22} className="mt-0.5 shrink-0 text-[#b3372f]" />
+   333→   333→        <div>
+   334→   334→          <p className="text-sm font-black text-[#b3372f]">منطقهٔ خطر — این عملیات‌ها برگشت‌ناپذیرند</p>
+   335→   335→          <p className="mt-1 text-xs leading-6 text-foreground/75">
+   336→   336→            پیش از هر اقدام، از «مدیریت سامانه» نسخهٔ پشتیبان دیتابیس را بگیرید. هر عملیات با دو بار زدن دکمه تسلیح می‌شود و
+   337→   337→            پاک‌سازی‌های کامل به تایپِ عبارت فارسی دقیق نیاز دارند. همهٔ اقدامات در لاگ فعالیت ثبت و به مدیریت اعلان می‌شود.
+   338→   338→          </p>
+   339→   339→        </div>
+   340→   340→      </div>
+   341→   341→
+   342→   342→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   343→   343→        {DANGER_CARDS.map((d) => (
+   344→   344→          <div key={d.action} className="glow-card gold-glow-border rounded-2xl bg-card p-4 sm:p-5 fade-in-up">
+   345→   345→            <div className="mb-2 flex items-center gap-2.5">
+   346→   346→              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#b3372f]/10 text-lg">{d.icon}</span>
+   347→   347→              <h3 className="text-sm font-black text-foreground">{d.title}</h3>
+   348→   348→            </div>
+   349→   349→            <p className="mb-4 text-xs leading-6 text-muted-foreground">{d.desc}</p>
+   350→   350→            <ArmedButton
+   351→   351→              label={d.phrase ? 'حذف کامل…' : 'بازنشانی کن'}
+   352→   352→              onClick={() => {
+   353→   353→                if (d.phrase) {
+   354→   354→                  setPurge(d)
+   355→   355→                  setTyped('')
+   356→   356→                } else {
+   357→   357→                  runAction(d.action)
+   358→   358→                }
+   359→   359→              }}
+   360→   360→              disabled={busy}
+   361→   361→              className="w-full sm:w-auto"
+   362→   362→            />
+   363→   363→          </div>
+   364→   364→        ))}
+   365→   365→
+   366→   366→        {/* نگهداری سبک — اعلان‌های قدیمی */}
+   367→   367→        <div className="glow-card rounded-2xl bg-card p-4 sm:p-5 fade-in-up lg:col-span-2">
+   368→   368→          <div className="mb-2 flex items-center gap-2.5">
+   369→   369→            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#c9a227]/15 text-lg">🧹</span>
+   370→   370→            <h3 className="text-sm font-black text-foreground">پاک‌سازی اعلان‌های قدیمی دمو</h3>
+   371→   371→          </div>
+   372→   372→          <p className="mb-4 text-xs leading-6 text-muted-foreground">
+   373→   373→            اعلان‌های مرکز اعلان‌ها که بیش از ۷ روز از ثبتشان گذشته باشد پاک می‌شود — برای سبک‌ماندن صندوق ورودی تیم. عملیات امن است و دادهٔ عملیاتی را دست نمی‌زند.
+   374→   374→          </p>
+   375→   375→          <ArmedButton tone="gold" label="پاک‌سازی اعلان‌های بالای ۷ روز" onClick={() => runAction('purge-demo-notifs')} disabled={busy} />
+   376→   376→        </div>
+   377→   377→      </div>
+   378→   378→
+   379→   379→      {/* مودال تأیید تایپی */}
+   380→   380→      {purge && (
+   381→   381→        <Modal title={`تأیید نهایی — ${purge.title}`} onClose={() => { setPurge(null); setTyped('') }}>
+   382→   382→          <p className="rounded-xl bg-[#b3372f]/10 p-3 text-xs font-bold leading-6 text-[#b3372f]">
+   383→   383→            این عملیات برگشت‌ناپذیر است و رکوردها بدون امکان بازیابی حذف می‌شوند. اگر مطمئن نیستید، ابتدا پشتیبان بگیرید.
+   384→   384→          </p>
+   385→   385→          <p className="text-xs text-muted-foreground">برای تأیید، عبارت زیر را دقیقاً تایپ کنید:</p>
+   386→   386→          <p className="select-none rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd] px-3 py-2.5 text-center text-base font-black text-[#8a6d10]">
+   387→   387→            {purge.phrase}
+   388→   388→          </p>
+   389→   389→          <input
+   390→   390→            value={typed}
+   391→   391→            onChange={(e) => setTyped(e.target.value)}
+   392→   392→            placeholder="عبارت تأیید را اینجا بنویسید…"
+   393→   393→            className="w-full rounded-xl border border-input bg-white/90 px-4 py-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+   394→   394→          />
+   395→   395→          <button
+   396→   396→            disabled={typed.trim() !== purge.phrase || busy}
+   397→   397→            onClick={() => runAction(purge.action, purge.phrase || undefined)}
+   398→   398→            className="w-full rounded-xl bg-[#b3372f] py-3 text-sm font-extrabold text-white transition-opacity disabled:opacity-40"
+   399→   399→          >
+   400→   400→            {busy ? 'در حال اجرا…' : 'حذف برای همیشه'}
+   401→   401→          </button>
+   402→   402→        </Modal>
+   403→   403→      )}
+   404→   404→    </div>
+   405→   405→  )
+   406→   406→}
+   407→   407→
+   408→   408→/* ═════════════════════════════ تب ۳ — ورود از اکسل با تطبیق ستون‌ها ═════════════════════════════ */
+   409→   409→
+   410→   410→const KINDS: { key: 'products' | 'providers' | 'customers'; label: string; icon: string; hint: string }[] = [
+   411→   411→  { key: 'products', label: 'کالاها', icon: '📦', hint: 'نام، بارکد، کد هلو، قیمت‌ها، موجودی، تأمین‌کننده' },
+   412→   412→  { key: 'providers', label: 'تأمین‌کنندگان', icon: '🚚', hint: 'نام، رابط، تلفن، نوع، شرکت‌های نمایندگی' },
+   413→   413→  { key: 'customers', label: 'مشتریان', icon: '🧑‍🤝‍🧑', hint: 'نام، تلفن، تولد شمسی، تیئر، برچسب‌ها' },
+   414→   414→]
+   415→   415→
+   416→   416→/** ستون‌های قیمتی — قبل از ارسال، ارقام فارسی/جداکننده‌ها به عدد تبدیل می‌شود */
+   417→   417→const NUMERIC_FIELDS = new Set(['buyPrice', 'sellPrice', 'sellPrice2', 'stock', 'reorderLevel'])
+   418→   418→
+   419→   419→/** جدول حدس هوشمند ستون‌ها — تطبیق دقیق و سپس جزئی (فارسی + انگلیسی) */
+   420→   420→const GUESS: Record<string, Record<string, string[]>> = {
+   421→   421→  products: {
+   422→   422→    name: ['نام کالا', 'شرح کالا', 'نام کالای موجود', 'نام', 'کالا', 'شرح', 'عنوان', 'name', 'product', 'product name', 'item'],
+   423→   423→    barcodes: ['بارکد', 'بارکد کالا', 'کد بارکد', 'بارکد محصول', 'barcode', 'barcodes'],
+   424→   424→    holooCode: ['کد هلو', 'کد کالا در هلو', 'کد کالا', 'کد', 'holoocode', 'holoo code', 'holoocode', 'code'],
+   425→   425→    unit: ['واحد', 'واحد شمارش', 'واحد کالا', 'unit'],
+   426→   426→    brand: ['برند', 'برند کالا', 'مارک', 'brand'],
+   427→   427→    category: ['دسته', 'دسته‌بندی', 'گروه کالا', 'گروه', 'category'],
+   428→   428→    buyPrice: ['قیمت خرید', 'بهای خرید', 'قیمت خرید کالا', 'خرید', 'buyprice', 'buy price', 'cost'],
+   429→   429→    sellPrice: ['قیمت فروش', 'قیمت فروش کالا', 'فروش', 'قیمت', 'sellprice', 'sell price', 'price'],
+   430→   430→    sellPrice2: ['قیمت فروش ۲', 'قیمت فروش دوم', 'فروش ۲', 'قیمت ویژه', 'sellprice2', 'sell price 2'],
+   431→   431→    stock: ['موجودی', 'موجودی انبار', 'تعداد', 'شمار', 'stock', 'qty'],
+   432→   432→    reorderLevel: ['نقطه سفارش', 'نقطهٔ سفارش', 'حد سفارش', 'سطح سفارش', 'reorder'],
+   433→   433→    providerName: ['تأمین‌کننده', 'تامین کننده', 'تأمین', 'پخش', 'فروشنده', 'provider', 'supplier'],
+   434→   434→  },
+   435→   435→  providers: {
+   436→   436→    name: ['نام تأمین‌کننده', 'تامین کننده', 'نام', 'شرکت', 'provider', 'supplier', 'name'],
+   437→   437→    personName: ['نام رابط', 'رابط', 'نام فرد', 'نام شخص', 'مسئول', 'contact', 'person'],
+   438→   438→    phone: ['تلفن', 'موبایل', 'شماره تماس', 'همراه', 'شماره', 'phone', 'mobile', 'tel'],
+   439→   439→    type: ['نوع', 'type'],
+   440→   440→    companyNames: ['شرکت‌ها', 'برندها', 'شرکت های نمایندگی', 'نمایندگی', 'companies', 'company'],
+   441→   441→  },
+   442→   442→  customers: {
+   443→   443→    name: ['نام مشتری', 'نام و نام خانوادگی', 'نام', 'مشتری', 'customer', 'name'],
+   444→   444→    phone: ['تلفن', 'موبایل', 'شماره تماس', 'همراه', 'شماره', 'phone', 'mobile', 'tel'],
+   445→   445→    birthday: ['تاریخ تولد', 'تولد', 'birthday'],
+   446→   446→    tier: ['تیئر', 'تییر', 'سطح مشتری', 'tier'],
+   447→   447→    tags: ['برچسب', 'تگ', 'برچسب‌ها', 'تگ‌ها', 'tags', 'tag'],
+   448→   448→  },
+   449→   449→}
+   450→   450→
+   451→   451→const MAP_KEY = (kind: string) => `hz-import-map-${kind}`
+   452→   452→
+   453→   453→const normHeader = (s: string) => s.toLowerCase().replace(/\u200c/g, '').replace(/\s+/g, ' ').trim()
+   454→   454→
+   455→   455→function autoGuess(headers: string[], kind: string): Record<string, number> {
+   456→   456→  const aliases = GUESS[kind] || {}
+   457→   457→  const map: Record<string, number> = {}
+   458→   458→  const claimed = new Set<number>()
+   459→   459→  // گذر ۱ — تطبیق دقیق
+   460→   460→  for (const key of Object.keys(aliases)) {
+   461→   461→    for (const a of aliases[key]) {
+   462→   462→      const i = headers.findIndex((h, idx) => !claimed.has(idx) && normHeader(h) === normHeader(a))
+   463→   463→      if (i >= 0) { map[key] = i; claimed.add(i); break }
+   464→   464→    }
+   465→   465→  }
+   466→   466→  // گذر ۲ — تطبیق جزئی (شامل‌مشتق دوطرفه با حداقل طول)
+   467→   467→  for (const key of Object.keys(aliases)) {
+   468→   468→    if (map[key] !== undefined) continue
+   469→   469→    for (const a of aliases[key]) {
+   470→   470→      const needle = normHeader(a)
+   471→   471→      if (needle.length < 3) continue
+   472→   472→      const i = headers.findIndex((h, idx) => {
+   473→   473→        if (claimed.has(idx)) return false
+   474→   474→        const n = normHeader(h)
+   475→   475→        return n.length >= 3 && (n.includes(needle) || needle.includes(n))
+   476→   476→      })
+   477→   477→      if (i >= 0) { map[key] = i; claimed.add(i); break }
+   478→   478→    }
+   479→   479→  }
+   480→   480→  return map
+   481→   481→}
+   482→   482→
+   483→   483→function ImportWizard({ onDone }: { onDone: () => void }) {
+   484→   484→  const [kind, setKind] = useState<'products' | 'providers' | 'customers'>('products')
+   485→   485→  const [fields, setFields] = useState<FieldDef[]>([])
+   486→   486→  const [matrix, setMatrix] = useState<string[][]>([])
+   487→   487→  const [fileName, setFileName] = useState('')
+   488→   488→  const [headerRow, setHeaderRow] = useState(true)
+   489→   489→  const [strategy, setStrategy] = useState<'skip' | 'merge'>('merge')
+   490→   490→  const [mapping, setMapping] = useState<Record<string, number>>({})
+   491→   491→  const [dry, setDry] = useState<DryResult | null>(null)
+   492→   492→  const [applied, setApplied] = useState<ApplyResult | null>(null)
+   493→   493→  const [busy, setBusy] = useState(false)
+   494→   494→  const fileRef = useRef<HTMLInputElement>(null)
+   495→   495→
+   496→   496→  // فیلدهای پلتفرم از سرور — مرجع رسمی تطبیق
+   497→   497→  useEffect(() => {
+   498→   498→    api<{ kind: string; mappingHint: FieldDef[] }>(`/api/import?kind=${kind}`)
+   499→   499→      .then((d) => setFields(d.mappingHint))
+   500→   500→      .catch((e) => toast.error(e.message))
+   501→   501→  }, [kind])
+   502→   502→
+   503→   503→  const headers = useMemo(() => {
+   504→   504→    if (!matrix.length) return []
+   505→   505→    if (headerRow) return matrix[0].map((h, i) => (String(h).trim() || `ستون ${faNum(i + 1)}`))
+   506→   506→    return matrix[0].map((_, i) => `ستون ${faNum(i + 1)}`)
+   507→   507→  }, [matrix, headerRow])
+   508→   508→
+   509→   509→  const dataRows = useMemo(() => {
+   510→   510→    const base = headerRow ? matrix.slice(1) : matrix
+   511→   511→    return base.filter((r) => r.some((cell) => String(cell).trim() !== ''))
+   512→   512→  }, [matrix, headerRow])
+   513→   513→
+   514→   514→  // حدس هوشمند + بازیابی پیش‌تنظیم ذخیره‌شده برای همین نوع داده
+   515→   515→  useEffect(() => {
+   516→   516→    if (!headers.length || !fields.length) return
+   517→   517→    const guessed = autoGuess(headers, kind)
+   518→   518→    try {
+   519→   519→      const saved = JSON.parse(localStorage.getItem(MAP_KEY(kind)) || 'null') as Record<string, number> | null
+   520→   520→      if (saved && typeof saved === 'object') {
+   521→   521→        for (const [k, v] of Object.entries(saved)) {
+   522→   522→          if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < headers.length) guessed[k] = v
+   523→   523→        }
+   524→   524→      }
+   525→   525→    } catch { /* پیش‌تنظیم خراب — نادیده */ }
+   526→   526→    setMapping(guessed)
+   527→   527→    setDry(null)
+   528→   528→    setApplied(null)
+   529→   529→  }, [headers, kind, fields])
+   530→   530→
+   531→   531→  const requiredMissing = fields.filter((f) => f.required && (mapping[f.key] === undefined || mapping[f.key] < 0))
+   532→   532→
+   533→   533→  /** ساخت ردیف‌های تختِ {فیلد پلتفرم: مقدار} — فقط ستون‌های تطبیق‌شده، تبدیل ارقام فارسی */
+   534→   534→  const buildRows = (): Record<string, unknown>[] => {
+   535→   535→    const out: Record<string, unknown>[] = []
+   536→   536→    for (const r of dataRows) {
+   537→   537→      const obj: Record<string, unknown> = {}
+   538→   538→      for (const f of fields) {
+   539→   539→        const col = mapping[f.key]
+   540→   540→        if (col === undefined || col < 0 || col >= r.length) continue
+   541→   541→        const raw = String(r[col] ?? '').trim()
+   542→   542→        if (raw === '') continue
+   543→   543→        obj[f.key] = NUMERIC_FIELDS.has(f.key) ? parseFaNumber(raw) : raw
+   544→   544→      }
+   545→   545→      if (Object.keys(obj).length) out.push(obj)
+   546→   546→    }
+   547→   547→    return out
+   548→   548→  }
+   549→   549→
+   550→   550→  const onFile = async (file: File | undefined) => {
+   551→   551→    if (!file) return
+   552→   552→    try {
+   553→   553→      const buf = await file.arrayBuffer()
+   554→   554→      const wb = XLSX.read(buf, { type: 'array' })
+   555→   555→      const ws = wb.Sheets[wb.SheetNames[0]]
+   556→   556→      const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' })
+   557→   557→      const rows = raw.map((r) => (Array.isArray(r) ? r.map((cell) => (cell == null ? '' : String(cell).trim())) : []))
+   558→   558→      if (!rows.length) {
+   559→   559→        toast.error('برگهٔ اکسل خالی است')
+   560→   560→        return
+   561→   561→      }
+   562→   562→      setMatrix(rows)
+   563→   563→      setFileName(file.name)
+   564→   564→      setDry(null)
+   565→   565→      setApplied(null)
+   566→   566→      toast.success(`فایل خوانده شد — ${faNum(rows.length)} سطر، ${faNum(rows[0].length)} ستون`)
+   567→   567→    } catch (e) {
+   568→   568→      toast.error('خواندن فایل ناموفق بود: ' + (e as Error).message)
+   569→   569→    }
+   570→   570→  }
+   571→   571→
+   572→   572→  const savePreset = () => {
+   573→   573→    try {
+   574→   574→      localStorage.setItem(MAP_KEY(kind), JSON.stringify(mapping))
+   575→   575→      toast.success(`تطبیق ستون‌ها برای «${KINDS.find((k) => k.key === kind)?.label}» ذخیره شد — دفعهٔ بعد خودکار بازیابی می‌شود (در همین مرورگر)`)
+   576→   576→    } catch {
+   577→   577→      toast.error('ذخیرهٔ تطبیق در مرورگر ممکن نشد')
+   578→   578→    }
+   579→   579→  }
+   580→   580→
+   581→   581→  const doDry = async () => {
+   582→   582→    setBusy(true)
+   583→   583→    try {
+   584→   584→      const res = await api<DryResult>('/api/import', { method: 'POST', body: { kind, rows: buildRows(), mode: 'dry-run', strategy } })
+   585→   585→      setDry(res)
+   586→   586→      setApplied(null)
+   587→   587→      if (res.valid === 0) toast.error('هیچ سطر معتبری پیدا نشد — تطبیق ستون‌ها را بررسی کنید')
+   588→   588→      else toast.info(`بررسی شد — ${faNum(res.valid)} سطر معتبر، ${faNum(res.invalid.length)} سطر خطادار، ${faNum(res.willCreate)} ایجاد، ${faNum(res.willUpdate)} بروزرسانی`)
+   589→   589→    } catch (e) {
+   590→   590→      toast.error((e as Error).message)
+   591→   591→    } finally {
+   592→   592→      setBusy(false)
+   593→   593→    }
+   594→   594→  }
+   595→   595→
+   596→   596→  const doApply = async () => {
+   597→   597→    setBusy(true)
+   598→   598→    try {
+   599→   599→      const res = await api<ApplyResult>('/api/import', { method: 'POST', body: { kind, rows: buildRows(), mode: 'apply', strategy } })
+   600→   600→      setApplied(res)
+   601→   601→      setDry(null)
+   602→   602→      toast.success(`ورود داده انجام شد — ${faNum(res.created)} جدید، ${faNum(res.updated)} بروزرسانی، ${faNum(res.skipped)} ردشدن${res.totalInvalid ? `، ${faNum(res.totalInvalid)} سطر خطادار` : ''}`)
+   603→   603→      onDone()
+   604→   604→    } catch (e) {
+   605→   605→      toast.error((e as Error).message)
+   606→   606→    } finally {
+   607→   607→      setBusy(false)
+   608→   608→    }
+   609→   609→  }
+   610→   610→
+   611→   611→  const stepTitle = (n: number, title: string, hint?: string) => (
+   612→   612→    <div className="mb-3 flex items-start gap-2.5">
+   613→   613→      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#c9a227] text-xs font-black text-white">{faNum(n)}</span>
+   614→   614→      <div>
+   615→   615→        <h3 className="text-sm font-black text-foreground">{title}</h3>
+   616→   616→        {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
+   617→   617→      </div>
+   618→   618→    </div>
+   619→   619→  )
+   620→   620→
+   621→   621→  return (
+   622→   622→    <div className="space-y-5">
+   623→   623→      {/* گام ۱ — نوع داده */}
+   624→   624→      <SectionCard title="۱. نوع دادهٔ ورودی را انتخاب کنید" icon={<span className="text-lg">🗂️</span>}>
+   625→   625→        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   626→   626→          {KINDS.map((k) => (
+   627→   627→            <button
+   628→   628→              key={k.key}
+   629→   629→              onClick={() => { setKind(k.key); setMatrix([]); setFileName(''); setDry(null); setApplied(null) }}
+   630→   630→              className={cn(
+   631→   631→                'rounded-2xl border-2 p-4 text-right transition-all',
+   632→   632→                kind === k.key
+   633→   633→                  ? 'border-[#0e7a4a] bg-[#0e7a4a]/8 shadow-md'
+   634→   634→                  : 'border-border bg-card hover:border-[#c9a227]/60'
+   635→   635→              )}
+   636→   636→            >
+   637→   637→              <div className="flex items-center gap-2">
+   638→   638→                <span className="text-2xl">{k.icon}</span>
+   639→   639→                <span className="text-sm font-black text-foreground">{k.label}</span>
+   640→   640→                {kind === k.key && <Pill label="انتخاب‌شده" color="#0e7a4a" bg="#dcfce7" className="mr-auto" />}
+   641→   641→              </div>
+   642→   642→              <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{k.hint}</p>
+   643→   643→            </button>
+   644→   644→          ))}
+   645→   645→        </div>
+   646→   646→      </SectionCard>
+   647→   647→
+   648→   648→      {/* گام ۲ — فایل + پیش‌نمایش خام */}
+   649→   649→      <SectionCard title="۲. فایل اکسل را بدهید" subtitle="xlsx / xls / csv — خواندن فایل در همین مرورگر انجام می‌شود؛ فایل جایی آپلود نمی‌شود" icon={<FileSpreadsheet size={18} />}>
+   650→   650→        <div
+   651→   651→          className="rounded-2xl border-2 border-dashed border-[#c9a227]/50 bg-[#fdf6dd]/40 p-6 text-center"
+   652→   652→          onDragOver={(e) => e.preventDefault()}
+   653→   653→          onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0]) }}
+   654→   654→        >
+   655→   655→          <FileSpreadsheet size={34} className="mx-auto mb-2 text-[#8a6d10]" />
+   656→   656→          <p className="text-sm font-black">{fileName ? `فایل: ${fileName}` : 'فایل را اینجا رها کنید یا انتخاب کنید'}</p>
+   657→   657→          <p className="mx-auto mt-1 max-w-md text-[11px] leading-5 text-muted-foreground">
+   658→   658→            {matrix.length
+   659→   659→              ? `${faNum(matrix.length)} سطر و ${faNum(headers.length)} ستون شناسایی شد`
+   660→   660→              : 'سطر اول می‌تواند نام ستون‌ها باشد — در گزینهٔ پایین مشخص می‌کنید'}
+   661→   661→          </p>
+   662→   662→          <button onClick={() => fileRef.current?.click()} className="mt-3 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-white hover:opacity-90">
+   663→   663→            📁 انتخاب فایل
+   664→   664→          </button>
+   665→   665→          <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" hidden onChange={(e) => onFile(e.target.files?.[0] || undefined)} />
+   666→   666→        </div>
+   667→   667→
+   668→   668→        {matrix.length > 0 && (
+   669→   669→          <>
+   670→   670→            <div className="mt-3 flex flex-wrap items-center gap-4 rounded-xl bg-muted/40 px-4 py-2.5">
+   671→   671→              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold">
+   672→   672→                <input type="checkbox" checked={headerRow} onChange={(e) => { setHeaderRow(e.target.checked); setDry(null); setApplied(null) }} className="h-4 w-4 accent-[#0e7a4a]" />
+   673→   673→                ردیف اول، نام ستون‌ها است
+   674→   674→              </label>
+   675→   675→              <span className="text-[11px] text-muted-foreground">ردیف داده: {faNum(dataRows.length)}</span>
+   676→   676→            </div>
+   677→   677→            <div className="scroll-gold mt-3 max-h-64 overflow-auto rounded-xl border border-border">
+   678→   678→              <table className="w-full text-right text-[11px]">
+   679→   679→                <thead className="sticky top-0 bg-secondary">
+   680→   680→                  <tr>
+   681→   681→                    <th className="p-2 text-muted-foreground">#</th>
+   682→   682→                    {headers.map((h, i) => (
+   683→   683→                      <th key={i} className="whitespace-nowrap p-2 font-black text-foreground">{h}</th>
+   684→   684→                    ))}
+   685→   685→                  </tr>
+   686→   686→                </thead>
+   687→   687→                <tbody>
+   688→   688→                  {dataRows.slice(0, 8).map((r, ri) => (
+   689→   689→                    <tr key={ri} className="border-t border-border/50 odd:bg-muted/20">
+   690→   690→                      <td className="p-2 text-muted-foreground">{faNum(ri + 1)}</td>
+   691→   691→                      {headers.map((_, ci) => (
+   692→   692→                        <td key={ci} className="max-w-36 truncate p-2">{r[ci] || '—'}</td>
+   693→   693→                      ))}
+   694→   694→                    </tr>
+   695→   695→                  ))}
+   696→   696→                </tbody>
+   697→   697→              </table>
+   698→   698→            </div>
+   699→   699→            <p className="mt-1.5 text-[11px] text-muted-foreground">۸ سطر اول — برای دیدن همهٔ ستون‌ها جدول را اسکرول کنید</p>
+   700→   700→          </>
+   701→   701→        )}
+   702→   702→      </SectionCard>
+   703→   703→
+   704→   704→      {/* گام ۳ — تطبیق ستون‌ها */}
+   705→   705→      {matrix.length > 0 && fields.length > 0 && (
+   706→   706→        <SectionCard
+   707→   707→          title="۳. ستون‌های فایل را به فیلدهای سامانه تطبیق دهید"
+   708→   708→          subtitle="حدس اولیه خودکار زده شده — هر مورد را در صورت نیاز عوض کنید؛ ستون‌های ستاره‌دار الزامی‌اند"
+   709→   709→          icon={<span className="text-lg">🔗</span>}
+   710→   710→          actions={
+   711→   711→            <button onClick={savePreset} className="rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd] px-3 py-2 text-xs font-extrabold text-[#8a6d10] hover:bg-[#fdf6dd]/80">
+   712→   712→              <Save size={14} className="inline" /> ذخیرهٔ این تطبیق برای همیشه
+   713→   713→            </button>
+   714→   714→          }
+   715→   715→        >
+   716→   716→          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+   717→   717→            {fields.map((f) => (
+   718→   718→              <label key={f.key} className="block rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+   719→   719→                <span className="mb-1.5 flex items-center gap-1 text-xs font-black text-foreground">
+   720→   720→                  {f.label}
+   721→   721→                  {f.required && <span className="text-[#b3372f]">*</span>}
+   722→   722→                </span>
+   723→   723→                <select
+   724→   724→                  value={mapping[f.key] === undefined || mapping[f.key] < 0 ? '' : String(mapping[f.key])}
+   725→   725→                  onChange={(e) => {
+   726→   726→                    const v = e.target.value === '' ? -1 : Number(e.target.value)
+   727→   727→                    setMapping((m) => ({ ...m, [f.key]: v }))
+   728→   728→                    setDry(null)
+   729→   729→                    setApplied(null)
+   730→   730→                  }}
+   731→   731→                  className={cn(
+   732→   732→                    'w-full rounded-lg border bg-white/90 px-3 py-2 text-xs font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20',
+   733→   733→                    mapping[f.key] !== undefined && mapping[f.key] >= 0 ? 'border-[#0e7a4a]/40' : 'border-input'
+   734→   734→                  )}
+   735→   735→                >
+   736→   736→                  <option value="">— تطبیق نشده —</option>
+   737→   737→                  {headers.map((h, i) => (
+   738→   738→                    <option key={i} value={i}>{`${h} · ستون ${faNum(i + 1)}`}</option>
+   739→   739→                  ))}
+   740→   740→                </select>
+   741→   741→              </label>
+   742→   742→            ))}
+   743→   743→          </div>
+   744→   744→
+   745→   745→          {/* گام ۴ — گزینه‌ها */}
+   746→   746→          <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl bg-muted/40 px-4 py-3">
+   747→   747→            <span className="text-xs font-black text-foreground">رفتار با رکوردهای موجود:</span>
+   748→   748→            <label className="flex cursor-pointer items-center gap-1.5 text-xs font-bold">
+   749→   749→              <input type="radio" checked={strategy === 'skip'} onChange={() => { setStrategy('skip'); setDry(null); setApplied(null) }} className="h-4 w-4 accent-[#0e7a4a]" />
+   750→   750→              رد کردن موجودها (فقط جدیدها ساخته می‌شوند)
+   751→   751→            </label>
+   752→   752→            <label className="flex cursor-pointer items-center gap-1.5 text-xs font-bold">
+   753→   753→              <input type="radio" checked={strategy === 'merge'} onChange={() => { setStrategy('merge'); setDry(null); setApplied(null) }} className="h-4 w-4 accent-[#0e7a4a]" />
+   754→   754→              ترکیب با موجودها (فیلدهای پر به‌روز می‌شوند)
+   755→   755→            </label>
+   756→   756→          </div>
+   757→   757→
+   758→   758→          {requiredMissing.length > 0 && (
+   759→   759→            <p className="mt-3 rounded-xl bg-[#fef9c3] p-3 text-xs font-bold text-[#a16207]">
+   760→   760→              ⚠️ فیلد الزامی «{requiredMissing[0].label}» هنوز به ستونی تطبیق داده نشده — دکمهٔ اجرا تا آن موقع غیرفعال است.
+   761→   761→            </p>
+   762→   762→          )}
+   763→   763→
+   764→   764→          {/* گام ۵ و ۶ — پیش‌نمایش و اجرا */}
+   765→   765→          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+   766→   766→            <button
+   767→   767→              onClick={doDry}
+   768→   768→              disabled={busy || dataRows.length === 0 || requiredMissing.length > 0}
+   769→   769→              className="rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+   770→   770→            >
+   771→   771→              🔍 پیش‌نمایش و بررسی
+   772→   772→            </button>
+   773→   773→            <ArmedButton
+   774→   774→              label="اجرای ورود داده"
+   775→   775→              armedLabel="مطمئنید؟ دوباره بزنید"
+   776→   776→              onClick={doApply}
+   777→   777→              disabled={busy || !dry || dry.valid === 0 || requiredMissing.length > 0}
+   778→   778→            />
+   779→   779→            {!dry && <span className="text-[11px] text-muted-foreground">برای فعال‌شدن اجرا، ابتدا «پیش‌نمایش و بررسی» را بزنید</span>}
+   780→   780→          </div>
+   781→   781→
+   782→   782→          {/* نتیجهٔ بررسی */}
+   783→   783→          {dry && (
+   784→   784→            <div className="mt-4 space-y-3 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-4 fade-in-up">
+   785→   785→              <p className="text-xs font-black text-[#8a6d10]">نتیجهٔ بررسی — هیچ داده‌ای هنوز ذخیره نشده است</p>
+   786→   786→              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+   787→   787→                <MiniStat label="معتبر" value={dry.valid} tone="text-[#0e7a4a]" />
+   788→   788→                <MiniStat label="ایجاد می‌شوند" value={dry.willCreate} tone="text-[#0e7a4a]" />
+   789→   789→                <MiniStat label="بروز می‌شوند" value={dry.willUpdate} tone="text-[#8a6d10]" />
+   790→   790→                <MiniStat label="رد می‌شوند" value={dry.willSkip} tone="text-[#556057]" />
+   791→   791→                <MiniStat label="خطادار" value={dry.invalid.length} tone="text-[#b3372f]" />
+   792→   792→              </div>
+   793→   793→
+   794→   794→              {dry.invalid.length > 0 && (
+   795→   795→                <div className="scroll-gold max-h-40 overflow-y-auto rounded-xl border border-[#b3372f]/30 bg-white/70">
+   796→   796→                  <table className="w-full text-right text-[11px]">
+   797→   797→                    <thead className="sticky top-0 bg-[#b3372f]/10">
+   798→   798→                      <tr><th className="p-2">سطر</th><th className="p-2">خطا</th></tr>
+   799→   799→                    </thead>
+   800→   800→                    <tbody>
+   801→   801→                      {dry.invalid.slice(0, 50).map((it, i) => (
+   802→   802→                        <tr key={i} className="border-t border-border/50">
+   803→   803→                          <td className="p-2 font-black">{faNum(it.row)}</td>
+   804→   804→                          <td className="p-2 text-[#b3372f]">{it.error}</td>
+   805→   805→                        </tr>
+   806→   806→                      ))}
+   807→   807→                    </tbody>
+   808→   808→                  </table>
+   809→   809→                </div>
+   810→   810→              )}
+   811→   811→
+   812→   812→              {dry.sample.length > 0 && (
+   813→   813→                <>
+   814→   814→                  <p className="pt-1 text-[11px] font-bold text-muted-foreground">نمونهٔ ۱۰ سطر اول پس از تطبیق:</p>
+   815→   815→                  <div className="scroll-gold max-h-56 overflow-auto rounded-xl border border-border bg-white/70">
+   816→   816→                    <table className="w-full text-right text-[11px]">
+   817→   817→                      <thead className="sticky top-0 bg-secondary">
+   818→   818→                        <tr>
+   819→   819→                          <th className="p-2">نام</th>
+   820→   820→                          {kind === 'products' && <><th className="p-2">بارکد</th><th className="p-2">کد هلو</th><th className="p-2">خرید</th><th className="p-2">فروش</th><th className="p-2">موجودی</th><th className="p-2">تأمین‌کننده</th></>}
+   821→   821→                          {kind === 'providers' && <><th className="p-2">رابط</th><th className="p-2">تلفن</th><th className="p-2">نوع</th><th className="p-2">شرکت‌ها</th></>}
+   822→   822→                          {kind === 'customers' && <><th className="p-2">تلفن</th><th className="p-2">تولد</th><th className="p-2">تیئر</th><th className="p-2">برچسب‌ها</th></>}
+   823→   823→                          <th className="p-2">نتیجه</th>
+   824→   824→                        </tr>
+   825→   825→                      </thead>
+   826→   826→                      <tbody>
+   827→   827→                        {dry.sample.map((s, i) => (
+   828→   828→                          <tr key={i} className="border-t border-border/50">
+   829→   829→                            <td className="max-w-40 truncate p-2 font-bold">{String(s.name || '—')}</td>
+   830→   830→                            {kind === 'products' && <>
+   831→   831→                              <td className="p-2 font-mono" dir="ltr">{String(s.barcode || '—')}</td>
+   832→   832→                              <td className="p-2 font-mono" dir="ltr">{String(s.holooCode || '—')}</td>
+   833→   833→                              <td className="p-2">{s.buyPrice != null ? faMoney(Number(s.buyPrice)) : '—'}</td>
+   834→   834→                              <td className="p-2">{s.sellPrice != null ? faMoney(Number(s.sellPrice)) : '—'}</td>
+   835→   835→                              <td className="p-2">{s.stock != null ? faNum(Number(s.stock)) : '—'}</td>
+   836→   836→                              <td className="max-w-28 truncate p-2">{String(s.providerName || '—')}</td>
+   837→   837→                            </>}
+   838→   838→                            {kind === 'providers' && <>
+   839→   839→                              <td className="p-2">{String(s.personName || '—')}</td>
+   840→   840→                              <td className="p-2" dir="ltr">{String(s.phone || '—')}</td>
+   841→   841→                              <td className="p-2">{String(s.type || '—')}</td>
+   842→   842→                              <td className="max-w-28 truncate p-2">{String(s.companyNames || '—')}</td>
+   843→   843→                            </>}
+   844→   844→                            {kind === 'customers' && <>
+   845→   845→                              <td className="p-2" dir="ltr">{String(s.phone || '—')}</td>
+   846→   846→                              <td className="p-2">{String(s.birthday || '—')}</td>
+   847→   847→                              <td className="p-2">{String(s.tier || '—')}</td>
+   848→   848→                              <td className="max-w-28 truncate p-2">{String(s.tags || '—')}</td>
+   849→   849→                            </>}
+   850→   850→                            <td className="p-2">
+   851→   851→                              <Pill
+   852→   852→                                label={String(s.result || '—')}
+   853→   853→                                color={String(s.result).includes('ایجاد') ? '#0e7a4a' : String(s.result).includes('بروزرسانی') ? '#8a6d10' : '#6b7280'}
+   854→   854→                              />
+   855→   855→                            </td>
+   856→   856→                          </tr>
+   857→   857→                        ))}
+   858→   858→                      </tbody>
+   859→   859→                    </table>
+   860→   860→                  </div>
+   861→   861→                </>
+   862→   862→              )}
+   863→   863→            </div>
+   864→   864→          )}
+   865→   865→
+   866→   866→          {/* نتیجهٔ اجرا */}
+   867→   867→          {applied && (
+   868→   868→            <div className="mt-4 rounded-2xl border border-[#0e7a4a]/40 bg-[#0e7a4a]/8 p-4 fade-in-up">
+   869→   869→              <p className="text-sm font-black text-[#0e7a4a]">🎉 ورود داده کامل شد</p>
+   870→   870→              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+   871→   871→                <MiniStat label="ایجاد شد" value={applied.created} tone="text-[#0e7a4a]" />
+   872→   872→                <MiniStat label="بروزرسانی شد" value={applied.updated} tone="text-[#8a6d10]" />
+   873→   873→                <MiniStat label="رد شد" value={applied.skipped} tone="text-[#556057]" />
+   874→   874→                <MiniStat label="خطا" value={applied.totalInvalid} tone="text-[#b3372f]" />
+   875→   875→              </div>
+   876→   876→              {applied.errors.length > 0 && (
+   877→   877→                <div className="scroll-gold mt-3 max-h-36 overflow-y-auto rounded-xl bg-white/70 p-3 text-[11px]">
+   878→   878→                  {applied.errors.map((e, i) => (
+   879→   879→                    <p key={i}>• سطر {faNum(e.row)}: {e.error}</p>
+   880→   880→                  ))}
+   881→   881→                </div>
+   882→   882→              )}
+   883→   883→            </div>
+   884→   884→          )}
+   885→   885→        </SectionCard>
+   886→   886→      )}
+   887→   887→
+   888→   888→      <p className="px-2 text-center text-[11px] leading-5 text-muted-foreground">
+   889→   889→        💡 نکته: تطبیق ستون‌ها به‌ازای هر نوع داده در همین مرورگر ذخیره می‌شود («ذخیرهٔ این تطبیق برای همیشه») و دفعهٔ بعد خودکار بازیابی می‌گردد.
+   890→   890→        سقف هر بار اجرا ۵٬۰۰۰ سطر است؛ فایل‌های بزرگ را بخش‌بخش وارد کنید.
+   891→   891→      </p>
+   892→   892→    </div>
+   893→   893→  )
+   894→   894→}
+   895→   895→
+   896→   896→/* ═════════════════════════════ تب ۴ — سندباکس دمو (round-16) ═════════════════════════════ */
+   897→   897→
+   898→   898→type SetupStatus = {
+   899→   899→  done: boolean
+   900→   900→  sandbox: boolean
+   901→   901→  business: { name?: string; city?: string; kind?: string } | null
+   902→   902→  license: { tier?: string; founder?: boolean; modules?: Record<string, { until: string; trial?: boolean }>; updatedAt?: string } | null
+   903→   903→}
+   904→   904→
+   905→   905→function SandboxTab() {
+   906→   906→  const [status, setStatus] = useState<SetupStatus | null>(null)
+   907→   907→  const [busy, setBusy] = useState(false)
+   908→   908→
+   909→   909→  const load = useCallback(() => {
+   910→   910→    api<SetupStatus>('/api/setup').then(setStatus).catch((e) => toast.error(e.message))
+   911→   911→  }, [])
+   912→   912→  useEffect(load, [load])
+   913→   913→
+   914→   914→  const run = async (action: 'sandbox-enter' | 'sandbox-exit' | 'sandbox-reset', successMsg: string) => {
+   915→   915→    setBusy(true)
+   916→   916→    try {
+   917→   917→      await api('/api/setup', { method: 'POST', body: { action } })
+   918→   918→      toast.success(successMsg)
+   919→   919→      window.location.reload()
+   920→   920→    } catch (e) {
+   921→   921→      toast.error((e as Error).message)
+   922→   922→      setBusy(false)
+   923→   923→    }
+   924→   924→  }
+   925→   925→
+   926→   926→  const isSandbox = !!status?.sandbox
+   927→   927→
+   928→   928→  return (
+   929→   929→    <div className="space-y-5">
+   930→   930→      <SectionCard
+   931→   931→        title="سندباکس دمو — محیط تمرین کاملاً جداشده"
+   932→   932→        subtitle="دادهٔ نمایشی «هایپر نمونه» در یک دیتابیس مستقل است؛ سیستم واقعی شما هرگز دست نمی‌خورد"
+   933→   933→        icon={<FlaskConical size={19} className="text-[#8a6d10]" />}
+   934→   934→        actions={
+   935→   935→          isSandbox ? (
+   936→   936→            <Pill label="سندباکس فعال 🧪" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1.5 text-xs" />
+   937→   937→          ) : (
+   938→   938→            <Pill label="سیستم واقعی 🌿" color="#0e7a4a" bg="#dcfce7" className="px-3 py-1.5 text-xs" />
+   939→   939→          )
+   940→   940→        }
+   941→   941→      >
+   942→   942→        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   943→   943→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   944→   944→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">وضعیت فعلی</p>
+   945→   945→            {isSandbox
+   946→   946→              ? <Pill label="در حال نمایش دادهٔ دمو" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1 text-xs" />
+   947→   947→              : <Pill label="دادهٔ واقعی فروشگاه" color="#0e7a4a" bg="#dcfce7" className="px-3 py-1 text-xs" />}
+   948→   948→            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+   949→   949→              {isSandbox
+   950→   950→                ? 'تا وقتی از سندباکس خارج نشوید، همهٔ صفحه‌ها دادهٔ نمایشی نشان می‌دهند.'
+   951→   951→                : 'همهٔ اتصال‌ها به دیتابیس واقعی فروشگاه برقرار است.'}
+   952→   952→            </p>
+   953→   953→          </div>
+   954→   954→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   955→   955→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">کسب‌وکار فعال در همین لحظه</p>
+   956→   956→            <p className="text-sm font-black text-foreground">
+   957→   957→              {isSandbox ? 'هایپر نمونه 🧪' : status?.business?.name || '—'}
+   958→   958→            </p>
+   959→   959→            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+   960→   960→              {isSandbox
+   961→   961→                ? 'با کارکنان داستانی (آرش نمونه‌راد و همکاران دمو) — کاملاً تخیلی و برای تمرین.'
+   962→   962→                : 'نام ثبت‌شده در نصب سامانه.'}
+   963→   963→            </p>
+   964→   964→          </div>
+   965→   965→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   966→   966→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">جدایی داده‌ها</p>
+   967→   967→            <p className="text-xs leading-6 text-foreground/80">
+   968→   968→              سندباکس یک فایل دیتابیس <span className="font-black">مستقل</span> است که از قالب آماده ساخته می‌شود؛ سفارش‌ها،
+   969→   969→              چک‌ها و مشتریان دمو هیچ ربطی به دادهٔ واقعی ندارند و با خروج، بدون هیچ اثری حذف می‌شوند.
+   970→   970→            </p>
+   971→   971→          </div>
+   972→   972→        </div>
+   973→   973→
+   974→   974→        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+   975→   975→          {!isSandbox && (
+   976→   976→            <ArmedButton
+   977→   977→              tone="gold"
+   978→   978→              label="ورود به سندباکس دمو 🧪"
+   979→   979→              armedLabel="مطمئنید؟ دوباره بزنید"
+   980→   980→              onClick={() => run('sandbox-enter', 'ورود به سندباکس دمو — در حال بارگذاری محیط نمایشی…')}
+   981→   981→              disabled={busy}
+   982→   982→            />
+   983→   983→          )}
+   984→   984→          {isSandbox && (
+   985→   985→            <>
+   986→   986→              <button
+   987→   987→                onClick={() => run('sandbox-exit', 'به سیستم واقعی برگشتید — هیچ اثری از دادهٔ دمو باقی نماند ✅')}
+   988→   988→                disabled={busy}
+   989→   989→                className="rounded-xl bg-[#0e7a4a] px-4 py-2.5 text-xs font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+   990→   990→              >
+   991→   991→                بازگشت به سیستم واقعی 🌿
+   992→   992→              </button>
+   993→   993→              <ArmedButton
+   994→   994→                label="بازنشانی دادهٔ دمو 🔄"
+   995→   995→                armedLabel="دادهٔ دمو از نو ساخته شود؟"
+   996→   996→                onClick={() => run('sandbox-reset', 'دادهٔ سندباکس از قالب اولیه از نو ساخته شد')}
+   997→   997→                disabled={busy}
+   998→   998→              />
+   999→   999→            </>
+  1000→  1000→          )}
+  1001→  1001→          <span className="text-[11px] text-muted-foreground">
+  1002→  1002→            {isSandbox
+  1003→  1003→              ? 'خروج = قطع کامل اتصال به دادهٔ نمایشی و بازگشت به دادهٔ واقعی.'
+  1004→  1004→              : 'ورود = تعویض موقت دیتابیس به محیط نمایشی؛ خروجی از سیستم واقعی گرفته نمی‌شود و نیازی به پشتیبان‌گیری نیست.'}
+  1005→  1005→          </span>
+  1006→  1006→        </div>
+  1007→  1007→      </SectionCard>
+  1008→  1008→
+  1009→  1009→      <div className="rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/60 p-4">
+  1010→  1010→        <p className="text-xs font-black text-[#8a6d10]">🌿 سندباکس برای چه کاری است؟</p>
+  1011→  1011→        <ul className="mt-2 list-inside list-disc space-y-1.5 text-xs leading-6 text-foreground/80">
+  1012→  1012→          <li>آموزش همکاران تازه‌وارد بدون ترس از خرابکاری در دادهٔ واقعی — هر خطایی مجاز است.</li>
+  1013→  1013→          <li>آزمایش جریان‌های کامل (سفارش، دریافت، تأیید انبار، حسابداری) پیش از بهره‌برداری.</li>
+  1014→  1014→          <li>دادهٔ دمو ۱۰۰٪ جدا است: «هایپر نمونه» با کالاها، تأمین‌کنندگان و پرسنل داستانی ساخته می‌شود.</li>
+  1015→  1015→          <li>با «بازنشانی دادهٔ دمو» سندباکس به حالت اولیهٔ تمیز برمی‌گردد — هر چند بار که بخواهید.</li>
+  1016→  1016→        </ul>
+  1017→  1017→      </div>
+  1018→  1018→    </div>
+  1019→  1019→  )
+  1020→  1020→}
+  1021→  1021→
+  1022→  1022→/* ═════════════════════════════ تب ۵ — لایسنس و ماژول‌ها (round-16 — فقط OWNER/ADMIN) ═════════════════════════════ */
+  1023→  1023→
+  1024→  1024→const TIER_FA: Record<string, string> = { BASE: 'پایه', PRO: 'حرفه‌ای', ENTERPRISE: 'سازمانی' }
+  1025→  1025→
+  1026→  1026→function LicenseTab() {
+  1027→  1027→  const [status, setStatus] = useState<SetupStatus | null>(null)
+  1028→  1028→  const [busy, setBusy] = useState(false)
+  1029→  1029→
+  1030→  1030→  const load = useCallback(() => {
+  1031→  1031→    api<SetupStatus>('/api/setup').then(setStatus).catch((e) => toast.error(e.message))
+  1032→  1032→  }, [])
+  1033→  1033→  useEffect(load, [load])
+  1034→  1034→
+  1035→  1035→  const lic = status?.license
+  1036→  1036→  const tier = (lic?.tier || 'ENTERPRISE') as LicenseTier
+  1037→  1037→  const founder = !!lic?.founder
+  1038→  1038→  const modules = lic?.modules || {}
+  1039→  1039→  const today = todayIso()
+  1040→  1040→
+  1041→  1041→  const editLicense = async (patch: { tier?: LicenseTier; founder?: boolean; moduleMonths?: Record<string, number>; revoke?: string[] }, successMsg: string) => {
+  1042→  1042→    setBusy(true)
+  1043→  1043→    try {
+  1044→  1044→      await api('/api/setup', { method: 'POST', body: { action: 'license', license: patch } })
+  1045→  1045→      toast.success(successMsg)
+  1046→  1046→      load() // بارگذاری دوبارهٔ وضعیت لایسنس پس از موفقیت
+  1047→  1047→    } catch (e) {
+  1048→  1048→      toast.error((e as Error).message)
+  1049→  1049→    } finally {
+  1050→  1050→      setBusy(false)
+  1051→  1051→    }
+  1052→  1052→  }
+  1053→  1053→
+  1054→  1054→  return (
+  1055→  1055→    <div className="space-y-5">
+  1056→  1056→      {/* وضعیت کلی لایسنس */}
+  1057→  1057→      <SectionCard
+  1058→  1058→        title="لایسنس و ماژول‌ها"
+  1059→  1059→        subtitle="پلن اشتراک، حالت بنیان‌گذار و ماژول‌های افزودنی — فقط مالک و مدیر سامانه"
+  1060→  1060→        icon={<KeyRound size={19} className="text-[#8a6d10]" />}
+  1061→  1061→        actions={
+  1062→  1062→          <div className="flex items-center gap-1.5">
+  1063→  1063→            {founder && <Pill label="استقرار بنیان‌گذار 🗝️" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1 text-xs" />}
+  1064→  1064→            <Pill label={`پلن ${TIER_FA[tier] || tier}`} color="#0e7a4a" bg="#dcfce7" className="px-3 py-1 text-xs" />
+  1065→  1065→          </div>
+  1066→  1066→        }
+  1067→  1067→      >
+  1068→  1068→        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  1069→  1069→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+  1070→  1070→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">پلن فعلی</p>
+  1071→  1071→            <p className="text-sm font-black text-foreground">پلن {TIER_FA[tier] || tier}</p>
+  1072→  1072→            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+  1073→  1073→              {tier === 'BASE' && 'هستهٔ عملیات روزانه — بدون ماژول تخصصی.'}
+  1074→  1074→              {tier === 'PRO' && 'پایه + حسابداری، چک‌ها و CRM مشتریان.'}
+  1075→  1075→              {tier === 'ENTERPRISE' && 'همهٔ ماژول‌ها بدون محدودیت.'}
+  1076→  1076→            </p>
+  1077→  1077→          </div>
+  1078→  1078→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+  1079→  1079→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">حالت بنیان‌گذار</p>
+  1080→  1080→            {founder
+  1081→  1081→              ? <Pill label="فعال — همهٔ ماژول‌ها همیشه باز" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1 text-xs" />
+  1082→  1082→              : <Pill label="غیرفعال — پلن و خریدها حاکم‌اند" color="#556057" bg="#f1efe6" className="px-3 py-1 text-xs" />}
+  1083→  1083→            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+  1084→  1084→              {founder ? 'فقط برای استقرار اختصاصی سازندهٔ سامانه.' : 'با فعال‌سازی، همهٔ ماژول‌ها بدون تاریخ انقضا باز می‌شوند.'}
+  1085→  1085→            </p>
+  1086→  1086→          </div>
+  1087→  1087→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+  1088→  1088→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">آخرین به‌روزرسانی لایسنس</p>
+  1089→  1089→            <p className="text-sm font-black text-foreground">
+  1090→  1090→              {lic?.updatedAt ? formatJalaliDateTime(lic.updatedAt) : '—'}
+  1091→  1091→            </p>
+  1092→  1092→          </div>
+  1093→  1093→        </div>
+  1094→  1094→
+  1095→  1095→        {/* تعویض پلن */}
+  1096→  1096→        <div className="mt-4 rounded-2xl border border-border bg-muted/20 p-4">
+  1097→  1097→          <p className="mb-2 text-xs font-black text-foreground">تعویض پلن اشتراک</p>
+  1098→  1098→          <div className="flex flex-wrap gap-2">
+  1099→  1099→            {(['BASE', 'PRO', 'ENTERPRISE'] as LicenseTier[]).map((t) => (
+  1100→  1100→              <button
+  1101→  1101→                key={t}
+  1102→  1102→                onClick={() => editLicense({ tier: t }, `پلن به «${TIER_FA[t]}» تغییر کرد`)}
+  1103→  1103→                disabled={busy || tier === t}
+  1104→  1104→                className={cn(
+  1105→  1105→                  'rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all disabled:opacity-50',
+  1106→  1106→                  tier === t
+  1107→  1107→                    ? 'bg-[#0e7a4a] text-white shadow-md'
+  1108→  1108→                    : 'border border-[#0e7a4a]/40 bg-white text-[#0e7a4a] hover:bg-[#f0f7ee]'
+  1109→  1109→                )}
+  1110→  1110→              >
+  1111→  1111→                {tier === t ? `✓ پلن ${TIER_FA[t]}` : `پلن ${TIER_FA[t]}`}
+  1112→  1112→              </button>
+  1113→  1113→            ))}
+  1114→  1114→          </div>
+  1115→  1115→        </div>
+  1116→  1116→
+  1117→  1117→        {/* کلید بنیان‌گذار */}
+  1118→  1118→        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-4">
+  1119→  1119→          <div>
+  1120→  1120→            <p className="text-xs font-black text-[#8a6d10]">🗝️ حالت بنیان‌گذار (بدون محدودیت ماژول)</p>
+  1121→  1121→            <p className="mt-1 text-[11px] leading-5 text-foreground/75">
+  1122→  1122→              {founder ? 'هم‌اکنون فعال است — با غیرفعال‌سازی، پلن و تاریخ خرید ماژول‌ها حاکم می‌شود.' : 'غیرفعال است — فعال‌سازی همهٔ قفل‌های ماژول را برمی‌دارد.'}
+  1123→  1123→            </p>
+  1124→  1124→          </div>
+  1125→  1125→          <ArmedButton
+  1126→  1126→            tone="gold"
+  1127→  1127→            label={founder ? 'غیرفعال‌سازی حالت بنیان‌گذار' : 'فعال‌سازی حالت بنیان‌گذار'}
+  1128→  1128→            armedLabel="مطمئنید؟ دوباره بزنید"
+  1129→  1129→            onClick={() => editLicense({ founder: !founder }, founder ? 'حالت بنیان‌گذار غیرفعال شد' : 'حالت بنیان‌گذار فعال شد — همهٔ ماژول‌ها باز است')}
+  1130→  1130→            disabled={busy}
+  1131→  1131→          />
+  1132→  1132→        </div>
+  1133→  1133→      </SectionCard>
+  1134→  1134→
+  1135→  1135→      {/* فهرست ماژول‌ها */}
+  1136→  1136→      <SectionCard
+  1137→  1137→        title="ماژول‌های تخصصی"
+  1138→  1138→        subtitle="هر ماژول را می‌توانید جداگانه برای ۱۲ ماه خرید یا تمدید کنید؛ ماژول‌های داخل پلن خودکار فعال‌اند"
+  1139→  1139→        icon={<span className="text-lg">🧩</span>}
+  1140→  1140→      >
+  1141→  1141→        {founder ? (
+  1142→  1142→          <div className="rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-5 text-center">
+  1143→  1143→            <p className="text-sm font-black text-[#8a6d10]">🗝️ استقرار بنیان‌گذار فعال است</p>
+  1144→  1144→            <p className="mt-1 text-xs leading-6 text-foreground/75">
+  1145→  1145→              همهٔ {faNum(Object.keys(MODULE_LABELS).length)} ماژول بدون محدودیت زمانی فعال‌اند؛ خرید و تمدید در این حالت لازم نیست.
+  1146→  1146→            </p>
+  1147→  1147→          </div>
+  1148→  1148→        ) : (
+  1149→  1149→          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+  1150→  1150→            {Object.entries(MODULE_LABELS).map(([mod, label]) => {
+  1151→  1151→              const inTier = TIER_MODULES[tier]?.includes(mod) || false
+  1152→  1152→              const entry = modules[mod]
+  1153→  1153→              const expired = !!entry && entry.until < today
+  1154→  1154→              return (
+  1155→  1155→                <div key={mod} className="rounded-2xl border border-border bg-muted/20 p-4">
+  1156→  1156→                  <div className="flex flex-wrap items-center justify-between gap-2">
+  1157→  1157→                    <p className="text-sm font-black text-foreground">{label}</p>
+  1158→  1158→                    {inTier ? (
+  1159→  1159→                      <Pill label={`جزو پلن ${TIER_FA[tier]} ✓`} color="#0e7a4a" bg="#dcfce7" className="px-3 py-1 text-[11px]" />
+  1160→  1160→                    ) : entry && !expired ? (
+  1161→  1161→                      <Pill label={entry.trial ? 'دورهٔ آزمایشی' : `فعال تا ${formatJalaliShort(entry.until)}`} color="#0e7a4a" bg="#dcfce7" className="px-3 py-1 text-[11px]" />
+  1162→  1162→                    ) : expired ? (
+  1163→  1163→                      <Pill label={`منقضی شده (${formatJalaliShort(entry.until)})`} color="#b3372f" bg="#fee2e2" className="px-3 py-1 text-[11px]" />
+  1164→  1164→                    ) : (
+  1165→  1165→                      <Pill label="غیرفعال — قابل خرید" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1 text-[11px]" />
+  1166→  1166→                    )}
+  1167→  1167→                  </div>
+  1168→  1168→                  {!inTier && (
+  1169→  1169→                    <div className="mt-3 flex flex-wrap items-center gap-2">
+  1170→  1170→                      <button
+  1171→  1171→                        onClick={() => editLicense({ moduleMonths: { [mod]: 12 } }, `${label} — لایسنس ۱۲ ماهه ${entry ? 'تمدید' : 'خرید'} شد`)}
+  1172→  1172→                        disabled={busy}
+  1173→  1173→                        className="rounded-xl bg-[#0e7a4a] px-4 py-2.5 text-xs font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+  1174→  1174→                      >
+  1175→  1175→                        {entry ? 'تمدید ۱۲ ماه' : 'خرید ۱۲ ماه'}
+  1176→  1176→                      </button>
+  1177→  1177→                      {entry && (
+  1178→  1178→                        <ArmedButton
+  1179→  1179→                          label="لغو اشتراک"
+  1180→  1180→                          armedLabel="لغو قطعی؟ دوباره بزنید"
+  1181→  1181→                          onClick={() => editLicense({ revoke: [mod] }, `لایسنس «${label}» لغو شد`)}
+  1182→  1182→                          disabled={busy}
+  1183→  1183→                        />
+  1184→  1184→                      )}
+  1185→  1185→                    </div>
+  1186→  1186→                  )}
+  1187→  1187→                </div>
+  1188→  1188→              )
+  1189→  1189→            })}
+  1190→  1190→          </div>
+  1191→  1191→        )}
+  1192→  1192→
+  1193→  1193→        <p className="mt-4 rounded-xl bg-muted/40 px-4 py-3 text-[11px] leading-5 text-muted-foreground">
+  1194→  1194→          💡 ماژول‌های خریداری‌شده با تاریخ شمسی نمایش داده می‌شوند. پس از هر خرید/تمدید/لغو، وضعیت ماژول‌ها بلافاصله در دسترس همهٔ کاربران
+  1195→  1195→          به‌روز می‌شود و بخش قفل‌شده در منو با نشان 🔒 مشخص می‌گردد.
+  1196→  1196→        </p>
+  1197→  1197→      </SectionCard>
+  1198→  1198→    </div>
+  1199→  1199→  )
+  1200→  1200→}
+  1201→  1201→
+  1202→  1202→/* ═════════════════════════════ اجزای مشترک ═════════════════════════════ */
+  1203→  1203→
+  1204→  1204→/** دکمهٔ تسلیح‌شونده — کلیک اول قرمز می‌شود («مطمئنید؟ دوباره بزنید») و کلیک دوم اجرا می‌کند */
+  1205→  1205→function ArmedButton({
+  1206→  1206→  label,
+  1207→  1207→  armedLabel = 'مطمئنید؟ دوباره بزنید',
+  1208→  1208→  onClick,
+  1209→  1209→  disabled,
+  1210→  1210→  className,
+  1211→  1211→  tone = 'rose',
+  1212→  1212→}: {
+  1213→  1213→  label: string
+  1214→  1214→  armedLabel?: string
+  1215→  1215→  onClick: () => void
+  1216→  1216→  disabled?: boolean
+  1217→  1217→  className?: string
+  1218→  1218→  tone?: 'rose' | 'gold'
+  1219→  1219→}) {
+  1220→  1220→  const [armed, setArmed] = useState(false)
+  1221→  1221→  useEffect(() => {
+  1222→  1222→    if (!armed) return
+  1223→  1223→    const t = setTimeout(() => setArmed(false), 5000)
+  1224→  1224→    return () => clearTimeout(t)
+  1225→  1225→  }, [armed])
+  1226→  1226→  return (
+  1227→  1227→    <button
+  1228→  1228→      type="button"
+  1229→  1229→      disabled={disabled}
+  1230→  1230→      onClick={() => {
+  1231→  1231→        if (armed) {
+  1232→  1232→          setArmed(false)
+  1233→  1233→          onClick()
+  1234→  1234→        } else {
+  1235→  1235→          setArmed(true)
+  1236→  1236→        }
+  1237→  1237→      }}
+  1238→  1238→      className={cn(
+  1239→  1239→        'rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all disabled:opacity-40',
+  1240→  1240→        armed
+  1241→  1241→          ? 'animate-pulse bg-[#b3372f] text-white shadow-lg ring-2 ring-[#b3372f]/40'
+  1242→  1242→          : tone === 'rose'
+  1243→  1243→            ? 'border border-[#b3372f]/40 bg-[#b3372f]/10 text-[#b3372f] hover:bg-[#b3372f]/20'
+  1244→  1244→            : 'border border-[#c9a227]/50 bg-[#c9a227]/10 text-[#8a6d10] hover:bg-[#c9a227]/20',
+  1245→  1245→        className
+  1246→  1246→      )}
+  1247→  1247→    >
+  1248→  1248→      {armed ? armedLabel : label}
+  1249→  1249→    </button>
+  1250→  1250→  )
+  1251→  1251→}
+  1252→  1252→
+  1253→  1253→/** آمار کوچک خلاصهٔ نتیجه */
+  1254→  1254→function MiniStat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  1255→  1255→  return (
+  1256→  1256→    <div className="rounded-xl bg-white/70 px-3 py-2 text-center">
+  1257→  1257→      <p className={cn('text-lg font-black', tone)}>{faNum(value)}</p>
+  1258→  1258→      <p className="text-[10px] font-bold text-muted-foreground">{label}</p>
+  1259→  1259→    </div>
+  1260→  1260→  )
+  1261→  1261→}
+  1262→  1262→

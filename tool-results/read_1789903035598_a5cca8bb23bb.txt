@@ -1,0 +1,576 @@
+   104→   171→   171→
+   105→   172→   172→  const moveMonth = (dir: number) => {
+   106→   173→   173→    let m = jm + dir
+   107→   174→   174→    let y = jy
+   108→   175→   175→    if (m > 12) { m = 1; y++ }
+   109→   176→   176→    if (m < 1) { m = 12; y-- }
+   110→   177→   177→    setJm(m)
+   111→   178→   178→    setJy(y)
+   112→   179→   179→  }
+   113→   180→   180→  const goToday = () => {
+   114→   181→   181→    const t = toJalaliParts(todayIso())
+   115→   182→   182→    setJy(t.jy)
+   116→   183→   183→    setJm(t.jm)
+   117→   184→   184→    setSelectedDay(todayIso())
+   118→   185→   185→  }
+   119→   186→   186→
+   120→   187→   187→  /* ───── جزئیات روز انتخاب‌شده ───── */
+   121→   188→   188→  const dayOut = selectedDay ? approvedByDay.get(selectedDay) || [] : []
+   122→   189→   189→  const dayPending = selectedDay ? pendingByDay.get(selectedDay) || [] : []
+   123→   190→   190→  const freeCapacity = activeCount - dayOut.length
+   124→   191→   191→  const dayHoliday = selectedDay ? holidays.get(selectedDay) : undefined
+   125→   192→   192→
+   126→   193→   193→  /* ───── ثبت درخواست ───── */
+   127→   194→   194→  const resetForm = () => {
+   128→   195→   195→    setType('DAILY')
+   129→   196→   196→    setFromDate(todayIso())
+   130→   197→   197→    setToDate(todayIso())
+   131→   198→   198→    setFromHour('09:00')
+   132→   199→   199→    setToHour('13:00')
+   133→   200→   200→    setReason('')
+   134→   201→   201→  }
+   135→   202→   202→  const pickType = (t: string) => {
+   136→   203→   203→    setType(t)
+   137→   204→   204→    if (t === 'HOURLY') setToDate(fromDate)
+   138→   205→   205→  }
+   139→   206→   206→  const pickFrom = (iso: string) => {
+   140→   207→   207→    setFromDate(iso)
+   141→   208→   208→    if (type === 'HOURLY') setToDate(iso)
+   142→   209→   209→    else if (toDate < iso) setToDate(iso)
+   143→   210→   210→  }
+   144→   211→   211→  const submit = async () => {
+   145→   212→   212→    if (!fromDate) return toast.error('تاریخ شروع الزامی است')
+   146→   213→   213→    if (type === 'HOURLY') {
+   147→   214→   214→      if (!fromHour || !toHour) return toast.error('ساعت شروع و پایان الزامی است')
+   148→   215→   215→      if (fromHour >= toHour) return toast.error('ساعت شروع باید قبل از ساعت پایان باشد')
+   149→   216→   216→    } else {
+   150→   217→   217→      if (!toDate) return toast.error('تاریخ پایان الزامی است')
+   151→   218→   218→      if (fromDate > toDate) return toast.error('تاریخ پایان نمی‌تواند قبل از تاریخ شروع باشد')
+   152→   219→   219→    }
+   153→   220→   220→    setSaving(true)
+   154→   221→   221→    try {
+   155→   222→   222→      const res = await api<{ leave: Leave; conflict: string | null }>('/api/leaves', {
+   156→   223→   223→        method: 'POST',
+   157→   224→   224→        body: {
+   158→   225→   225→          type,
+   159→   226→   226→          fromDate,
+   160→   227→   227→          toDate: type === 'HOURLY' ? fromDate : toDate,
+   161→   228→   228→          fromHour: type === 'HOURLY' ? fromHour : '',
+   162→   229→   229→          toHour: type === 'HOURLY' ? toHour : '',
+   163→   230→   230→          reason,
+   164→   231→   231→        },
+   165→   232→   232→      })
+   166→   233→   233→      toast.success('درخواست مرخصی ثبت شد — در انتظار تأیید مدیر')
+   167→   234→   234→      if (res.conflict) toast.warning(res.conflict, { duration: 9000 })
+   168→   235→   235→      setAddOpen(false)
+   169→   236→   236→      resetForm()
+   170→   237→   237→      load()
+   171→   238→   238→    } catch (e: any) {
+   172→   239→   239→      toast.error(e.message)
+   173→   240→   240→    } finally {
+   174→   241→   241→      setSaving(false)
+   175→   242→   242→    }
+   176→   243→   243→  }
+   177→   244→   244→
+   178→   245→   245→  /* ───── تأیید / رد / حذف ───── */
+   179→   246→   246→  const act = async (l: Leave, action: 'approve' | 'reject', note = '') => {
+   180→   247→   247→    try {
+   181→   248→   248→      await api('/api/leaves', { method: 'PUT', body: { id: l.id, action, responseNote: note } })
+   182→   249→   249→      if (action === 'approve') toast.success('مرخصی تأیید شد — تقویم تیم به‌روز شد')
+   183→   250→   250→      else toast.success('درخواست رد شد')
+   184→   251→   251→      setRejectFor(null)
+   185→   252→   252→      setRejectNote('')
+   186→   253→   253→      load()
+   187→   254→   254→    } catch (e: any) {
+   188→   255→   255→      toast.error(e.message)
+   189→   256→   256→    }
+   190→   257→   257→  }
+   191→   258→   258→  const remove = async (l: Leave) => {
+   192→   259→   259→    if (!window.confirm('این درخواست مرخصی حذف شود؟')) return
+   193→   260→   260→    try {
+   194→   261→   261→      await api(`/api/leaves?id=${l.id}`, { method: 'DELETE' })
+   195→   262→   262→      toast.success('درخواست حذف شد')
+   196→   263→   263→      load()
+   197→   264→   264→    } catch (e: any) {
+   198→   265→   265→      toast.error(e.message)
+   199→   266→   266→    }
+   200→   267→   267→  }
+   201→   268→   268→
+   202→   269→   269→  /** هم‌پوشانی درخواست در نوبت با مرخصی‌های تأییدشدهٔ دیگران (نشان FCFS برای تأییدکننده) */
+   203→   270→   270→  const conflictNamesFor = (l: Leave) =>
+   204→   271→   271→    (data?.all || [])
+   205→   272→   272→      .filter((a) => a.status === 'APPROVED' && a.userId !== l.userId && a.fromDate <= l.toDate && a.toDate >= l.fromDate)
+   206→   273→   273→      .map((a) => a.userName)
+   207→   274→   274→
+   208→   275→   275→  if (loading && !data) {
+   209→   276→   276→    return <div className="py-24 text-center text-sm font-bold text-muted-foreground">در حال بارگذاری مدیریت مرخصی…</div>
+   210→   277→   277→  }
+   211→   278→   278→  if (!data) return null
+   212→   279→   279→
+   213→   280→   280→  const teamOutNames = data.stats.teamOutToday.map((t) => t.userName).slice(0, 3).join('، ')
+   214→   281→   281→
+   215→   282→   282→  return (
+   216→   283→   283→    <div className="space-y-5">
+   217→   284→   284→      {/* سرصفحه */}
+   218→   285→   285→      <div className="fade-in-up">
+   219→   286→   286→        <h1 className="text-xl font-black text-foreground sm:text-2xl">مدیریت مرخصی و غیبت</h1>
+   220→   287→   287→        <p className="mt-1 text-sm text-muted-foreground">
+   221→   288→   288→          ثبت درخواست، تقویم شفاف تیم و تأیید نوبتی — اولین ثبت، اولویت دارد و برای همه قابل مشاهده است
+   222→   289→   289→        </p>
+   223→   290→   290→      </div>
+   224→   291→   291→
+   225→   292→   292→      {/* KPI */}
+   226→   293→   293→      <div className={cn('grid grid-cols-2 gap-3', isManager ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
+   227→   294→   294→        <StatKpi
+   228→   295→   295→          label="مرخصی‌های تأییدشدهٔ من (امسال)"
+   229→   296→   296→          value={`${faNum(data.stats.myApprovedDays)} روز`}
+   230→   297→   297→          tone="emerald"
+   231→   298→   298→          icon={<CalendarCheck size={18} />}
+   232→   299→   299→          hint="جمع روزهای تأییدشدهٔ سال جاری"
+   233→   300→   300→        />
+   234→   301→   301→        <StatKpi
+   235→   302→   302→          label="در انتظار تأیید"
+   236→   303→   303→          value={faNum(data.stats.myPending)}
+   237→   304→   304→          tone="gold"
+   238→   305→   305→          icon={<Clock size={18} />}
+   239→   306→   306→          hint="درخواست‌های در نوبتِ خودتان"
+   240→   307→   307→        />
+   241→   308→   308→        <StatKpi
+   242→   309→   309→          label="امروز غایب"
+   243→   310→   310→          value={faNum(data.stats.teamOutToday.length)}
+   244→   311→   311→          tone="terra"
+   245→   312→   312→          icon={<Users size={18} />}
+   246→   313→   313→          hint={teamOutNames || 'همهٔ همکاران حاضرند'}
+   247→   314→   314→        />
+   248→   315→   315→        {isManager && (
+   249→   316→   316→          <StatKpi
+   250→   317→   317→            label="صف تأیید"
+   251→   318→   318→            value={faNum(data.stats.pendingCount)}
+   252→   319→   319→            tone="rose"
+   253→   320→   320→            icon={<Hourglass size={18} />}
+   254→   321→   321→            hint="درخواست‌های منتظر تصمیم شما"
+   255→   322→   322→          />
+   256→   323→   323→        )}
+   257→   324→   324→      </div>
+   258→   325→   325→
+   259→   326→   326→      <div className="grid gap-5 lg:grid-cols-3">
+   260→   327→   327→        {/* تقویم تیم */}
+   261→   328→   328→        <SectionCard
+   262→   329→   329→          title="تقویم مرخصی تیم"
+   263→   330→   330→          subtitle="مرخصی‌های تأییدشدهٔ همهٔ همکاران — برای جزئیات روی هر روز بزنید"
+   264→   331→   331→          icon={<CalendarDays size={18} />}
+   265→   332→   332→          className="lg:col-span-2"
+   266→   333→   333→        >
+   267→   334→   334→          <div className="mb-3 flex items-center justify-between gap-2">
+   268→   335→   335→            <div className="flex items-center gap-1">
+   269→   336→   336→              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveMonth(1)} aria-label="ماه بعد">
+   270→   337→   337→                <ChevronRight size={16} />
+   271→   338→   338→              </Button>
+   272→   339→   339→              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveMonth(-1)} aria-label="ماه قبل">
+   273→   340→   340→                <ChevronLeft size={16} />
+   274→   341→   341→              </Button>
+   275→   342→   342→            </div>
+   276→   343→   343→            <div className="text-sm font-black text-foreground">
+   277→   344→   344→              {J_MONTHS[jm - 1]} {faNum(jy)}
+   278→   345→   345→            </div>
+   279→   346→   346→            <button
+   280→   347→   347→              onClick={goToday}
+   281→   348→   348→              className="rounded-full border border-border px-3 py-1 text-[11px] font-bold text-foreground/80 transition hover:border-[#c9a227] hover:bg-[#c9a227]/10"
+   282→   349→   349→            >
+   283→   350→   350→              برو به امروز
+   284→   351→   351→            </button>
+   285→   352→   352→          </div>
+   286→   353→   353→
+   287→   354→   354→          <div className="mb-1.5 grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-muted-foreground sm:gap-1.5">
+   288→   355→   355→            {J_WEEKDAYS_SHORT.map((d, i) => (
+   289→   356→   356→              <span key={i} className={d === 'ج' ? 'text-[#b3372f]' : ''}>{d}</span>
+   290→   357→   357→            ))}
+   291→   358→   358→          </div>
+   292→   359→   359→          <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+   293→   360→   360→            {cells.map((c, i) => {
+   294→   361→   361→              if (!c) return <span key={`e${i}`} />
+   295→   362→   362→              const iso = c.iso
+   296→   363→   363→              const out = approvedByDay.get(iso) || []
+   297→   364→   364→              const pend = pendingByDay.get(iso) || []
+   298→   365→   365→              const isToday = iso === today
+   299→   366→   366→              const isOffday = weekdayName(iso) === 'جمعه' || holidays.has(iso)
+   300→   367→   367→              const hol = holidays.get(iso)
+   301→   368→   368→              const sel = selectedDay === iso
+   302→   369→   369→              const tip = [
+   303→   370→   370→                formatJalaliFull(iso),
+   304→   371→   371→                hol ? `تعطیل رسمی: ${hol}` : '',
+   305→   372→   372→                out.length ? `غایب: ${out.map((o) => o.userName).join('، ')}` : '',
+   306→   373→   373→              ]
+   307→   374→   374→                .filter(Boolean)
+   308→   375→   375→                .join(' • ')
+   309→   376→   376→              return (
+   310→   377→   377→                <button
+   311→   378→   378→                  key={iso}
+   312→   379→   379→                  type="button"
+   313→   380→   380→                  onClick={() => setSelectedDay(iso)}
+   314→   381→   381→                  title={tip}
+   315→   382→   382→                  className={cn(
+   316→   383→   383→                    'relative flex h-14 flex-col items-center rounded-xl border text-xs font-bold transition-all sm:h-16',
+   317→   384→   384→                    sel
+   318→   385→   385→                      ? 'border-[#0e7a4a] bg-[#0e7a4a]/10'
+   319→   386→   386→                      : isOffday
+   320→   387→   387→                        ? 'border-[#b3372f]/20 bg-[#b3372f]/5 text-[#b3372f]'
+   321→   388→   388→                        : 'border-border/60 bg-white/50 hover:bg-secondary',
+   322→   389→   389→                    isToday && 'ring-2 ring-[#c9a227]'
+   323→   390→   390→                  )}
+   324→   391→   391→                >
+   325→   392→   392→                  <span className={cn('mt-1', sel && 'text-[#0e7a4a]')}>{faNum(c.d)}</span>
+   326→   393→   393→                  <span className="absolute bottom-1 flex items-center gap-0.5">
+   327→   394→   394→                    {out.slice(0, 3).map((o, j) => (
+   328→   395→   395→                      <span key={j} className="h-2 w-2 rounded-full border border-white shadow-sm" style={{ background: o.color }} />
+   329→   396→   396→                    ))}
+   330→   397→   397→                    {out.length > 3 && <span className="text-[8px] font-black text-muted-foreground">+{faNum(out.length - 3)}</span>}
+   331→   398→   398→                    {pend.length > 0 && <span className="h-2 w-2 rounded-full border-[1.5px] border-[#c9a227]" title="در انتظار تأیید" />}
+   332→   399→   399→                  </span>
+   333→   400→   400→                </button>
+   334→   401→   401→              )
+   335→   402→   402→            })}
+   336→   403→   403→          </div>
+   337→   404→   404→
+   338→   405→   405→          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-bold text-muted-foreground">
+   339→   406→   406→            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#0e7a4a]" /> تأییدشده (رنگ همکار)</span>
+   340→   407→   407→            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full border-[1.5px] border-[#c9a227]" /> در انتظار تأیید</span>
+   341→   408→   408→            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-md ring-2 ring-[#c9a227]" /> امروز</span>
+   342→   409→   409→            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#b3372f]" /> جمعه / تعطیل رسمی</span>
+   343→   410→   410→          </div>
+   344→   411→   411→
+   345→   412→   412→          {/* نوار جزئیات روز */}
+   346→   413→   413→          {selectedDay ? (
+   347→   414→   414→            <div className="fade-in-up mt-4 rounded-xl border border-border/70 bg-muted/30 p-3">
+   348→   415→   415→              <div className="mb-2 flex flex-wrap items-center gap-2">
+   349→   416→   416→                <p className="text-sm font-black text-foreground">{formatJalaliFull(selectedDay)}</p>
+   350→   417→   417→                {selectedDay === today && <Pill label="امروز" color="#c9a227" bg="#c9a22722" />}
+   351→   418→   418→                {dayHoliday && <Pill label={dayHoliday} color="#b3372f" bg="#b3372f14" />}
+   352→   419→   419→              </div>
+   353→   420→   420→              <KeyValue
+   354→   421→   421→                k="ظرفیت آزاد این روز"
+   355→   422→   422→                v={
+   356→   423→   423→                  <span className={freeCapacity <= 0 ? 'text-[#b3372f]' : 'text-[#0e7a4a]'}>
+   357→   424→   424→                    {faNum(Math.max(freeCapacity, 0))} نفر از {faNum(activeCount)}
+   358→   425→   425→                  </span>
+   359→   426→   426→                }
+   360→   427→   427→              />
+   361→   428→   428→              {dayOut.length > 0 ? (
+   362→   429→   429→                <div className="mt-2 space-y-1.5">
+   363→   430→   430→                  {dayOut.map((o, i) => (
+   364→   431→   431→                    <div key={i} className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-3 py-2">
+   365→   432→   432→                      <div className="flex items-center gap-2">
+   366→   433→   433→                        <Avatar name={o.userName} color={o.color} size={28} />
+   367→   434→   434→                        <div>
+   368→   435→   435→                          <p className="text-xs font-black text-foreground">{o.userName}</p>
+   369→   436→   436→                          <p className="text-[10px] text-muted-foreground">{ROLE_LABELS[usersById.get(o.userId)?.role || ''] || 'همکار'}</p>
+   370→   437→   437→                        </div>
+   371→   438→   438→                      </div>
+   372→   439→   439→                      <div className="flex items-center gap-2">
+   373→   440→   440→                        <Pill label={`${TYPE_META[o.type]?.emoji || ''} ${TYPE_META[o.type]?.label || o.type}`} color={TYPE_META[o.type]?.color || '#0e7a4a'} />
+   374→   441→   441→                        <span className="whitespace-nowrap text-[10px] font-bold text-muted-foreground">
+   375→   442→   442→                          {o.toDate !== selectedDay ? `تا ${formatJalaliShort(o.toDate)}` : 'همین روز'}
+   376→   443→   443→                        </span>
+   377→   444→   444→                      </div>
+   378→   445→   445→                    </div>
+   379→   446→   446→                  ))}
+   380→   447→   447→                </div>
+   381→   448→   448→              ) : (
+   382→   449→   449→                <p className="mt-2 text-xs font-bold text-[#0e7a4a]">در این روز کسی مرخصی تأییدشده ندارد ✓</p>
+   383→   450→   450→              )}
+   384→   451→   451→              {dayPending.length > 0 && (
+   385→   452→   452→                <div className="mt-2 space-y-1.5">
+   386→   453→   453→                  <p className="text-[10px] font-bold text-[#8a6d10]">درخواست‌های در نوبت برای این روز:</p>
+   387→   454→   454→                  {dayPending.map((p, i) => (
+   388→   455→   455→                    <div key={i} className="flex items-center justify-between rounded-lg bg-[#c9a227]/10 px-3 py-1.5">
+   389→   456→   456→                      <span className="text-xs font-bold text-foreground/85">{p.userName}</span>
+   390→   457→   457→                      <Pill label="در انتظار تأیید" color="#c9a227" />
+   391→   458→   458→                    </div>
+   392→   459→   459→                  ))}
+   393→   460→   460→                </div>
+   394→   461→   461→              )}
+   395→   462→   462→            </div>
+   396→   463→   463→          ) : (
+   397→   464→   464→            <p className="mt-4 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-center text-xs text-muted-foreground">
+   398→   465→   465→              برای دیدن غایبان و ظرفیت آزاد هر روز، روی تقویم بزنید
+   399→   466→   466→            </p>
+   400→   467→   467→          )}
+   401→   468→   468→        </SectionCard>
+   402→   469→   469→
+   403→   470→   470→        {/* درخواست‌های من */}
+   404→   471→   471→        <SectionCard
+   405→   472→   472→          title="درخواست‌های من"
+   406→   473→   473→          subtitle="تاریخچه و وضعیت مرخصی‌های شما"
+   407→   474→   474→          actions={
+   408→   475→   475→            <button
+   409→   476→   476→              onClick={() => setAddOpen(true)}
+   410→   477→   477→              className="flex items-center gap-1.5 rounded-xl bg-[#0e7a4a] px-4 py-2 text-xs font-black text-white shadow-md transition hover:bg-[#0b6a40]"
+   411→   478→   478→            >
+   412→   479→   479→              <Plus size={15} /> درخواست مرخصی جدید
+   413→   480→   480→            </button>
+   414→   481→   481→          }
+   415→   482→   482→        >
+   416→   483→   483→          {data.mine.length === 0 ? (
+   417→   484→   484→            <EmptyState
+   418→   485→   485→              emoji="🌴"
+   419→   486→   486→              title="مرخصی ثبت‌شده‌ای ندارید"
+   420→   487→   487→              hint="برای ثبت اولین درخواست، دکمهٔ «درخواست مرخصی جدید» را بزنید"
+   421→   488→   488→            />
+   422→   489→   489→          ) : (
+   423→   490→   490→            <div className="scroll-gold max-h-[420px] space-y-2 overflow-y-auto pl-1">
+   424→   491→   491→              {data.mine.map((l) => (
+   425→   492→   492→                <div key={l.id} className="rounded-xl border border-border/70 bg-white/60 p-3">
+   426→   493→   493→                  <div className="flex items-start justify-between gap-2">
+   427→   494→   494→                    <div className="flex flex-wrap items-center gap-1.5">
+   428→   495→   495→                      <Pill label={`${TYPE_META[l.type]?.emoji || ''} ${TYPE_META[l.type]?.label || l.type}`} color={TYPE_META[l.type]?.color || '#0e7a4a'} />
+   429→   496→   496→                      <Pill label={STATUS_META[l.status]?.label || l.status} color={STATUS_META[l.status]?.color || '#6b7280'} />
+   430→   497→   497→                    </div>
+   431→   498→   498→                    {l.status === 'PENDING' && (
+   432→   499→   499→                      <button
+   433→   500→   500→                        onClick={() => remove(l)}
+   434→   501→   501→                        title="حذف درخواست"
+   435→   502→   502→                        className="rounded-lg p-1.5 text-[#b3372f] transition hover:bg-[#b3372f]/10"
+   436→   503→   503→                      >
+   437→   504→   504→                        <Trash2 size={15} />
+   438→   505→   505→                      </button>
+   439→   506→   506→                    )}
+   440→   507→   507→                  </div>
+   441→   508→   508→                  <p className="mt-2 text-sm font-bold text-foreground">
+   442→   509→   509→                    {formatJalaliShort(l.fromDate)}
+   443→   510→   510→                    {l.toDate !== l.fromDate ? ` تا ${formatJalaliShort(l.toDate)}` : ''}
+   444→   511→   511→                    {l.type === 'HOURLY' && ` • ${faNum(l.fromHour)} تا ${faNum(l.toHour)}`}
+   445→   512→   512→                  </p>
+   446→   513→   513→                  <p className="mt-0.5 text-xs text-muted-foreground">
+   447→   514→   514→                    {l.type === 'HOURLY' ? 'معادل نیم‌روز' : `${faNum(l.days)} روز`}
+   448→   515→   515→                    {l.reason ? ` • ${l.reason}` : ''}
+   449→   516→   516→                  </p>
+   450→   517→   517→                  {l.status === 'APPROVED' && (
+   451→   518→   518→                    <p className="mt-1 text-[11px] font-bold text-[#0e7a4a]">تأییدکننده: {l.approverName}</p>
+   452→   519→   519→                  )}
+   453→   520→   520→                  {l.status === 'REJECTED' && (
+   454→   521→   521→                    <p className="mt-1 text-[11px] font-bold text-[#b3372f]">
+   455→   522→   522→                      رد توسط {l.approverName}
+   456→   523→   523→                      {l.responseNote ? ` — ${l.responseNote}` : ''}
+   457→   524→   524→                    </p>
+   458→   525→   525→                  )}
+   459→   526→   526→                  {l.status === 'PENDING' && l.responseNote && (
+   460→   527→   527→                    <p className="mt-1 text-[11px] font-bold text-[#8a6d10]">یادداشت: {l.responseNote}</p>
+   461→   528→   528→                  )}
+   462→   529→   529→                </div>
+   463→   530→   530→              ))}
+   464→   531→   531→            </div>
+   465→   532→   532→          )}
+   466→   533→   533→        </SectionCard>
+   467→   534→   534→      </div>
+   468→   535→   535→
+   469→   536→   536→      {/* صف تأیید — فقط مدیران */}
+   470→   537→   537→      {isManager && (
+   471→   538→   538→        <SectionCard
+   472→   539→   539→          title="صف تأیید مرخصی"
+   473→   540→   540→          subtitle="به ترتیب ثبت — اولین درخواست، اولویت تأیید (FCFS)"
+   474→   541→   541→          icon={<Hourglass size={18} />}
+   475→   542→   542→        >
+   476→   543→   543→          {data.pending.length === 0 ? (
+   477→   544→   544→            <EmptyState emoji="✅" title="صف تأیید خالی است" hint="همهٔ درخواست‌های مرخصی بررسی شده‌اند" />
+   478→   545→   545→          ) : (
+   479→   546→   546→            <div className="scroll-gold max-h-[560px] space-y-2 overflow-y-auto pl-1">
+   480→   547→   547→              {data.pending.map((l, idx) => {
+   481→   548→   548→                const conflicts = conflictNamesFor(l)
+   482→   549→   549→                return (
+   483→   550→   550→                  <div key={l.id} className="rounded-xl border border-border/70 bg-white/60 p-3">
+   484→   551→   551→                    <div className="flex flex-wrap items-center gap-2">
+   485→   552→   552→                      <Avatar name={l.userName} color={usersById.get(l.userId)?.color || '#0e7a4a'} size={36} />
+   486→   553→   553→                      <div className="min-w-[150px] flex-1">
+   487→   554→   554→                        <p className="text-sm font-black text-foreground">
+   488→   555→   555→                          {l.userName}
+   489→   556→   556→                          <span className="mr-1.5 text-xs font-bold text-muted-foreground">
+   490→   557→   557→                            ({ROLE_LABELS[usersById.get(l.userId)?.role || ''] || 'همکار'})
+   491→   558→   558→                          </span>
+   492→   559→   559→                        </p>
+   493→   560→   560→                        <p className="mt-0.5 text-[11px] text-muted-foreground">نوبت {faNum(idx + 1)} • ثبت {formatJalaliShort(l.createdAt)}</p>
+   494→   561→   561→                      </div>
+   495→   562→   562→                      <Pill label={`${TYPE_META[l.type]?.emoji || ''} ${TYPE_META[l.type]?.label || l.type}`} color={TYPE_META[l.type]?.color || '#0e7a4a'} />
+   496→   563→   563→                    </div>
+   497→   564→   564→                    <p className="mt-2 text-sm font-bold text-foreground/90">
+   498→   565→   565→                      {formatJalaliShort(l.fromDate)}
+   499→   566→   566→                      {l.toDate !== l.fromDate ? ` تا ${formatJalaliShort(l.toDate)}` : ''}
+   500→   567→   567→                      {l.type === 'HOURLY' && ` • ${faNum(l.fromHour)} تا ${faNum(l.toHour)}`}
+   501→   568→   568→                      <span className="mr-2 text-xs font-bold text-muted-foreground">
+   502→   569→   569→                        ({l.type === 'HOURLY' ? 'نیم‌روز' : `${faNum(l.days)} روز`})
+   503→   570→   570→                      </span>
+   504→   571→   571→                    </p>
+   505→   572→   572→                    {l.reason && <p className="mt-0.5 text-xs text-muted-foreground">دلیل: {l.reason}</p>}
+   506→   573→   573→                    {conflicts.length > 0 && (
+   507→   574→   574→                      <div className="mt-1.5" title={`مرخصی تأییدشدهٔ همپوشان: ${conflicts.join('، ')}`}>
+   508→   575→   575→                        <Pill label={`⚠ هم‌پوشانی با تأییدشدهٔ: ${conflicts.slice(0, 3).join('، ')}${conflicts.length > 3 ? ' و…' : ''}`} color="#b3372f" bg="#b3372f14" />
+   509→   576→   576→                      </div>
+   510→   577→   577→                    )}
+   511→   578→   578→                    {rejectFor === l.id ? (
+   512→   579→   579→                      <div className="mt-2 flex flex-wrap gap-2">
+   513→   580→   580→                        <input
+   514→   581→   581→                          value={rejectNote}
+   515→   582→   582→                          onChange={(e) => setRejectNote(e.target.value)}
+   516→   583→   583→                          placeholder="دلیل رد (اختیاری)"
+   517→   584→   584→                          className="min-w-[160px] flex-1 rounded-xl border border-input bg-white/90 px-3 py-2 text-xs shadow-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+   518→   585→   585→                        />
+   519→   586→   586→                        <button
+   520→   587→   587→                          onClick={() => act(l, 'reject', rejectNote)}
+   521→   588→   588→                          className="rounded-xl bg-[#b3372f] px-4 py-2 text-xs font-black text-white transition hover:bg-[#96291f]"
+   522→   589→   589→                        >
+   523→   590→   590→                          ثبت رد
+   524→   591→   591→                        </button>
+   525→   592→   592→                        <button
+   526→   593→   593→                          onClick={() => { setRejectFor(null); setRejectNote('') }}
+   527→   594→   594→                          className="rounded-xl border border-border px-4 py-2 text-xs font-bold text-muted-foreground transition hover:bg-muted"
+   528→   595→   595→                        >
+   529→   596→   596→                          انصراف
+   530→   597→   597→                        </button>
+   531→   598→   598→                      </div>
+   532→   599→   599→                    ) : (
+   533→   600→   600→                      <div className="mt-2 flex gap-2">
+   534→   601→   601→                        <button
+   535→   602→   602→                          onClick={() => act(l, 'approve')}
+   536→   603→   603→                          className="flex items-center gap-1 rounded-xl bg-[#0e7a4a] px-4 py-2 text-xs font-black text-white transition hover:bg-[#0b6a40]"
+   537→   604→   604→                        >
+   538→   605→   605→                          <Check size={14} /> تأیید
+   539→   606→   606→                        </button>
+   540→   607→   607→                        <button
+   541→   608→   608→                          onClick={() => { setRejectFor(l.id); setRejectNote('') }}
+   542→   609→   609→                          className="rounded-xl border border-[#b3372f] px-4 py-2 text-xs font-black text-[#b3372f] transition hover:bg-[#b3372f]/10"
+   543→   610→   610→                        >
+   544→   611→   611→                          رد
+   545→   612→   612→                        </button>
+   546→   613→   613→                      </div>
+   547→   614→   614→                    )}
+   548→   615→   615→                  </div>
+   549→   616→   616→                )
+   550→   617→   617→              })}
+   551→   618→   618→            </div>
+   552→   619→   619→          )}
+   553→   620→   620→        </SectionCard>
+   554→   621→   621→      )}
+   555→   622→   622→
+   556→   623→   623→      {/* مبانی علمی */}
+   557→   624→   624→      <SectionCard title="مبانی علمی" icon={<BookOpen size={18} />} subtitle="چرا نوبت‌بندی و تقویم مشترک؟">
+   558→   625→   625→        <ul className="space-y-2 text-sm leading-7 text-foreground/85">
+   559→   626→   626→          <li>
+   560→   627→   627→            قاعدهٔ «اولین ثبت، اولویت» (FCFS) کلاسیک‌ترین سازوکار انصاف در نظریهٔ صف‌ها و عدالت رویه‌ای است؛ پژوهش‌ها نشان می‌دهد
+   561→   628→   628→            ادراک بی‌طرفی سامانه زمانی بیشینه می‌شود که نتیجه تنها تابع زمان ثبت باشد، نه جایگاه یا رابطه
+   562→   629→   629→            <span className="text-[11px] text-muted-foreground"> (Rafaeli et al., 1997; Su, 2009)</span>.
+   563→   630→   630→          </li>
+   564→   631→   631→          <li>
+   565→   632→   632→            تقویم مشترک مرخصی نیز همان «برنامه‌ریزی روزهای عدم حضور» در ادبیات زمان‌بندی نیروی کار است: رؤیت‌پذیری زودهنگام
+   566→   633→   633→            غیبت‌ها امکان پوشش شیفت‌ها و روزهای پیک فروش را بدون تعارض فراهم می‌کند
+   567→   634→   634→            <span className="text-[11px] text-muted-foreground"> (Ernst et al., 2004; Van den Bergh et al., 2013)</span>.
+   568→   635→   635→          </li>
+   569→   636→   636→        </ul>
+   570→   637→   637→      </SectionCard>
+   571→   638→   638→
+   572→   639→   639→      {/* مودال درخواست جدید */}
+   573→   640→   640→      {addOpen && (
+   574→   641→   641→        <Modal title="درخواست مرخصی جدید" onClose={() => setAddOpen(false)}>
+   575→   642→   642→          <Labeled label="نوع مرخصی">
+   576→   643→   643→            <div className="grid grid-cols-2 gap-2">
+   577→   644→   644→              {Object.entries(TYPE_META).map(([key, meta]) => (
+   578→   645→   645→                <button
+   579→   646→   646→                  key={key}
+   580→   647→   647→                  type="button"
+   581→   648→   648→                  onClick={() => pickType(key)}
+   582→   649→   649→                  className={cn(
+   583→   650→   650→                    'rounded-xl border px-3 py-2.5 text-sm font-bold transition-all',
+   584→   651→   651→                    type === key ? 'border-transparent text-white shadow-md' : 'border-border bg-white/80 hover:bg-secondary'
+   585→   652→   652→                  )}
+   586→   653→   653→                  style={type === key ? { background: meta.color } : undefined}
+   587→   654→   654→                >
+   588→   655→   655→                  {meta.emoji} {meta.label}
+   589→   656→   656→                </button>
+   590→   657→   657→              ))}
+   591→   658→   658→            </div>
+   592→   659→   659→          </Labeled>
+   593→   660→   660→
+   594→   661→   661→          {type === 'HOURLY' ? (
+   595→   662→   662→            <>
+   596→   663→   663→              <Labeled label="روز مرخصی (ساعتی — فقط همان روز)" hint="مرخصی ساعتی معادل نیم‌روز محاسبه می‌شود">
+   597→   664→   664→                <JalaliDatePicker value={fromDate} onChange={pickFrom} holidays={holidays} minDate={addDaysIso(-1)} warnHoliday={false} />
+   598→   665→   665→              </Labeled>
+   599→   666→   666→              <div className="grid grid-cols-2 gap-2">
+   600→   667→   667→                <Labeled label="از ساعت">
+   601→   668→   668→                  <input type="time" dir="ltr" value={fromHour} onChange={(e) => setFromHour(e.target.value)} className={cn(INPUT_CLS, 'text-center font-bold')} />
+   602→   669→   669→                </Labeled>
+   603→   670→   670→                <Labeled label="تا ساعت">
+   604→   671→   671→                  <input type="time" dir="ltr" value={toHour} onChange={(e) => setToHour(e.target.value)} className={cn(INPUT_CLS, 'text-center font-bold')} />
+   605→   672→   672→                </Labeled>
+   606→   673→   673→              </div>
+   607→   674→   674→            </>
+   608→   675→   675→          ) : (
+   609→   676→   676→            <>
+   610→   677→   677→              <Labeled label="از تاریخ">
+   611→   678→   678→                <JalaliDatePicker value={fromDate} onChange={pickFrom} holidays={holidays} minDate={addDaysIso(-1)} warnHoliday={false} />
+   612→   679→   679→              </Labeled>
+   613→   680→   680→              <Labeled label="تا تاریخ">
+   614→   681→   681→                <JalaliDatePicker value={toDate} onChange={setToDate} holidays={holidays} minDate={fromDate} warnHoliday={false} />
+   615→   682→   682→              </Labeled>
+   616→   683→   683→            </>
+   617→   684→   684→          )}
+   618→   685→   685→
+   619→   686→   686→          <Labeled label="دلیل (اختیاری)">
+   620→   687→   687→            <textarea
+   621→   688→   688→              value={reason}
+   622→   689→   689→              onChange={(e) => setReason(e.target.value)}
+   623→   690→   690→              rows={2}
+   624→   691→   691→              maxLength={300}
+   625→   692→   692→              placeholder="مثلاً کار اداری بانک"
+   626→   693→   693→              className={cn(INPUT_CLS, 'resize-none')}
+   627→   694→   694→            />
+   628→   695→   695→          </Labeled>
+   629→   696→   696→
+   630→   697→   697→          <p className="rounded-xl bg-[#c9a227]/10 px-3 py-2 text-[11px] font-bold leading-5 text-[#8a6d10]">
+   631→   698→   698→            نوبت‌بندی به‌صورت «اولین ثبت، اولویت» است؛ ثبت درخواست به معنای تأیید نیست و تصمیم نهایی با مدیر عملیات است.
+   632→   699→   699→          </p>
+   633→   700→   700→
+   634→   701→   701→          <button
+   635→   702→   702→            type="button"
+   636→   703→   703→            disabled={saving}
+   637→   704→   704→            onClick={submit}
+   638→   705→   705→            className="w-full rounded-xl bg-[#0e7a4a] py-3 text-sm font-black text-white shadow-md transition hover:bg-[#0b6a40] disabled:opacity-60"
+   639→   706→   706→          >
+   640→   707→   707→            {saving ? 'در حال ثبت…' : 'ثبت درخواست'}
+   641→   708→   708→          </button>
+   642→   709→   709→        </Modal>
+   643→   710→   710→      )}
+   644→   711→   711→    </div>
+   645→   712→   712→  )
+   646→   713→   713→}
+   647→   714→   714→
+   648→   715→   715→/** KPI tile مشابه StatCard اما با مقدار متنی آزاد */
+   649→   716→   716→function StatKpi({
+   650→   717→   717→  label,
+   651→   718→   718→  value,
+   652→   719→   719→  hint,
+   653→   720→   720→  tone,
+   654→   721→   721→  icon,
+   655→   722→   722→}: {
+   656→   723→   723→  label: string
+   657→   724→   724→  value: string
+   658→   725→   725→  hint?: string
+   659→   726→   726→  tone: 'emerald' | 'gold' | 'terra' | 'rose'
+   660→   727→   727→  icon: ReactNode
+   661→   728→   728→}) {
+   662→   729→   729→  const tones: Record<string, string> = {
+   663→   730→   730→    emerald: 'from-[#0e7a4a]/12 to-transparent text-[#0e7a4a]',
+   664→   731→   731→    gold: 'from-[#c9a227]/18 to-transparent text-[#8a6d10]',
+   665→   732→   732→    terra: 'from-[#c96f4a]/15 to-transparent text-[#a04c2a]',
+   666→   733→   733→    rose: 'from-[#b3372f]/12 to-transparent text-[#b3372f]',
+   667→   734→   734→  }
+   668→   735→   735→  return (
+   669→   736→   736→    <div className="glow-card rounded-2xl bg-card p-4">
+   670→   737→   737→      <div className={cn('-m-1 mb-2 flex items-center justify-between rounded-xl bg-gradient-to-l p-2', tones[tone])}>
+   671→   738→   738→        <span className="text-xl font-extrabold sm:text-2xl">{value}</span>
+   672→   739→   739→        <span className="opacity-80">{icon}</span>
+   673→   740→   740→      </div>
+   674→   741→   741→      <div className="text-xs font-semibold text-foreground sm:text-sm">{label}</div>
+   675→   742→   742→      {hint && <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{hint}</div>}
+   676→   743→   743→    </div>
+   677→   744→   744→  )
+   678→   745→   745→}
+   679→   746→   746→

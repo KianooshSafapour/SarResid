@@ -1,0 +1,622 @@
+    40→/* ── نمایش ساعت:دقیقه (17-E) — کارکرد بر حسب دقیقه ذخیره می‌شود، نمایش «۲۳:۴۵» یا «۲۳ ساعت و ۴۵ دقیقه» ── */
+    41→const hm = (minutes: number) => {
+    42→  const m = Math.max(0, Math.round(minutes || 0))
+    43→  return `${faNum(Math.floor(m / 60))}:${faNum(String(m % 60).padStart(2, '0'))}`
+    44→}
+    45→const hmLong = (minutes: number) => {
+    46→  const m = Math.max(0, Math.round(minutes || 0))
+    47→  const h = Math.floor(m / 60)
+    48→  const r = m % 60
+    49→  if (h && r) return `${faNum(h)} ساعت و ${faNum(r)} دقیقه`
+    50→  if (h) return `${faNum(h)} ساعت`
+    51→  if (r) return `${faNum(r)} دقیقه`
+    52→  return '۰ دقیقه'
+    53→}
+    54→
+    55→type Profile = {
+    56→  baseSalary: number; housing: number; foodAllowance: number; maritalAllowance: number
+    57→  childAllowance: number; childCount: number; seniorityBase: number; overtimeDivisor: number
+    58→  includeBenefitsInOT: boolean
+    59→}
+    60→type DayRow = { forDate: string; otMinutes: number; holidayOtMinutes: number; nightMinutes: number; absence: string; dayKind: string; note: string }
+    61→type AdjustRow = { id: string; kind: string; amount: number; note: string; ownerOnly: boolean; createdByName: string; createdAt: string }
+    62→type Computed = {
+    63→  workDays: number; absentFullDays: number; absentHalfDays: number
+    64→  otHours: number; holidayOtHours: number; nightHours: number
+    65→  baseProrated: number; housing: number; foodAllowance: number; marital: number; childTotal: number
+    66→  hourlyBase: number; overtimePay: number; holidayOtPay: number; nightPay: number; seniorityAccrual: number
+    67→  rewards: number; commissions: number; fines: number; advances: number; other: number; gross: number
+    68→  insurableBase: number; insurance: number; tax: number; otherDeductions: number; net: number
+    69→  warnings: string[]
+    70→}
+    71→type Row = {
+    72→  id: string; name: string; personnelNo: string; jobTitle: string; nationalId: string
+    73→  bankCard: string; shaba: string; hireDate: string; active: boolean; childrenCount: number
+    74→  profile: Profile
+    75→  month: { id: string; status: string; payslipNo: string; confirmedByName: string; confirmedAt: string; paidAt: string; note: string; gross: number; net: number }
+    76→  days: DayRow[]
+    77→  adjusts: AdjustRow[]
+    78→  hiddenCommissionCount: number
+    79→  computed: Computed
+    80→}
+    81→type TaxCfg = { exempt: number; bands: Array<{ upTo: number | null; rate: number }> }
+    82→type PolicyCfg = { otRate: number; nightRate: number; holidayOtRate: number; otCapMinutes: number; insuranceRate: number; employerRate: number; insuranceIncludesOT: boolean; fineCapPct: number; roundTo: number }
+    83→/** جدول قانونی سال حقوقی (ریال) — از getStatutory در GET /api/payroll */
+    84→type StatutoryPub = {
+    85→  dailyMinWage: number; monthlyMinWage: number; hourlyMinWage: number
+    86→  housing: number; foodAllowance: number; maritalAllowance: number; childAllowance: number
+    87→  seniorityDaily: number; overtimeDivisor: number
+    88→  otherLevelsFormula: { factor: number; addend: number }
+    89→  newYearBonusMin: number; newYearBonusMax: number
+    90→  tax: TaxCfg
+    91→}
+    92→type Resp = {
+    93→  jy: number; jm: number; monthDays: number; employer: string
+    94→  isManager: boolean; isOwner: boolean; self: { personnelId: string } | null
+    95→  defaults: Partial<Profile>; policy: PolicyCfg; tax: TaxCfg
+    96→  statutory: StatutoryPub; statutoryOvr?: Record<string, number>; salaryYear: number; positionBase: Record<string, number>
+    97→  viewer: { isManager: boolean; isOwner: boolean; canCommission: boolean; canSettings: boolean }
+    98→  personnel: Row[]; hint?: string
+    99→}
+   100→
+   101→type Yearly = {
+   102→  jy: number; yearDays: number; serviceDays: number; ratio: number; serviceFrom: string | null; serviceTo: string
+   103→  eydiRaw: number; eydiCap: number; eydi: number; seniority: number; total: number; partial: boolean
+   104→}
+   105→
+   106→const KIND_META: Record<string, { label: string; color: string }> = {
+   107→  REWARD: { label: 'تشویقی', color: EMERALD },
+   108→  FINE: { label: 'جریمه', color: ROSE },
+   109→  COMMISSION: { label: 'پورسانت', color: GOLD },
+   110→  ADVANCE: { label: 'مساعده', color: SKY },
+   111→  OTHER: { label: 'سایر', color: OLIVE },
+   112→}
+   113→const STATUS_META: Record<string, { label: string; color: string }> = {
+   114→  DRAFT: { label: 'پیش‌نویس', color: GRAY },
+   115→  CONFIRMED: { label: 'تأییدشده', color: GOLD },
+   116→  PAID: { label: 'پرداخت‌شده', color: EMERALD },
+   117→}
+   118→const DAYKIND_META: Record<string, { label: string; color: string }> = {
+   119→  WORK: { label: 'کار', color: OLIVE },
+   120→  FRIDAY: { label: 'جمعه', color: GOLD },
+   121→  HOLIDAY: { label: 'تعطیل', color: ROSE },
+   122→  LEAVE: { label: 'مرخصی', color: SKY },
+   123→  OFF: { label: 'تعطیل', color: GRAY },
+   124→}
+   125→const WEEK_SHORT = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج']
+   126→function weekdayShort(iso: string): string {
+   127→  return WEEK_SHORT[new Date(iso + 'T12:00:00').getDay() === 6 ? 0 : (new Date(iso + 'T12:00:00').getDay() + 1) % 7]
+   128→}
+   129→
+   130→/** ورودی عدد کوچک (دقیقه/شمارش) — ارقام فارسی/عربی/لاتین می‌پذیرد */
+   131→function SmallNum({ value, onChange, disabled, max = 960, w = 'w-14' }: { value: number; onChange: (v: number) => void; disabled?: boolean; max?: number; w?: string }) {
+   132→  return (
+   133→    <input
+   134→      type="text" inputMode="numeric" dir="ltr" disabled={disabled}
+   135→      value={value === 0 ? '' : faNum(value)}
+   136→      placeholder="۰"
+   137→      onChange={(e) => {
+   138→        const cleaned = enDigits(e.target.value).replace(/[^\d]/g, '')
+   139→        const n = cleaned === '' ? 0 : Math.min(max, Number(cleaned))
+   140→        onChange(isNaN(n) ? 0 : n)
+   141→      }}
+   142→      className={cn(w, 'rounded-lg border border-input bg-white/90 px-1 py-1 text-center text-xs font-bold tabular-nums outline-none focus:border-primary disabled:opacity-50')}
+   143→    />
+   144→  )
+   145→}
+   146→
+   147→/** دکمهٔ چیپ سریع دقیقه (+۳۰/+۶۰/+۱۲۰) */
+   148→function QuickChip({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+   149→  return (
+   150→    <button type="button" disabled={disabled} onClick={onClick}
+   151→      className="rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-40">
+   152→      {label}
+   153→    </button>
+   154→  )
+   155→}
+   156→
+   157→/**
+   158→ * ورودی دوگانهٔ ساعت + دقیقه (17-E) — مثل کارت زمان‌سنجی کاغذی.
+   159→ * هر ستون کارکرد (اضافه‌کاری/جمعه/شب) دو ورودی دارد و مجموع به «دقیقه» ذخیره می‌شود؛
+   160→ * چیپ‌ها به مجموع دقیقه اضافه می‌کنند و انتقال دهانه (carry) خودکار است (۱:۴۵ + ۰:۳۰ = ۲:۱۵).
+   161→ * سقف здрав‌سنجی: ۱۶ ساعت (۹۶۰ دقیقه) — هرگز ورود داده را مسدود نمی‌کند.
+   162→ */
+   163→function HMField({ minutes, onMinutes, disabled }: { minutes: number; onMinutes: (v: number) => void; disabled?: boolean }) {
+   164→  const h = Math.floor(minutes / 60)
+   165→  const m = minutes % 60
+   166→  const setH = (v: number) => onMinutes(Math.min(960, v * 60 + m))
+   167→  const setM = (v: number) => onMinutes(Math.min(960, h * 60 + v))
+   168→  const parse = (s: string) => {
+   169→    const c = enDigits(s).replace(/\D/g, '')
+   170→    return c === '' ? 0 : Number(c)
+   171→  }
+   172→  return (
+   173→    <div className="flex flex-col items-center gap-0.5">
+   174→      <div dir="ltr" className="flex items-center gap-0.5">
+   175→        <input type="text" inputMode="numeric" aria-label="ساعت" disabled={disabled}
+   176→          value={h === 0 ? '' : faNum(h)} placeholder="۰"
+   177→          onChange={(e) => setH(Math.min(16, parse(e.target.value)))}
+   178→          className="w-8 rounded-lg border border-input bg-white/90 px-0.5 py-1 text-center text-xs font-bold tabular-nums outline-none focus:border-primary disabled:opacity-50" />
+   179→        <span className="text-[10px] font-black text-muted-foreground">:</span>
+   180→        <input type="text" inputMode="numeric" aria-label="دقیقه" disabled={disabled}
+   181→          value={m === 0 ? '' : faNum(m)} placeholder="۰"
+   182→          onChange={(e) => setM(Math.min(59, parse(e.target.value)))}
+   183→          className="w-9 rounded-lg border border-input bg-white/90 px-0.5 py-1 text-center text-xs font-bold tabular-nums outline-none focus:border-primary disabled:opacity-50" />
+   184→      </div>
+   185→      <span className="h-3 text-[9px] font-bold leading-3 tabular-nums text-muted-foreground" title={hmLong(minutes)}>
+   186→        {minutes > 0 ? hm(minutes) : ''}
+   187→      </span>
+   188→    </div>
+   189→  )
+   190→}
+   191→
+   192→export default function PayrollView({ ctx }: { ctx: AppCtx }) {
+   193→  const now = toJalaliParts(todayIso())
+   194→  const [jy, setJy] = useState(now.jy)
+   195→  const [jm, setJm] = useState(now.jm)
+   196→  const [data, setData] = useState<Resp | null>(null)
+   197→  const [loading, setLoading] = useState(true)
+   198→  const [tab, setTab] = useState<'month' | 'yearly' | 'self' | 'settings'>('month')
+   199→  const [editorId, setEditorId] = useState<string | null>(null)
+   200→  const [confirmBox, setConfirmBox] = useState<null | { type: 'confirm' | 'pay' | 'reopen'; note: string }>(null)
+   201→  const [yearlySel, setYearlySel] = useState<{ personnelId: string; jy: number } | null>(null)
+   202→  const [yearly, setYearly] = useState<Yearly | null>(null)
+   203→  const [yearlyMeta, setYearlyMeta] = useState<{ name: string; jobTitle: string; hireDate: string; personnelNo: string } | null>(null)
+   204→  const [slipId, setSlipId] = useState<string | null>(null) // فیش چاپی: personnel id
+   205→  const canManage = !!data?.viewer.isManager
+   206→  const canCommission = !!data?.viewer.canCommission
+   207→
+   208→  const load = useCallback(async (pjy = jy, pjm = jm) => {
+   209→    try {
+   210→      const d = await api<Resp>(`/api/payroll?jy=${pjy}&jm=${pjm}`)
+   211→      setData(d)
+   212→    } catch (e) {
+   213→      toast.error((e as Error).message)
+   214→    } finally {
+   215→      setLoading(false)
+   216→    }
+   217→  }, [jy, jm])
+   218→
+   219→  useEffect(() => { setLoading(true); load() }, [load])
+   220→
+   221→  const rows = data?.personnel || []
+   222→  const editorRow = rows.find((r) => r.id === editorId) || null
+   223→  const slipRow = rows.find((r) => r.id === slipId) || null
+   224→  const selfRow = data?.self ? rows.find((r) => r.id === data.self?.personnelId) || null : null
+   225→
+   226→  const totals = useMemo(() => {
+   227→    const acc = { gross: 0, net: 0, insurance: 0, tax: 0, ot: 0, confirmed: 0, paid: 0 }
+   228→    for (const r of rows) {
+   229→      acc.gross += r.computed.gross; acc.net += r.computed.net
+   230→      acc.insurance += r.computed.insurance; acc.tax += r.computed.tax
+   231→      acc.ot += r.computed.otHours + r.computed.holidayOtHours
+   232→      if (r.month.status === 'CONFIRMED') acc.confirmed += 1
+   233→      if (r.month.status === 'PAID') acc.paid += 1
+   234→    }
+   235→    return acc
+   236→  }, [rows])
+   237→
+   238→  /* ── تغییر ماه: فقط وضعیت را عوض می‌کنیم — useEffect با load جدید واکشی می‌کند ── */
+   239→  const switchMonth = (delta: number) => {
+   240→    let njy = jy, njm = jm + delta
+   241→    if (njm > 12) { njm = 1; njy += 1 }
+   242→    if (njm < 1) { njm = 12; njy -= 1 }
+   243→    setJy(njy); setJm(njm)
+   244→  }
+   245→
+   246→  const TABS: Array<{ key: typeof tab; label: string; icon: ReactNode }> = [
+   247→    { key: 'month', label: 'حقوق ماهانه', icon: <Users size={14} /> },
+   248→    { key: 'yearly', label: 'عیدی و سنوات', icon: <Sparkles size={14} /> },
+   249→    { key: 'self', label: 'فیش من', icon: <Eye size={14} /> },
+   250→  ]
+   251→  if (data?.viewer.canSettings) TABS.push({ key: 'settings', label: 'تنظیمات', icon: <Settings2 size={14} /> })
+   252→
+   253→  return (
+   254→    <div className="space-y-4">
+   255→      {/* استایل چاپ فیش — بدون دست‌زدن به globals.css */}
+   256→      <style>{`
+   257→        @media print {
+   258→          body * { visibility: hidden !important; }
+   259→          #payslip-print-area, #payslip-print-area *, #yearly-print-area, #yearly-print-area * { visibility: visible !important; }
+   260→          #payslip-print-area, #yearly-print-area { position: absolute !important; top: 0 !important; right: 0 !important; left: 0 !important; width: 100% !important; max-height: none !important; overflow: visible !important; box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 10mm !important; background: white !important; }
+   261→          .no-print { display: none !important; }
+   262→        }
+   263→      `}</style>
+   264→
+   265→      {/* سرصفحهٔ ماه */}
+   266→      <SectionCard
+   267→        title="حقوق و دستمزد"
+   268→        subtitle={`ماه ${J_MONTHS[(data?.jm || jm) - 1]} ${faNum(data?.jy || jy)} — مبالغ جدول به تومان · مطابق قانون کار سال حقوقی ${faNum(data?.salaryYear || 1405)} (مبالغ موتور: ریال)`}
+   269→        icon={<Landmark size={20} />}
+   270→        actions={
+   271→          <>
+   272→            <button onClick={() => switchMonth(-1)} className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold hover:border-primary"><ChevronRight size={16} /> ماه قبل</button>
+   273→            <button onClick={() => { setJy(now.jy); setJm(now.jm) }} className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold hover:border-primary" title="ماه جاری"><CalendarDays size={16} /></button>
+   274→            <button onClick={() => switchMonth(1)} className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold hover:border-primary">ماه بعد <ChevronLeft size={16} /></button>
+   275→          </>
+   276→        }
+   277→      >
+   278→        {/* تب‌ها */}
+   279→        <div className="mb-4 flex flex-wrap gap-2">
+   280→          {TABS.map((t) => (
+   281→            <button key={t.key} onClick={() => setTab(t.key)}
+   282→              className={cn('flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition',
+   283→                tab === t.key ? 'bg-primary text-white shadow' : 'border border-border bg-card text-muted-foreground hover:border-primary')}>
+   284→              {t.icon}{t.label}
+   285→            </button>
+   286→          ))}
+   287→        </div>
+   288→
+   289→        {loading ? (
+   290→          <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-muted/60" />)}</div>
+   291→        ) : tab === 'month' && (
+   292→          <MonthTab data={data} rows={rows} totals={totals} onOpenEditor={setEditorId} onOpenSlip={setSlipId} onOpenYearly={(pid) => { setYearlySel({ personnelId: pid, jy: now.jy }); setYearly(null); setYearlyMeta(null); setTab('yearly') }} />
+   293→        )}
+   294→        {tab === 'yearly' && (
+   295→          <YearlyTab
+   296→            rows={rows} canManage={canManage} selfPid={data?.self?.personnelId || null}
+   297→            sel={yearlySel} setSel={setYearlySel} yearly={yearly} setYearly={setYearly} meta={yearlyMeta} setMeta={setYearlyMeta}
+   298→          />
+   299→        )}
+   300→        {tab === 'self' && <SelfTab row={selfRow} onOpenSlip={setSlipId} />}
+   301→        {/* key = سال حقوقی: با تغییر سال، پیش‌نویس تنظیمات از نو بر پایهٔ جدول قانونی تازه ساخته می‌شود */}
+   302→        {tab === 'settings' && data?.viewer.canSettings && <SettingsTab key={data.salaryYear} data={data} onSaved={() => load()} />}
+   303→      </SectionCard>
+   304→
+   305→      {/* ویرایشگر ماه پرسنل */}
+   306→      {editorRow && data && (
+   307→        <MonthEditor
+   308→          key={editorRow.id + '-' + data.jy + '-' + data.jm}
+   309→          row={editorRow} data={data} canManage={canManage} canCommission={canCommission}
+   310→          onClose={() => setEditorId(null)} onReload={() => load()}
+   311→          onConfirm={() => setConfirmBox({ type: 'confirm', note: '' })}
+   312→          onPay={() => setConfirmBox({ type: 'pay', note: '' })}
+   313→          onReopen={() => setConfirmBox({ type: 'reopen', note: '' })}
+   314→          onPrint={() => setSlipId(editorRow.id)}
+   315→        />
+   316→      )}
+   317→
+   318→      {/* جعبهٔ تأیید دومرحله‌ای */}
+   319→      {confirmBox && editorRow && (
+   320→        <Modal title={{ confirm: 'تأیید ماه حقوق', pay: 'ثبت پرداخت', reopen: 'بازگشایی ماه' }[confirmBox.type]} onClose={() => setConfirmBox(null)}>
+   321→          <p className="text-sm leading-6 text-muted-foreground">
+   322→            {confirmBox.type === 'confirm' && <>ماه {J_MONTHS[jm - 1]} {faNum(jy)} برای «{editorRow.name}» تأیید شود؟ پس از تأیید، ثبت کارکرد قفل می‌شود.</>}
+   323→            {confirmBox.type === 'pay' && <>پرداخت خالص <b className="text-primary">{T(editorRow.computed.net)} تومان</b> به «{editorRow.name}» ثبت شود؟ پس از ثبت، ماه قفل می‌شود.</>}
+   324→            {confirmBox.type === 'reopen' && <>بازگشایی ماه برای «{editorRow.name}»؟ {editorRow.month.status === 'PAID' && 'ماه پرداخت‌شده مستلزم ذکر دلیل است.'}</>}
+   325→          </p>
+   326→          {confirmBox.type === 'reopen' && (
+   327→            <Labeled label="دلیل بازگشایی (برای ماه پرداخت‌شده الزامی است)">
+   328→              <input value={confirmBox.note} onChange={(e) => setConfirmBox({ ...confirmBox, note: e.target.value })}
+   329→                className="w-full rounded-xl border border-input bg-white/90 px-3 py-2 text-sm outline-none focus:border-primary" />
+   330→            </Labeled>
+   331→          )}
+   332→          <div className="flex gap-2">
+   333→            <button onClick={async () => {
+   334→              const type = confirmBox.type; const note = confirmBox.note
+   335→              setConfirmBox(null)
+   336→              try {
+   337→                await api('/api/payroll', { method: 'POST', body: { action: type, personnelId: editorRow.id, jy: data?.jy || jy, jm: data?.jm || jm, note } })
+   338→                toast.success({ confirm: 'ماه تأیید شد ✓', pay: 'پرداخت ثبت شد ✓', reopen: 'ماه بازگشایی شد' }[type])
+   339→                load()
+   340→              } catch (e) { toast.error((e as Error).message) }
+   341→            }} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-black text-white hover:opacity-90">
+   342→              بله، انجام بده
+   343→            </button>
+   344→            <button onClick={() => setConfirmBox(null)} className="rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-muted-foreground">انصراف</button>
+   345→          </div>
+   346→        </Modal>
+   347→      )}
+   348→
+   349→      {/* فیش حقوقی (چاپ) */}
+   350→      {slipRow && data && (
+   351→        <Modal title={`فیش حقوقی — ${slipRow.name}`} wide onClose={() => setSlipId(null)}>
+   352→          <Payslip row={slipRow} data={data} generatedBy={ctx.user?.name || 'سامانه'} />
+   353→        </Modal>
+   354→      )}
+   355→    </div>
+   356→  )
+   357→}
+   358→
+   359→/* ═══════════ تب ماهانه: جدول پرسنل ═══════════ */
+   360→
+   361→function MonthTab({ rows, totals, onOpenEditor, onOpenSlip, onOpenYearly, data }: {
+   362→  rows: Row[]; totals: { gross: number; net: number; insurance: number; tax: number; ot: number; confirmed: number; paid: number }
+   363→  onOpenEditor: (id: string) => void; onOpenSlip: (id: string) => void; onOpenYearly: (id: string) => void
+   364→  data: Resp | null
+   365→}) {
+   366→  if (!rows.length) {
+   367→    return <EmptyState emoji="🫒" title="پرسنلی برای حقوق‌وریافتنی نیست" hint={data?.hint || 'پس از ساخت پروندهٔ پرسنلی، پروفایل حقوق خودکار ساخته می‌شود'} />
+   368→  }
+   369→  return (
+   370→    <div className="space-y-4">
+   371→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   372→        <StatCard label="جمع خالص پرداختی ماه (تومان)" value={T(totals.net)} tone="emerald" icon={<Banknote size={18} />} hint={`${faNum(rows.length)} پرسنل`} />
+   373→        <StatCard label="جمع حقوق و مزایا (تومان)" value={T(totals.gross)} tone="gold" icon={<Coins size={18} />} hint={`اضافه‌کاری: ${hm(totals.ot * 60)} ساعت`} />
+   374→        <StatCard label="بیمهٔ سهم کارگر (تومان)" value={T(totals.insurance)} tone="olive" icon={<PiggyBank size={18} />} hint="۷٪ مشمول بیمه" />
+   375→        <StatCard label="مالیات حقوق (تومان)" value={T(totals.tax)} tone="rose" icon={<Percent size={18} />} hint={`تأییدشده: ${faNum(totals.confirmed)} · پرداخت‌شده: ${faNum(totals.paid)}`} />
+   376→      </div>
+   377→
+   378→      <div className="overflow-x-auto rounded-2xl border border-border">
+   379→        <table className="w-full min-w-[820px] text-right text-sm">
+   380→          <thead>
+   381→            <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+   382→              <th className="px-3 py-2.5 font-bold">پرسنل</th>
+   383→              <th className="px-3 py-2.5 font-bold">کارکرد</th>
+   384→              <th className="px-3 py-2.5 font-bold">اضافه‌کاری (عادی/جمعه/شب)</th>
+   385→              <th className="px-3 py-2.5 font-bold">ناخالص</th>
+   386→              <th className="px-3 py-2.5 font-bold">بیمه</th>
+   387→              <th className="px-3 py-2.5 font-bold">مالیات</th>
+   388→              <th className="px-3 py-2.5 font-bold">خالص (تومان)</th>
+   389→              <th className="px-3 py-2.5 font-bold">وضعیت</th>
+   390→              <th className="px-3 py-2.5 font-bold"></th>
+   391→            </tr>
+   392→          </thead>
+   393→          <tbody>
+   394→            {rows.map((r) => {
+   395→              const st = STATUS_META[r.month.status] || STATUS_META.DRAFT
+   396→              return (
+   397→                <tr key={r.id} onClick={() => onOpenEditor(r.id)}
+   398→                  className="cursor-pointer border-b border-border/60 transition hover:bg-secondary/60 last:border-0">
+   399→                  <td className="px-3 py-2.5">
+   400→                    <div className="font-bold text-foreground">{r.name} {!r.active && <span className="text-[10px] font-bold text-rose-600">(غیرفعال)</span>}</div>
+   401→                    <div className="text-[11px] text-muted-foreground">{r.jobTitle || '—'} · {r.personnelNo}</div>
+   402→                  </td>
+   403→                  <td className="px-3 py-2.5 tabular-nums">{faNum(r.computed.workDays)} روز{r.computed.absentFullDays + r.computed.absentHalfDays > 0 && <span className="text-[11px] text-rose-600"> (−{faNum(r.computed.absentFullDays + r.computed.absentHalfDays)})</span>}</td>
+   404→                  <td className="px-3 py-2.5 tabular-nums text-xs">
+   405→                    <span className="font-bold text-foreground" title={hmLong(r.computed.otHours * 60)}>{hm(r.computed.otHours * 60)}</span> / <span className="font-bold" style={{ color: GOLD }} title={hmLong(r.computed.holidayOtHours * 60)}>{hm(r.computed.holidayOtHours * 60)}</span> / <span className="font-bold" style={{ color: SKY }} title={hmLong(r.computed.nightHours * 60)}>{hm(r.computed.nightHours * 60)}</span> ساعت
+   406→                  </td>
+   407→                  <td className="px-3 py-2.5 tabular-nums font-bold">{T(r.computed.gross)}</td>
+   408→                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{T(r.computed.insurance)}</td>
+   409→                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{T(r.computed.tax)}</td>
+   410→                  <td className="px-3 py-2.5 tabular-nums font-black text-primary">{T(r.computed.net)}</td>
+   411→                  <td className="px-3 py-2.5"><Pill label={st.label} color={st.color} /></td>
+   412→                  <td className="px-3 py-2.5">
+   413→                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+   414→                      <button title="فیش حقوقی" onClick={() => onOpenSlip(r.id)} className="rounded-lg border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-primary"><FileDown size={14} /></button>
+   415→                      <button title="عیدی و سنوات" onClick={() => onOpenYearly(r.id)} className="rounded-lg border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-primary"><Sparkles size={14} /></button>
+   416→                    </div>
+   417→                  </td>
+   418→                </tr>
+   419→              )
+   420→            })}
+   421→          </tbody>
+   422→        </table>
+   423→      </div>
+   424→      <p className="text-[11px] leading-5 text-muted-foreground">
+   425→        برای ثبت اضافه‌کاری، غیبت و اقلام متغیر روی ردیف پرسنل کلیک کنید · بیش از ۴ ساعت اضافه‌کاری در روز = هشدار (نه منع) — مادهٔ ۵۹؛ توافق طرفین ملاک است · حق مسکن، بن کارگری و اضافه‌کاری از مشمول بیمه معاف‌اند (تبصرهٔ مادهٔ ۳۸ قانون تأمین اجتماعی).
+   426→      </p>
+   427→    </div>
+   428→  )
+   429→}
+   430→
+   431→/* ═══════════ ویرایشگر ماه ═══════════ */
+   432→
+   433→function MonthEditor({ row, data, canManage, canCommission, onClose, onReload, onConfirm, onPay, onReopen, onPrint }: {
+   434→  row: Row; data: Resp; canManage: boolean; canCommission: boolean
+   435→  onClose: () => void; onReload: () => void; onConfirm: () => void; onPay: () => void; onReopen: () => void; onPrint: () => void
+   436→}) {
+   437→  const locked = row.month.status !== 'DRAFT'
+   438→  const st = STATUS_META[row.month.status] || STATUS_META.DRAFT
+   439→  const [editingProfile, setEditingProfile] = useState(false)
+   440→  const [profileDraft, setProfileDraft] = useState<Profile>(row.profile)
+   441→  const [adjustForm, setAdjustForm] = useState<{ kind: string; amount: number | ''; note: string }>({ kind: 'REWARD', amount: '', note: '' })
+   442→  const [busy, setBusy] = useState(false)
+   443→  const md = data.monthDays
+   444→
+   445→  // پیش‌نویس روزها — کلید: تاریخ iso
+   446→  const [dayDraft, setDayDraft] = useState<Record<string, { ot: number; hot: number; night: number; absence: string; note: string }>>(() => {
+   447→    const m: Record<string, { ot: number; hot: number; night: number; absence: string; note: string }> = {}
+   448→    for (let i = 1; i <= md; i++) {
+   449→      const iso = jalaliToIso(data.jy, data.jm, i)
+   450→      const d = row.days.find((x) => x.forDate === iso)
+   451→      m[iso] = { ot: d?.otMinutes || 0, hot: d?.holidayOtMinutes || 0, night: d?.nightMinutes || 0, absence: d?.absence || 'NONE', note: d?.note || '' }
+   452→    }
+   453→    return m
+   454→  })
+   455→  const daysIso = useMemo(() => Array.from({ length: md }, (_, i) => jalaliToIso(data.jy, data.jm, i + 1)), [md, data.jy, data.jm])
+   456→  const dirtyDays = daysIso.filter((iso) => {
+   457→    const d = row.days.find((x) => x.forDate === iso)
+   458→    const c = dayDraft[iso]
+   459→    return c && (!!d ? (d.otMinutes !== c.ot || d.holidayOtMinutes !== c.hot || d.nightMinutes !== c.night || d.absence !== c.absence || (d.note || '') !== c.note) : (c.ot || c.hot || c.night || c.absence !== 'NONE' || c.note))
+   460→  })
+   461→
+   462→  const saveDay = async (iso: string) => {
+   463→    const c = dayDraft[iso]
+   464→    setBusy(true)
+   465→    try {
+   466→      const res = await api<{ ok?: boolean; warnings?: string[] }>('/api/payroll', { method: 'POST', body: { action: 'set-day', personnelId: row.id, forDate: iso, otMinutes: c.ot, holidayOtMinutes: c.hot, nightMinutes: c.night, absence: c.absence, note: c.note } })
+   467→      toast.success(`کارکرد ${formatJalaliShort(iso)} ثبت شد`)
+   468→      // 17-E — هشدارهای غیرمسدودکننده (مثل فراتر از آستانهٔ ۴ ساعت) پس از ذخیرهٔ موفق نمایش داده می‌شود
+   469→      for (const w of res.warnings || []) toast.warning(w, { duration: 10000 })
+   470→      onReload()
+   471→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   472→  }
+   473→
+   474→  const saveAllDays = async () => {
+   475→    setBusy(true)
+   476→    try {
+   477→      const warns = new Set<string>()
+   478→      for (const iso of dirtyDays) {
+   479→        const c = dayDraft[iso]
+   480→        const res = await api<{ ok?: boolean; warnings?: string[] }>('/api/payroll', { method: 'POST', body: { action: 'set-day', personnelId: row.id, forDate: iso, otMinutes: c.ot, holidayOtMinutes: c.hot, nightMinutes: c.night, absence: c.absence, note: c.note } })
+   481→        for (const w of res.warnings || []) warns.add(w)
+   482→      }
+   483→      toast.success('همهٔ تغییرهای کارکرد ثبت شد')
+   484→      for (const w of warns) toast.warning(w, { duration: 10000 })
+   485→      onReload()
+   486→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   487→  }
+   488→
+   489→  const saveProfile = async () => {
+   490→    setBusy(true)
+   491→    try {
+   492→      await api('/api/payroll', { method: 'POST', body: { action: 'update-profile', personnelId: row.id, ...profileDraft, childCount: Number(profileDraft.childCount) || 0 } })
+   493→      toast.success('پروفایل حقوق به‌روزرسانی شد')
+   494→      setEditingProfile(false)
+   495→      onReload()
+   496→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   497→  }
+   498→
+   499→  const addAdjust = async () => {
+   500→    if (!adjustForm.amount) { toast.error('مبلغ را وارد کنید'); return }
+   501→    setBusy(true)
+   502→    try {
+   503→      await api('/api/payroll', { method: 'POST', body: { action: 'set-adjust', personnelId: row.id, jy: data.jy, jm: data.jm, kind: adjustForm.kind, amount: adjustForm.amount, note: adjustForm.note } })
+   504→      toast.success('قلم ثبت شد')
+   505→      setAdjustForm({ kind: adjustForm.kind, amount: '', note: '' })
+   506→      onReload()
+   507→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   508→  }
+   509→
+   510→  const delAdjust = async (id: string) => {
+   511→    setBusy(true)
+   512→    try {
+   513→      await api('/api/payroll', { method: 'POST', body: { action: 'delete-adjust', adjustId: id } })
+   514→      toast.success('قلم حذف شد')
+   515→      onReload()
+   516→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   517→  }
+   518→
+   519→  const c = row.computed
+   520→
+   521→  return (
+   522→    <div className="fixed inset-0 z-50 flex items-start justify-center p-2 sm:p-4">
+   523→      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+   524→      <div className="scroll-gold glow-card relative max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-card p-4 sm:p-6">
+   525→        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+   526→          <div>
+   527→            <h3 className="flex flex-wrap items-center gap-2 text-base font-black">
+   528→              {row.name} <Pill label={st.label} color={st.color} />
+   529→              {!row.active && <Pill label="پرسنل غیرفعال" color={ROSE} />}
+   530→              {locked && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Lock size={12} /> قفل ثبت</span>}
+   531→            </h3>
+   532→            <p className="mt-0.5 text-xs text-muted-foreground">
+   533→              {row.jobTitle} · {row.personnelNo} · ماه {J_MONTHS[data.jm - 1]} {faNum(data.jy)}
+   534→              {row.month.paidAt && ` · پرداخت: ${formatJalaliDateTime(row.month.paidAt)}`}
+   535→              {row.month.confirmedByName && ` · تأیید: ${row.month.confirmedByName}`}
+   536→            </p>
+   537→          </div>
+   538→          <div className="no-print flex flex-wrap gap-2">
+   539→            <button onClick={onPrint} className="flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-xs font-bold hover:border-primary"><Printer size={14} /> چاپ فیش</button>
+   540→            {canManage && !locked && <button onClick={onConfirm} className="flex items-center gap-1 rounded-xl bg-[#c9a227] px-3 py-2 text-xs font-black text-white hover:opacity-90"><BadgeCheck size={14} /> تأیید ماه</button>}
+   541→            {canManage && row.month.status === 'CONFIRMED' && <button onClick={onPay} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white hover:opacity-90"><Banknote size={14} /> ثبت پرداخت</button>}
+   542→            {canManage && locked && <button onClick={onReopen} className="flex items-center gap-1 rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"><RefreshCcw size={14} /> بازگشایی</button>}
+   543→            <button onClick={onClose} className="rounded-lg p-2 hover:bg-muted"><X size={16} /></button>
+   544→          </div>
+   545→        </div>
+   546→
+   547→        {row.hiddenCommissionCount > 0 && (
+   548→          <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+   549→            🔒 {faNum(row.hiddenCommissionCount)} مورد پورسانت — محرمانه (فقط مالک). جمع‌های نمایشی بدون پورسانت است.
+   550→          </div>
+   551→        )}
+   552→        {c.warnings.map((w, i) => (
+   553→          <div key={i} className="mb-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">⚠️ {w}</div>
+   554→        ))}
+   555→
+   556→        <div className="grid gap-4 lg:grid-cols-[1fr_330px]">
+   557→          {/* ستون راست‌چین: پروفایل + روزها + اقلام */}
+   558→          <div className="space-y-4">
+   559→            {/* پروفایل */}
+   560→            <div className="rounded-2xl border border-border p-3">
+   561→              <div className="mb-2 flex items-center justify-between">
+   562→                <h4 className="text-sm font-black">پروفایل حقوق (ریال)</h4>
+   563→                {canManage && !editingProfile && (
+   564→                  <button onClick={() => { setProfileDraft(row.profile); setEditingProfile(true) }} className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-bold hover:border-primary"><Pencil size={12} /> ویرایش</button>
+   565→                )}
+   566→              </div>
+   567→              {!editingProfile ? (
+   568→                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+   569→                  {([
+   570→                    ['حقوق پایه', R(row.profile.baseSalary)], ['حق مسکن', R(row.profile.housing)],
+   571→                    ['بن کارگری', R(row.profile.foodAllowance)], ['حق تأهل', R(row.profile.maritalAllowance)],
+   572→                    ['حق اولاد', `${R(row.profile.childAllowance)} × ${faNum(row.profile.childCount)}`],
+   573→                    ['سنوات روزانه', R(row.profile.seniorityBase)],
+   574→                    ['مخرج اضافه‌کاری', faNum(row.profile.overtimeDivisor)],
+   575→                    ['مزایا در مأخذ OT', row.profile.includeBenefitsInOT ? 'دارد' : 'ندارد'],
+   576→                  ] as Array<[string, string]>).map(([k, v]) => (
+   577→                    <div key={k} className="rounded-lg bg-muted/50 px-2 py-1.5">
+   578→                      <div className="text-[10px] text-muted-foreground">{k}</div>
+   579→                      <div className="font-bold tabular-nums">{v}</div>
+   580→                    </div>
+   581→                  ))}
+   582→                </div>
+   583→              ) : (
+   584→                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+   585→                  <ProfField label="حقوق پایه (ریال)" value={profileDraft.baseSalary} onChange={(v) => setProfileDraft({ ...profileDraft, baseSalary: v || 0 })} />
+   586→                  <ProfField label="حق مسکن (ریال)" value={profileDraft.housing} onChange={(v) => setProfileDraft({ ...profileDraft, housing: v || 0 })} />
+   587→                  <ProfField label="بن کارگری (ریال)" value={profileDraft.foodAllowance} onChange={(v) => setProfileDraft({ ...profileDraft, foodAllowance: v || 0 })} />
+   588→                  <ProfField label="حق تأهل (ریال)" value={profileDraft.maritalAllowance} onChange={(v) => setProfileDraft({ ...profileDraft, maritalAllowance: v || 0 })} />
+   589→                  <ProfField label="حق اولاد هر فرزند (ریال)" value={profileDraft.childAllowance} onChange={(v) => setProfileDraft({ ...profileDraft, childAllowance: v || 0 })} hint="شرط ۷۲۰ روز سابقهٔ بیمه — در صورت عدم احراز صفر بگذارید" />
+   590→                  <ProfField label="سنوات روزانه (ریال)" value={profileDraft.seniorityBase} onChange={(v) => setProfileDraft({ ...profileDraft, seniorityBase: v || 0 })} />
+   591→                  <ProfField label="تعداد فرزند" value={profileDraft.childCount} onChange={(v) => setProfileDraft({ ...profileDraft, childCount: v || 0 })} />
+   592→                  <ProfField label="مخرج مزد ساعتی (قانون: ۲۲۰)" value={profileDraft.overtimeDivisor} onChange={(v) => setProfileDraft({ ...profileDraft, overtimeDivisor: v || 0 })} />
+   593→                  <label className="col-span-2 flex items-center gap-2 rounded-lg bg-muted/40 px-2 py-2 text-xs font-bold sm:col-span-3">
+   594→                    <input type="checkbox" checked={profileDraft.includeBenefitsInOT} onChange={(e) => setProfileDraft({ ...profileDraft, includeBenefitsInOT: e.target.checked })} />
+   595→                    مزایا (مسکن+بن) در مأخذ اضافه‌کاری لحاظ شود
+   596→                  </label>
+   597→                  <div className="col-span-2 flex gap-2 sm:col-span-3">
+   598→                    <button disabled={busy} onClick={saveProfile} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white disabled:opacity-50"><Save size={13} /> ذخیرهٔ پروفایل</button>
+   599→                    <button onClick={() => setEditingProfile(false)} className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-muted-foreground">انصراف</button>
+   600→                  </div>
+   601→                  <p className="col-span-2 text-[10px] leading-4 text-muted-foreground sm:col-span-3">
+   602→                    💡 سایر سطوح دستمزد (فرمول رایج ۱۴۰۴): مزد سال قبل × ۱٫۳۲ + ۹٬۳۱۶٬۰۸۰ ریال — به‌صورت خودکار اعمال نمی‌شود؛ دستی وارد کنید.
+   603→                  </p>
+   604→                </div>
+   605→              )}
+   606→            </div>
+   607→
+   608→            {/* کارکرد روزانه */}
+   609→            <div className="rounded-2xl border border-border p-3">
+   610→              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   611→                <h4 className="text-sm font-black">کارکرد روزانه <span className="text-[10px] font-normal text-muted-foreground">(ساعت:دقیقه · بیش از {faNum(Math.floor((data.policy.otCapMinutes || 0) / 60))} ساعت در روز فقط هشدار — نه منع · مادهٔ ۵۹)</span></h4>
+   612→                {canManage && !locked && dirtyDays.length > 0 && (
+   613→                  <button disabled={busy} onClick={saveAllDays} className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[11px] font-black text-white disabled:opacity-50">
+   614→                    <Save size={12} /> ذخیرهٔ {faNum(dirtyDays.length)} روز تغییر یافته
+   615→                  </button>
+   616→                )}
+   617→              </div>
+   618→              <div className="max-h-[340px] overflow-y-auto rounded-xl border border-border/60">
+   619→                <table className="w-full min-w-[560px] text-right text-xs">
+   620→                  <thead className="sticky top-0 bg-muted/95">
+   621→                    <tr className="text-[10px] text-muted-foreground">
+   622→                      <th className="px-2 py-1.5 font-bold">روز</th>
+   623→                      <th className="px-2 py-1.5 font-bold">نوع</th>
+   624→                      <th className="px-1 py-1.5 font-bold" title="ورودی دوگانه: ساعت : دقیقه">اضافه‌کاری (س:د)</th>
+   625→                      <th className="px-1 py-1.5 font-bold" title="ورودی دوگانه: ساعت : دقیقه">جمعه/تعطیل (س:د)</th>
+   626→                      <th className="px-1 py-1.5 font-bold" title="ورودی دوگانه: ساعت : دقیقه">شب‌کاری (س:د)</th>
+   627→                      <th className="px-2 py-1.5 font-bold">غیبت</th>
+   628→                      <th className="px-2 py-1.5 font-bold">یادداشت</th>
+   629→                      <th></th>
+   630→                    </tr>
+   631→                  </thead>
+   632→                  <tbody>
+   633→                    {daysIso.map((iso) => {
+   634→                      const jd = toJalaliParts(iso).jd
+   635→                      const kind = row.days.find((x) => x.forDate === iso)?.dayKind || (new Date(iso + 'T12:00:00').getDay() === 5 ? 'FRIDAY' : 'WORK')
+   636→                      const km = DAYKIND_META[kind] || DAYKIND_META.WORK
+   637→                      const d = dayDraft[iso]
+   638→                      const dirty = dirtyDays.includes(iso)
+   639→                      return (
+   640→                        <tr key={iso} className={cn('border-t border-border/50', dirty && 'bg-amber-50/70')}>
+   641→                          <td className="px-2 py-1 font-bold tabular-nums whitespace-nowrap">{faNum(jd)} <span className="text-[10px] text-muted-foreground">{weekdayShort(iso)}</span></td>
+   642→                          <td className="px-2 py-1"><Pill label={km.label} color={km.color} /></td>
+   643→                          <td className="px-1 py-1">
+   644→                            <div className="flex items-center gap-1">
+   645→                              <HMField minutes={d.ot} disabled={!canManage || locked} onMinutes={(v) => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: v } })} />
+   646→                              {!canManage || locked ? null : (
+   647→                                <div className="flex flex-col gap-0.5">
+   648→                                  <div className="flex gap-0.5">
+   649→                                    <QuickChip label="+۳۰" onClick={() => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: Math.min(960, d.ot + 30) } })} />
+   650→                                    <QuickChip label="+۶۰" onClick={() => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: Math.min(960, d.ot + 60) } })} />
+   651→                                  </div>
+   652→                                  <QuickChip label="+۱۲۰" onClick={() => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: Math.min(960, d.ot + 120) } })} />
+   653→                                </div>
+   654→                              )}
+   655→                            </div>
+   656→                          </td>
+   657→                          <td className="px-1 py-1"><HMField minutes={d.hot} disabled={!canManage || locked} onMinutes={(v) => setDayDraft({ ...dayDraft, [iso]: { ...d, hot: v } })} /></td>
+   658→                          <td className="px-1 py-1"><HMField minutes={d.night} disabled={!canManage || locked} onMinutes={(v) => setDayDraft({ ...dayDraft, [iso]: { ...d, night: v } })} /></td>
+   659→                          <td className="px-2 py-1">
+
+[showing lines 40-659 of 1637; use offset=660 with limit to continue reading]

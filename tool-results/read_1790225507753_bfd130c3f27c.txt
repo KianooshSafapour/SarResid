@@ -1,0 +1,202 @@
+   909→- Rollback: `git checkout v0.1alpha3`. Hidden HZ shortcut: 5 clicks on wizard logo → key `zeytoon-1404` (changeable via set-hzkey).
+   910→- Next suggestions: calibration auto-refresh when time.ir JSON updates; payslip PDF; i18n deep pass for round-16 views; sandbox template refresh pipeline (scripts/seed-sandbox.ts) when schema evolves; pilot-customer price interviews (van Westendorp).
+   911→
+   912→---
+   913→Task ID: 17-0 + 17-A
+   914→Agent: Z.ai Code (main session)
+   915→Task: Round 17 kickoff — lost "version 20" work restoration. Schema foundation + surgical fixes (People.tsx crash, Dashboard declutter, salary nav placement)
+   916→
+   917→Work Log:
+   918→- DIAGNOSIS: previous session's "version 20" work (polygon floor plan editor, overtime 4h fix, salary improvements) was LOST when that session ran out of context — repo still at v0.1alphaPi (ca4f3f0). Remote github.com/KianooshSafapour/sarresid origin/main (9da4633) contains 4 demo platform codebases in sub-dirs: hyper-zeytoon.space-z.ai/, hyperzeytoon.space-z.ai/, nootyezrepyh.space-z.ai/, nootyez-repyh.space-z.ai/ — fetched for audit (task 17-B).
+   919→- SCHEMA FOUNDATION (db:push done): new models Category (name unique, icon, color, imageUrl, sort, active), Shift (name, weekday 0..6 JS getDay — Fri=5, start/end HH:MM, staffNeed, color, active, note; end<=start = overnight), ShiftAssignment (date ISO, shiftId, personnelId/Name, userId, double flag for double-shift, note, unique [date,shiftId,personnelId]); User.avatarUrl + User.avatarStyle (JSON cartoon config); FloorPlan.shape (JSON polygon vertices [{x,y}] cm) + FloorPlan.unitLabel.
+   920→- FIX rep.tags.map crash: root cause = /api/sales-reps/[id] GET returned raw rep (tags as JSON string) while list endpoint parsed it. Fixed BOTH: API now parses tags+providerHistory via parseJsonArr → repSafe; client People.tsx PersonProfileModal now guards Array.isArray for tags + providerHistory (safeTags/safeHistory).
+   921→- DASHBOARD DECLUTTER: removed ArchiveQuickSearch section (document search) + «تازه‌ترین فعالیت تیم» (latest team activities) section + unused imports (useRef, SearchInput, Avatar, Archive/MapPin/Users icons). 540→416 lines. Doc search already lives in Archive page (comprehensive search line 660 + party finder 819) — no functionality lost.
+   922→- NAV: payroll «حقوق و دستمزد» moved from مالی group to directly ABOVE personnel «مدیریت پرسنل» in تیم و ارتباطات group (salary next to personnel management).
+   923→- VERIFIED: bun run lint = 0 problems; tsc errors only pre-existing in examples/skills/seed-sandbox (not src).
+   924→
+   925→Stage Summary:
+   926→- Round 17 foundation ready. Subagent wave launching: 17-B demo audit, 17-C FloorPlan polygon editor, 17-D Shifts system, 17-E Payroll overhaul (h+min OT inputs, 4h alert-only, leave minutes), 17-F categories+avatars+badge isolation+birthday notifs, 17-G Planogram fix.
+   927→- File ownership to avoid conflicts: FloorPlan.tsx+floorplans API→17-C; Payroll.tsx+payroll API+salary-engine+Leaves.tsx→17-E; Products.tsx+products API+categories+me avatar+notifications→17-F; Planogram.tsx→17-G; Shifts view+API+AppShell nav line→17-D; Dashboard/People/Archive untouched now.
+   928→---
+   929→Task ID: 17-B
+   930→Agent: general-purpose (demo audit)
+   931→Task: Read-only comparative audit of the 4 sibling demo platforms from origin/main (9da4633) — views, product dialog, dashboard, payroll, floor plan, planogram, shifts, notifications, avatars, birthdays, categories, themes + TOP-15 steal list
+   932→Work Log:
+   933→- Extracted all 4 sub-dirs read-only via `git archive origin/main <dir> | tar -x -C /tmp/audit/` (cleaned .git.bak/tool-results); nothing under src/, prisma/ or configs touched.
+   934→- Inventoried every view/section: hyper-zeytoon 40 views (28k LoC, 972-line schema — direct ancestor of SarResid, same brand tokens); hyperzeytoon = restructured redesign (platform/sections/{commerce,catalog,people,reports,archive,warehouse}, recharts, 21.9k LoC); nootyezrepyh = retail suite (sections/*.tsx, 15.5k); nootyez-repyh = B2B ordering ops platform (platform/*Section.tsx, 16.5k).
+   935→- Product dialog deep-dive: hyper-zeytoon ProductReportModal (GET /api/products/{id}?report=1 → ReportBlock: 90d sales zero-filled LineChart #0e7a4a, ordersBuy qty+value charts, top-3 provider Donut w/ hover metas, margin trend autoMin #c9a227, category-share Donut w/ siblings, waste BarChart #b3372f, FEFO expiry chips, 5-KPI strip incl. پوشش موجودی, 🔮 next-order prediction from avgGapDays) vs hyperzeytoon ProductDetail (hero image, sellPrice2, barcode add/remove chips, client-side fileToScaledDataUrl(400px) upload, web image-search, 30d recharts AreaChart, shelf-placement cross-link) vs nootyezrepyh (info-only + SmartReorder) — SarResid's granularity+LY report already supersedes; remaining steals documented.
+   936→- Payroll: salary-engine.ts STATUTORY_1404 constants (housing 9,000,000 / ben 22,000,000 / seniorityDaily 94,000 / divisor 220 / tax exempt 240m + 10/15/20% bands, all Rial) + minute-based daily OT grid with SmallNum + QuickChips +۳۰/+۶۰/+۱۲۰ (cap 240 min ماده ۵۹), batch «ذخیرهٔ N روز تغییر یافته», عیدی/سنوات yearly tab (2× wage, cap 3× min-wage), self payslip + scoped print CSS, settings (otRate/otCapMinutes/insuranceRate/insuranceIncludesOT + editable tax table); hyperzeytoon leave policy {monthlyDays:4, maxSameDay:2, hourlyMaxHours:4} + docs/LEAVE-SCHEDULING-SCIENCE.md (26d/yr accrual, 7h20m=1day, coverage-floor approval warning, fair-share queue).
+   937→- Floor plan: ZoneMap.tsx = pure-SVG deterministic type-territory auto-layout (BACKROOM top / PERISHABLE left / POWER_AISLE center / DECOMPRESSION dashed-gold «زون تنفس — فروش‌سنج نیست»), per-zone owner chip 👤 + backup + A/B/C criticality + min-staff dots + count-status pulse + efficiency view (shareIndex ۰٫۷–۱٫۳ bands, salesTargetExcluded). Planograms = CSS-grid everywhere (no drag/canvas); fill-health strip on hyperzeytoon dashboard.
+   938→- Shifts (nootyezrepyh only): weekly Persian-Sat grid, click-cycle MORNING/EVENING/NIGHT/OFF, MIN_COVER {صبح ۲, عصر ۲, شب ۱} live coverage banner, copy-last-week, PUT /api/shifts.
+   939→- Notifications: nootyez-repyh BadgesPoller (25s+focus poll of /api/badges?userId=, stale-guard, 8am-Tehran idempotent digest) + nootyezrepyh NotificationBell (role-computed feed, User.notifSeen JSON seen-snapshot cross-device, count-diff = "new") + hyper-zeytoon NotifPref mutedCats/snoozeUntil + NotifOutbox rules.
+   940→- Avatars: hyperzeytoon OrnateAvatar/lib/avatar.ts — 1KB pure-SVG engraved seal, 8 Persian ornaments (boteh/girih/shamsa/cypress/olive/pistachio/jajim/khatam), deterministic hash defaults, pinned prefs w/ merge-semantics PATCH, safeInitials obscene-pair blocklist («کیانوش صفاپور»→«کی»). No photo-upload avatar in any demo (SarResid avatarUrl will be new).
+   941→- Birthdays: nootyezrepyh notifications route = customer T-7 scan + T-0 urgent «🎂 …امروز است» (Jalali MM/DD, role-gated); hyper-zeytoon Personnel = birthday-month KPI/pills for staff; crm-engine Esfand-30 clamp. No T-3 anywhere.
+   942→- Categories: no dedicated CRUD in any demo (free-text + CATEGORY_EMOJI fallback map) — SarResid's new Category model is ahead.
+   943→- Themes: exact palettes captured (hyper-zeytoon #faf7ee/#0e7a4a/#c9a227 + dark #0d1a14/#17a05f; hyperzeytoon 5 accents + شب کویر dark + 3 patterns + font-scale + per-user server prefs).
+   944→- agent-browser live test: all 4 sites HTTP 200; PIN 1234 logins succeeded on hyperzeytoon/nootyezrepyh/nootyez-repyh; 9 screenshots in /tmp/audit/*.png (dash/products/planogram/settings/tour/shifts/logins).
+   945→Stage Summary:
+   946→- Report written: docs/round17-demo-audit.md (per-platform inventories + 15 topic sections + TOP 15 STEAL-WORTHY IDEAS with code paths and brand-adaptation notes).
+   947→- Top 5 steals: (1) minute-based OT entry + quick chips + batch save (hyper-zeytoon Payroll) → 17-E; (2) leave coverage policy layer + science doc (hyperzeytoon) → 17-E; (3) OrnateAvatar+safeInitials as fallback layer behind avatarUrl photos (hyperzeytoon) → 17-F; (4) notifSeen snapshot + role-computed feed + mute/snooze (nootyezrepyh/hyper-zeytoon) → 17-F badge isolation; (5) customer birthday T-7/T-0 notification engine (nootyezrepyh) → extend to T-7/T-3/T-0 → 17-F.
+   948→- Runner-ups for 17-C/17-D/17-G: ZoneMap owner/criticality/shareIndex layers for polygon zones; nootyezrepyh shift grid w/ MIN_COVER coverage; FEFO expiring panel + LowStockDraft; WoW weekly compare + MonthPlanner for dashboard.
+   949→
+   950→---
+   951→Task ID: 17-C..17-G (wave, completed by main agent after subagent context timeouts — integration & verification record)
+   952→Agent: Z.ai Code (main session)
+   953→Task: Record + verify the work of subagents 17-C (FloorPlan polygon), 17-D (Shifts), 17-E (Payroll), 17-F (categories/avatars/badges/birthdays), 17-G (Planogram) — all of which wrote complete code but died before their own worklog appends.
+   954→
+   955→Work Log (what each agent's code delivers, all browser-verified by main):
+   956→- 17-C FloorPlan.tsx (1667→2578 lines): polygon floor editor (vertex add/drag/insert/delete, simple-polygon validation), FloorPlan.shape JSON vertices (cm), 200–12000cm arbitrary sizing, trapezoid/L/multi-indent shapes, «پیش‌تنظیم هایپر زیتون» one-click template = trapezoid 12×25m (vertices 0,0→1200,0→1200,2500→400,2500→0,2100) with entrance/exit 4m doors, wall glass nut cabinets, open fridges + 3-door showcase, 4 gondola aisles, 3-sided U cashier diagonal zone; 15-prefab library with distinct brand renders; zones + responsible staff (meta.responsibleId); floor tabs multi-floor. VERIFIED: preset applied → trapezoid + 16 blocks rendered + saved → DB row {shape:[5 vertices], FloorBlock count:16}.
+   957→- 17-D Shifts: NEW src/components/views/Shifts.tsx + /api/shifts + /api/shifts/[id]; weekly template grid شنبه…جمعه (weekday 0..6 JS, Fri=5), shift editor (any length — no 4h restriction, overnight when end<=start), staffNeed per shift, Hyper Zeytoon preset (Sat–Thu صبح 08:00–15:30 + عصر 15:30–23:00 need 2; Fri 10:00–14:00 + 18:00–22:00 need 3), daily assignment board with date nav, coverage pills (کامل/کمبود), double-shift toggle, week strip. constants.ts VIEW_ACCESS shifts {HC,ACC,SK} (exec bypass covers OWNER/GM/OM). VERIFIED in browser: template grid + assignments (زهرا محمدی double shift visible) + mobile 390px OK.
+   958→- 17-E Payroll overhaul: /api/payroll daily-OT endpooint now NEVER blocks — >otCapMinutes returns warnings[] + auto-note «توافق کاری طرفین»; Payroll.tsx dual ساعت+دقیقه inputs per day for ot/hot/night with carry (1:45+0:30=2:15), h:mm display everywhere, QuickChips +۳۰/+۶۰/+۱۲۰; salary-engine warning generator «اضافه‌کاری بیش از آستانهٔ هشدار روزانه (مادهٔ ۵۹) … مبنای توافق کاری طرفین پذیرفته شد»; Leaves.tsx minute-precision hourly leave (HH:MM → duration minutes, «۱ ساعت و ۴۵ دقیقه»). VERIFIED in browser: detail modal shows amber non-blocking banner for 8:00 OT day; h:mm inputs render; month totals h:mm.
+   959→- 17-F: NEW /api/categories (+[id] with moveTo bulk-move) + «مدیریت دسته‌بندی‌ها» panel in Products (emoji picker, brand colors, logo, sort, product counts, SSOT guard); Products forms/filters use categories (created «لبنیات» 🥛 → bound to 37 products, category icon shows on dialog); NEW /api/me/avatar + AvatarBuilder.tsx (SVG cartoon: 6 hairs incl. روسری, 5 skins, eyes/mouth/outfits/accessories incl. کلاه نقاب‌دار, brand-palette bg, 🎲 random) + /api/auth/me avatar wiring + header/sidebar UserAvatar 3-tier fallback (photo→cartoon→initials); badge isolation: notif-engine visibleToUser() single audience filter (targetUsers ∪ targetRoles ∩ mine ∪ broadcast) applied in /api/notifications + badge counts; birthday engine: runBirthdayCheck() T-7/T-3/T-0 from Personnel.birthday (jalali year-agnostic, اسفند 30→29 clamp), recipients OWNER/GM/HC/PM + personnel.manage cap, dedupeKey person×date×threshold, runs on GET /api/notifications daily-lock. VERIFIED E2E: created cartoon avatar (persisted in DB + shown in header/sidebar), birthday notifications generated for مریم (T-0 🎂), حسن (T-7), زهرا (T-3); test data restored.
+   960→- 17-G Planogram.tsx (610→1015 lines): rendering fixes (RTL-safe canvas, proportional shelves, unclipped labels, zoom 0.6–1.6 with hit scaling, empty-state, print block). VERIFIED: dairy planogram renders products with prices on 3 shelves + zoom + stats + legend.
+   961→
+   962→Stage Summary:
+   963→- ROOT CAUSE of the owner's «features reverted» complaint found & fixed: public/sw.js served /_next/static chunks cache-first; Turbopack dev chunk URLs are module-id (not content) hashed → browsers kept serving OLD bundles for NEW code. sw.js rewritten: CACHE v17, static = stale-while-revalidate, dev-internal chunks (._.js/.map) never cached. Also fixed FloorPlan canvas anchor bug: transform layer used RTL `start-0` (=right:0) pushing the 1200px-wide layer off-screen → ground+blocks never painted; changed to physical `left-0` (all coordinate math is LTR).
+   964→- All 6 wave features + 17-A fixes verified in browser (desktop + mobile 390px). lint 0 / tsc src 0. Dev server died twice during verification (sandbox reaping) — restarted, app healthy.
+   965→- Audit deliverable: docs/round17-demo-audit.md (17-B) — 4-platform comparative audit + TOP 15 steal list; items 1,2,4,5,8 landed this round; remaining ideas (GuidedTour role scripts, WoW compare card, MonthPlanner, FEFO markdown, palette norm()) queued for next round.
+   966→---
+   967→Task ID: 18-E
+   968→Agent: full-stack-developer
+   969→Task: Dashboard progressive-disclosure redesign (KPI band + «امروز من»/«نگاه هفته» segments)
+   970→
+   971→Work Log:
+   972→- Read worklog conventions + full Dashboard.tsx (416-line round-17 version) + /api/dashboard route for exact payload keys; skimmed ui-bits (SectionCard/Pill/EmptyState), charts (LineChart/BarChart/Donut/RankBars), jalali (daysBetween a-b, formatJalaliFull, todayIso()) and constants (TASK_STATUSES/PRIORITIES/ORDER_STATUSES) before coding. Verified live payload via curl login (OWNER) — all 15 keys confirmed.
+   973→- REWROTE src/components/views/Dashboard.tsx (416→681 lines), fetch logic byte-identical (same GET /api/dashboard + GET /api/science?tool=abc + 60s interval, 'use client', default export DashboardView({ctx})):
+   974→  - ALWAYS-VISIBLE BAND: hero kept (greeting/date/dynamic line/صبح‌نامه/points) + KPI row relabeled to owner's wording — «سفارش‌های در جریان»، «کالاهای رو به اتمام»، «چک‌های نزدیک»، «وظایف باز من» + conditional سرآمده/مرسوله‌های امروز + پیام ناخوانده (6 KpiMini, lg:grid-cols-6 one row, grid-cols-2 <sm) + role-gated QueueTiles row (pricecheck/hello/verify/cashier — untouched, rows+CTA bumped to 44px).
+   975→  - NEW SegTabs segmented control (role=tablist/tab + aria-selected, 44px, emerald active + gold sub-label ≥md): «امروز من» default / «نگاه هفته». Panels keyed so fade-in-up replays on switch.
+   976→  - «امروز من»: xl:col-span-8 main = وظایف من full card (rows upgraded: title + status+priority Pills via shared constants + 🗓 formatJalaliFull due with red «دیرکرد!»/gold «امروز!» coloring via daysBetween) → tasks; مرسوله‌های امروز + سفارش‌های سرآمده side-by-side (overdue card only when k.overdueCount>0, grid auto single-col; روز-دیرکرد DueChip) → receiving/orders; چک‌های در انتظار امضا compact rows (recipient·orderCode | تاریخ + DueChip + مبلغ) → cheques; درخواست‌های فوری مشتریان top-5 (with notes) → sales. Wall = xl:col-span-4 sticky aside, max-h-96 scroll-gold list + «مشاهدهٔ همهٔ دیوار» → wall.
+   977→  - «نگاه هفته»: 14-day orders/sales LineCharts (xl:8) + pipeline Donut (xl:4); 8-week cheque BarChart (xl:8) + leaderboard RankBars (xl:4, actions «جدول کامل ←» → perf); ABC catDonut+topProducts kept (canScience-gated); expiring items kept (GM/OM/SK/ACC/HC); «درخواست‌های مشتریان — فهرست کامل» rich rows (notes + lastByName + count) → sales.
+   978→  - New local helpers: SegTabs, ViewAll (min-h-11, bg-secondary), Row (flex-wrap min-h-11 clickable li>button), DueChip (دیرکرد قرمز/امروز-فردا طلایی/X روز مانده olive-stone). Every list ≤ payload cap (5-6) + «مشاهدهٔ همه» via ctx.navigate to owning view. No blue/indigo, Persian digits everywhere, scroll-gold + fade-in-up.
+   979→- E2E in dev server (:3000, no second server): OWNER (جواد) — today view: KPI ۷/۱/۲۳/۴/۰/۰, pricecheck QueueTile, overdue row «HZ-1404-0013 … ۱۲ روز دیرکرد», 4 cheque rows with DueChips+amounts, requests with notes+counts, wall aside; week view: donut segments clickable, 8-week chart, leaderboard, ABC donuts, full reqs — all via a11y snapshot. مینا غلامحسینی (MERCH): task row «شمارش دوره‌ای قفسه نوشیدنی‌ها باز مهم 🗓 شنبه ۲۱ شهریور ۱۴۰۵ — دیرکرد!»; ABC correctly hidden (canScience=false). ViewAll wall click → #/wall confirmed; tab defaults to «امروز من» on re-entry. Mobile 390px: NO-HSCROLL both views; measured [role=tab]=44px, ViewAll=44px, task row=62px; screenshots saved /tmp/dash18-*.png.
+   980→- ENV NOTE (not caused by this change): shared default agent-browser session hit stale service-worker shell (round-17 sw.js) → page stuck on «در حال بارگذاری سامانه…»; fixed by unregistering SW + clearing caches, and used isolated `--session dash18e` to avoid colliding with concurrent agents' browser tests.
+   981→
+   982→Stage Summary:
+   983→- Files written: src/components/views/Dashboard.tsx (full replacement, 681 lines). No API changes; no other file touched.
+   984→- Before → after sections: BEFORE (single scroll): hero, 6-KPI row, role QueueTiles, 14-day charts, donut, cheque chart, leaderboard, ABC, expiring, وظایف من, دیجیتال‌وال, درخواست‌های مشتری — all equal-weight. AFTER: persistent hero+KPI+quick-actions band, then segmented «امروز من» (tasks full / deliveries+overdue / cheques / urgent requests, wall as narrow xl:col-span-4 aside) vs «نگاه هفته» (14-day charts, donut, cheque 8-week, leaderboard, ABC, expiring, requests full) — zero data lost, only regrouped by task relevance (progressive disclosure, scannability).
+   985→- Verification: bun run lint → 0 problems; tsc --noEmit → 0 errors in Dashboard.tsx (remaining repo errors pre-existing in ProfileModal/tests/Personnel, other agents); dev.log all 200s; both tabs + both roles + mobile verified in running app.
+   986→
+   987→Final message: Dashboard.tsx rewritten as KPI band + «امروز من»/«نگاه هفته» segmented views with «مشاهدهٔ همه» links to tasks/cheques/receiving/orders/sales/wall/perf; fetch logic unchanged; lint 0, tsc clean for the file, E2E verified for OWNER + MERCH on desktop and 390px mobile in the running dev server.
+   988→
+   989→---
+   990→Task ID: 18-D
+   991→Agent: full-stack-developer
+   992→Task: Avatar v2 (Bitmoji-grade, optional hijab, beard, glasses, patterns) + full profile modal (photo/avatar/about tabs)
+   993→Work Log:
+   994→- Prisma User model +2 additive fields: `nickname` (۲۴ نویسه) و `bio` (۱۶۰ نویسه) — `phone` از قبل وجود داشت. `bun run db:push` OK (additive، generate شد؛ کوئری‌های runtime هر دو ستون تازه را می‌بینند).
+   995→- AvatarBuilder.tsx بازنویسی کامل (۵۴۸→~۱٬۲۲۰ خط) با سازگاری عقب کامل:
+   996→  - پالت‌ها: AVATAR_SKINS 8 (ترتیب قدیمی حفظ)، AVATAR_HAIRS 12 (short/long/curly/bun/braid/ponytail/bald/buzz/wavy/mohawk/afro/undercut)، AVATAR_HAIR_COLORS 10 (4 رنگ تازهٔ آخر: مشکی خالص/ترمه/زیتونی/طلایی — 6 اول دقیقاً قدیمی)، AVATAR_EYES 5 (بادامی، نیمه‌باز)، AVATAR_MOUTHS 6 (شگفت‌زده/پوزخند/زبان‌بازی)، AVATAR_OUTFITS 8 (مانتو، فرم هایپر جلیقهٔ زیتون با نشان طلایی و خودکار، کت با برگردان، بافت یقه‌اسکی با طرح بافت، آپرای دکلره با سنجاق)، AVATAR_OUTFIT_COLORS 12 (6 تازه: سرمه‌ای‌سبز تیره/زیتون تیره/بادمجانی #4a2c3a/سبزآبی #2e6f6a/قهوه‌ای/جوهری)، AVATAR_ACCESSORIES ['none','cap','earrings','headband','earbuds'] (glasses از اکسسوری جدا شد)، AVATAR_BGS 10 = 6 رنگ برند + 4 الگوی SVG <pattern> (گریه لوزی، بوته/نقطه، راه‌راه، شطرنجی)، AVATAR_HIJABS 4، AVATAR_HIJAB_COLORS 8 (سیاه/شیری #f5f1e6/کرم/زیتونی/بادمجانی/ترمه/سبزآبی/بورdeaux)، AVATAR_BEARDS 4 (ته‌ریش نقطه‌ای، ریش کامل، سبیل)، AVATAR_GLASSES 4 (گرد/چهارگوش/آفتابی با شیشهٔ تیره و پل طلایی)، AVATAR_BROWS 3 (طبیعی/پرپشت/باریک)، AVATAR_EMOJIS 8 (سنجاق نشان علاقه 🧿🌿☕…).
+   997→  - حجاب OPT-INAL و پیش‌فرض 'none' (انتخاب شال/روسری/مقنعه → موها زیر پوشش، گوش‌ها/گردن پنهان، کلاه/سربند/گوشواره در رندر و بیلدر غیرفعال با توضیح، چتری کوچک فقط برای شال). با نُت محترمانهٔ «حجاب (اختیاری) — برای همه پیش‌فرض نیست» در UI. هندسهٔ صورت جدا برای هر پوشش (FACE map: eyeY/mouthY/browY/rx/ry).
+   998→  - مهاجرت: parseAvatarStyle قدیمی‌ها را می‌پذیرد — hair:'scarf' → hijab:'scarf' + hijabColor نگاشت (بورdeaux→7، بقیه→سیاه)، accessory:'glasses' → glasses:'round'، فیلدهای تازهٔ غایب با پیش‌فرض (hijab none/beard none/brows 0/blush false/freckles false/glasses none/emoji -1)، ایندکس‌ها clamp، فقط نبودِ فیلدهای اصلی v1 → null (سقوط به حروف اول نام حفظ شده). migrateAvatarStyle هم export شد (alias).
+   999→  - رندر: useId برای clip/pattern id های یکتا، ریش قبل از دهان (لب‌ها دیده می‌شوند)، سبیل/ته‌ریش بعد از دهان، گل‌گونه پررنگ‌تر + کک‌ومک ۶نقطه‌ای، نشان علاقه سنجاق طلایی گوشهٔ پایین، 🎲 randomize روی هر ۱۶ فیلد با بایاس محترمانه (حجاب ۷۰٪ none، ریش ۶۰٪ none، نشان ۳۵٪ none).
+  1000→- AvatarProfileModal → مودال سه‌تبی «پروفایل من» (props و export names تغییر نکرد: name/color/current/onClose/onChanged + AvatarInfo): تب «تصویر» (Dropzone با هایلایت کشیدن‌ورها + آپلود فشرده ۲۵۶px ≤۳۰۰KB + حذف عکس)، تب «آواتار» (بیلدر کامل inline + دکمهٔ حذف آواتار)، تب «دربارهٔ من» (نام/نقش/امتیاز فقط‌خواندنی با ROLE_LABELS و faNum + nickname/phone/bio با شمارندهٔ نویسهٔ فارسی + ذخیره از /api/me/profile). تب‌ها 44px با آیکون Camera/Sparkles/Heart. default export AvatarBuilder (مودال مستقل) از همان بدنهٔ بیلدر استفاده می‌کند. downscaleImageToDataUrl امضای قدیمی (file,max,square) حفظ شد (مصرف‌کنندهٔ Products.tsx).
+  1001→- /api/me/avatar: validStyle v2 — HAIR 12 کلید، ACCESSORY 5، HIJAB/BEARD/GLASSES لیست‌های کامل، ایندکس‌ها (skin 0..7, hairColor 0..9, eyes 0..4, mouth 0..5, outfit 0..7, outfitColor 0..11, bg 0..9, brows 0..2, hijabColor 0..7, emoji -1..7), blush/freckles boolean. منطق avatarUrl/dataURL ≤300KB و clear photo|style دست‌نخورده.
+  1002→- /api/me/profile جدید: GET {name,nickname,bio,phone,role,points,avatarUrl,avatarStyle}؛ PATCH {nickname?,bio?,phone?} با سقف‌ها + نرمال‌سازی ارقام فارسی/عربی تلفن + الگوی اعتبارسنجی، logActivity(me,'update','user',me.id,'profile')، name/role/points هرگز از PATCH قابل تغییر نیست.
+  1003→- حذف شد: src/components/app/ProfileModal.tsx (legacy مرده) — قبل از حذف `rg "from '@/components/app/ProfileModal'"` صفر نتیجه؛ تنها هم‌نام‌ها PersonProfileModal/RepProfileModal در People/Archive هستند که تعریف محلی‌اند، ربطی به فایل حذف‌شده ندارند.
+  1004→- UserAvatar امضا تغییر نکرد؛ AppShell فقط AvatarProfileModal/AvatarInfo مصرف می‌کند — بدون شکستگی. avatar-render.tsx نیاز به تغییر نداشت (parse tolerant خودش مهاجرت می‌کند).
+  1005→Stage Summary:
+  1006→- آواتار بیت‌موجی‌درجه با ۱۶ فیلد شخصی‌سازی + پروفایل سه‌تبی کامل؛ سازگاری عقب v1→v2 در خواندن، اعتبارسنجی سخت‌گیرانهٔ v2 در نوشتن.
+  1007→Final message: فایل‌ها: AvatarBuilder.tsx (بازنویسی)، api/me/avatar/route.ts، api/me/profile/route.ts (جدید)، prisma/schema.prisma (+nickname/bio)، حذف ProfileModal.tsx. پالت‌ها: پوست 8/مو 12/رنگ‌مو 10/چشم 5/دهان 6/لباس 8/رنگ‌لباس 12/اکسسوری 5/پس‌زمینه 10 (6+4 الگو)/حجاب 4/رنگ‌حجاب 8/ریش 4/عینک 4/ابرو 3/ایموجی 8. راستی‌آزمایی: tsc در src صفر خطا، lint تمیز، curl E2E همه پاس (login OWNER → POST آواتار v2 با earbuds/teh-rish/عینک/ایموجی = 200، نوع شال‌دار = 200، پیکربندی v1 بدون کلیدهای v2 = 400 پیام فارسی، GET profile 200، PATCH nickname «کیانوش» ماندگار، bio ۱۷۰ نویسه = 400 سقف). حجاب/بدون حجاب و الگوی SVG (node <pattern> در DOM بعد از انتخاب پس‌زمینه الگودار + آواتار کارتونی رندرشده) با agent-browser تأیید شد؛ مودال «پروفایل من» با ۳ تب و همهٔ چیپ‌ها زنده دیده شد. توجه: آزمون مرورگری به‌دلیل Fast Refresh مداوم (ویرایش هم‌زمان عوامل دیگر round-18 روی AppShell و…) چند بار mid-test ریست شد — دو اجرای اتمی موفق کافی بود؛ dev.log بدون خطای runtime. دادهٔ آزمون OWNER به حالت خالی برگردانده شد. انحراف: به‌جای مهاجرت رنگ‌مو 1:1، ۶ رنگ اول دقیقاً حفظ و ۴ رنگ تازه append شد (پیکربندی‌های قدیمی همان رنگ را می‌بینند)؛ در نوشتنِ API کلیدهای v2 الزامی‌اند (خواندن tolerant است) تا پیکربندی ناقص ذخیره نشود.
+  1008→---
+  1009→Task ID: 18-B
+  1010→Agent: full-stack-developer
+  1011→Task: ZoneCount uses the real Store Map (FloorPlan) + intelligent zone sync
+  1012→
+  1013→Work Log:
+  1014→- Read worklog conventions + round-17 records, then FloorPlan.tsx (Block type, hashZoneColor/ZONE_PALETTE, hyperZeytoonPreset trapezoid 12×25m, BlockDeco, rotation around center), ZoneCount.tsx (MapTab/mapZones/mapStatuses), ZoneMap.tsx, zones + floorplans APIs, ui-bits AppCtx (navigate(view, param?)), lib/client api().
+  1015→- NEW src/components/app/FloorPlanCanvas.tsx (~430 lines, 'use client', pure SVG, zero deps): shared renderer of the FloorPlan editor's real plan. Props {plan{id,name,width,height,shape}, blocks[], zoneColors?, zoneStatus?{state none|ok|mismatch|inprogress}, highlightZones?, selectedZone?, onZoneClick?, compact?, maxW?}. Renders polygon ground from shape vertices (or w×h rect when shape empty/invalid — parsePlanShape accepts JSON string or array), blocks as rects rotated about their center (same convention as editor transformOrigin 50%), kind glyphs (🧊 fridges/🍨 freezer, 🛒 CASHIER_U with U-stroke path, 💳 CHECKOUT, 📦 STORAGE, 🥬 PRODUCE, 🥖 BAKERY, 🍗 DELI, 🚪 ENTRANCE, ▥/▤/↔ gondola/shelf/aisle rails), gold dashed door-swing arcs for ENTRANCE/CHECKOUT (arc direction auto-detected from nearest ground wall). Clicking any block/zone chip with a zoneName calls onZoneClick; empty-zoneName blocks are neutral gray #9c8b6a and inert. highlightZones → gold dashed footprint outline; selectedZone → thick gold stroke + feGaussianBlur glow (useId-scoped filter). EXPORTED: hashZoneColor (exact copy of editor palette-hash, no blue), parsePlanShape, and zoneFootprint(blocks, zoneName) = union bbox of a zone's blocks (rotation-aware) — soft translucent rounded-rect cover + status-colored zone label chip (✓/⚠/⏳ prefix, Persian digits) straddling the footprint's top edge rendered for every zone present in zoneStatus. Font sizes scale off plan bbox (S/60, S/85…), viewBox = polygon bbox + 3.5% pad, preserveAspectRatio xMidYMid, wrapper overflow-x-auto scroll-gold min-w 520px (mobile 390px verified horizontally scrollable).
+  1016→- NEW src/app/api/zones/sync-from-map/route.ts (POST): auth getSessionUser, cap MANAGE_ROLES=['OM','GM','OWNER','ADMIN'] or hasCap 'oversight.manage' else 403. Loads all non-archived FloorPlans + all FloorBlocks, groups blocks by trimmed zoneName (empty skipped). Inference rules documented in Persian header («استنتاج هوشمند نوع زون از ساختار فروشگاه»), priority order: CHECKOUT/CASHIER_U→CHECKOUT; FRIDGE_*/FREEZER_ICECREAM/PRODUCE/DELI/BAKERY→PERISHABLE; ENTRANCE→DECOMPRESSION; STORAGE→BACKROOM; GONDOLA/AISLE/SHELF→POWER_AISLE iff ≥2 GONDOLA blocks AND zone centroid inside middle 50% of its main plan's horizontal span (shape-bbox aware), else DRY; CUSTOM→DRY. Existing zone (upsert by unique name): ONLY type updated (owner/backup/criticality/frequency/color untouched; 'updated' counted only on real type change). Missing zone: create with criticality A for PERISHABLE/CHECKOUT, C for BACKROOM, B otherwise; countFrequency A=WEEKLY/B=BIWEEKLY/C=MONTHLY; color=server hashZoneColor (identical algorithm to client); minStaff 1. Zones with no blocks anywhere are untouched (category-zones safe). logActivity(me,'همگام‌سازی زون‌ها از نقشهٔ فروشگاه','zone','map',counts+names). Returns {created, updated, zones:[{name,type,blockCount}], floors:[{id,name,blockCount}]}.
+  1017→- ZoneCount.tsx MapTab rewritten (tab subtitle updated; parent passes goToFloorplan=()=>ctx.navigate('floorplan')): fetches GET /api/floorplans on mount (spinner while plans===null, silent plansFailed flag); if ≥1 plan with blocks → FloorPlanCanvas with real blocks (zoneName trimmed), zoneColors from mapZones (DB color wins, hash fallback), zoneStatus=mapStatuses, selectedZone + onZoneClick wired to existing selection; multi-floor chips (name + Persian block count) when >1 floor. «زون‌های خارج از نقشه (N)» chip row below the map for mapZones with no blocks on the active floor (registered + pseudo, pseudo labeled «ثبت نشده»), clicking selects as before → zone detail card/efficiency/owner+backup selects/today's counts/DECOMPRESSION note/register-pseudo all preserved. Manager card «🧠 همگام‌سازی زون‌ها از نقشهٔ فروشگاه»: explains inference rules, shows ⚠️ hint «N زون در نقشه هست که هنوز در شمارش زون ثبت نشده» (pseudo zones present on plan), button POSTs sync-from-map → toast with Persian counts + onZoneSaved() reload; disabled when no block-bearing plan. Fallback when NO plan-with-blocks (or API failed): keeps old ZoneMap + dashed gold EmptyState card with button «🏗️ رفتن به ویرایشگر پلان فروشگاه» (hidden when API failed). ZoneMap untouched for other usages.
+  1018→- VERIFIED live (dev server had been reaped by sandbox — restarted with the proven subshell pattern, ROOT=200): curl login OWNER جواد نوروزی → POST sync-from-map #1 = created:8 (آیس‌کرم و فریزر+سرد و یخچالی→PERISHABLE/A/WEEKLY، خشکبار(3 STORAGE)→BACKROOM/C/MONTHLY، صندوق و خروج(ENTRANCE+CHECKOUT+CASHIER_U)→CHECKOUT/A/WEEKLY، خواروبار ۱..۴(1 gondola each)→DRY/B/BIWEEKLY، hash colors، minStaff 1)، floors=[{همکف — فروشگاه اصلی,16}]؛ run #2 idempotent created:0 updated:0؛ cashier login → 403 «همگام‌سازی زون‌ها فقط برای مدیران مجاز است»؛ pre-existing zones untouched (لبنیات keeps owner/color). ActivityLog rows written. agent-browser (isolated session t18b): #/zonecount → map tab renders FloorPlanCanvas aria-label «پلان فروشگاه — همکف — فروشگاه اصلی» with polygon ground, «زون‌های خارج از نقشه (۹)» chips render + select, clicking SVG zone «سرد و یخچالی» opens detail card, UI sync button → toast «همگام‌سازی انجام شد 🗺️ — ۰ زون جدید، ۰ به‌روزرسانی نوع» (Persian digits), mobile 390×844 map wrapper scrollable with scroll-gold.
+  1019→
+  1020→Stage Summary:
+  1021→- Files written: src/components/app/FloorPlanCanvas.tsx (NEW shared plan renderer + zoneFootprint/hashZoneColor/parsePlanShape exports), src/app/api/zones/sync-from-map/route.ts (NEW), src/components/views/ZoneCount.tsx (MapTab rewrite + imports + SectionCard subtitle + goToFloorplan wiring; everything else untouched).
+  1022→- Owner's complaint resolved: «شمارش روزانهٔ زون» now renders the SAME store blueprint designed in «پلان فروشگاه» (polygon ground, equipment blocks, zone grouping) instead of the schematic auto-layout; zone registration derives intelligently from structure (equipment→type→criticality/cadence defaults), one-click in the map tab for OM/GM/OWNER/ADMIN.
+  1023→- API contract: POST /api/zones/sync-from-map (X-Session-Token/cookie, manage roles) → {created:number, updated:number, zones:[{name,type,blockCount}], floors:[{id,name,blockCount}]}; 401/403 guards; idempotent.
+  1024→- Key decisions: STORAGE→BACKROOM per task rule (note: preset's glass nut showcases «خشکبار» therefore map to BACKROOM — reclassifiable later by editing blocks or a future per-block override); each preset gondola is its own zone (1 gondola < 2) → DRY, so no auto POWER_AISLE on the seeded plan; CanvasBlock zoneName normalized with trim; statuses typed as structural {state} so ZoneMap's MapStatus passes unchanged; dev.log clean, lint 0 problems, tsc errors only pre-existing (ProfileModal imports + examples/tests outside src scope).
+  1025→---
+  1026→Task ID: 18-C
+  1027→Agent: full-stack-developer (recorded post-hoc by main agent after context timeout — all files verified written + lint/tsc clean)
+  1028→Task: Providers + People's Diary designed together (PeopleNetBar + cross-links + supplier scorecard)
+  1029→
+  1030→Work Log:
+  1031→- NEW src/components/app/PeopleNetBar.tsx: shared "شبکهٔ اشخاص" header bar — 3 network nodes (دفتر اشخاص / تأمین‌کنندگان / CRM) with live counts + unified quick-search across people, providers, and reps (grouped emoji results, deep navigation via ctx.navigate).
+  1032→- Wired into top of People.tsx (active="people") and Providers.tsx (active="providers") with deep-link param support both directions.
+  1033→- Cross-links: rep rows in People get «🚛 تأمین‌کننده» chip → Providers; provider rep rows get «📇 پرونده در دفتر» → People (auto-opens profile modal via param).
+  1034→- Supplier scorecard strip per provider card (client-side from /api/providers + /api/products): زیر نقطهٔ سفارش count, تمام‌شده count, سلامت تأمین 3-tier Pill (سبز/زرد/قرمز) — SRM "measure what predicts problems" principle; lead-time reliability documented as phase 2 (needs receiving dates per provider).
+  1035→
+  1036→Stage Summary:
+  1037→- Files: src/components/app/PeopleNetBar.tsx (new), src/components/views/People.tsx (+~70), src/components/views/Providers.tsx (+~73). lint 0 / tsc src 0. No schema changes. People/Providers now navigate into each other and share one search entry — modules still separately licensable (MODULE_OF untouched).
+  1038→
+  1039→---
+  1040→Task ID: 18-F
+  1041→Agent: full-stack-developer (recorded post-hoc by main agent after context timeout — all files verified written + lint/tsc clean)
+  1042→Task: Archive tab clustering + order↔ledger cross-links (چرخهٔ سفارش تا حسابداری)
+  1043→
+  1044→Work Log:
+  1045→- Archive.tsx (+365 lines): tab bar regrouped into 3 captioned clusters — «اسناد و بایگانی» (docs/structure), «چرخهٔ سفارش تا حسابداری» (orders/ledger TOGETHER per owner demand), «اشخاص و شبکه» (parties/reps). Same tab keys/content; deep-link via ctx.param now supports all tabs.
+  1046→- Cross-links both directions: order rows → «🧾 در دفتر حسابداری» (jumps to ledger pre-filtered by party); ledger docs → «📦 سفارش مرتبط» via conservative heuristic matchDocToOrder (same providerName + nearest delivery/createdAt within ±30 days) else «🔍 جست‌وجو در سفارش‌ها با همین طرف معامله» fallback (orders tab with party search prefilled + highlight).
+  1047→- CycleStrip 4-step explainer (سفارش → دریافت → تأیید انبار → ثبت در دفتر) above both tabs with current stage highlighted gold; CycleDots compact stage indicator in rows. No API changes.
+  1048→
+  1049→Stage Summary:
+  1050→- Files: src/components/views/Archive.tsx only. lint 0 / tsc src 0. Order and accounting archiving are now one connected group in the Archive — accessible from the «مالی و اسناد» sidebar cluster.
+  1051→---
+  1052→Task ID: 18-A (main agent)
+  1053→Agent: Z.ai Code (main session)
+  1054→Task: Academic IA redesign of sidebar + i18n (round-18 hub task)
+  1055→
+  1056→Work Log:
+  1057→- Research: card sorting (Spencer/Warfel), Miller 7±2, progressive disclosure (Nielsen), Hick's Law, recognition-over-recall, GOMS/KLM for expert paths (web search results in /tmp/ia*.json, retail science in /tmp/retail*.json — supplier scorecard "measure what predicts problems" principle adopted for 18-C).
+  1058→- AppShell.tsx: NAV restructured from 6 groups (largest 13 items — Miller violation) into 8 card-sorted clusters, all 3–7 items: عملیات روزانه / فروشگاه و انبار / نیروی انسانی (personnel+shifts+leaves+payroll+perf — the owner's explicit example) / شبکهٔ اشخاص (people+providers+crm — designed together) / مالی و اسناد / همکاری تیمی / علم و پژوهش / سیستم. Research rationale documented in code comment block.
+  1059→- Collapsible clusters: openGroups state persisted in localStorage('sarresid.nav.groups'); default = only active cluster open; aria-expanded headers with chevron, item count + badge/active dots when collapsed; active cluster auto-highlights gold.
+  1060→- i18n: added nav.store/workforce/peoplenet/collab to EN/AR/TR; GROUP_TITLE_KEYS remapped.
+  1061→- Shared Modal (Orders.tsx) now closes on Escape (WAI-ARIA dialog pattern) — one fix covering ~30 views (found during audit).
+  1062→
+  1063→Stage Summary:
+  1064→- Sidebar went from a 37-item flat wall to 8 progressive clusters; VIEW_TITLES derivation kept all labels intact; no view keys changed → zero breakage.
+  1065→
+  1066→---
+  1067→Task ID: 18-G (main agent)
+  1068→Agent: Z.ai Code (main session)
+  1069→Task: 1-by-1 platform audit (agent-browser click-through, all views)
+  1070→
+  1071→Work Log:
+  1072→- Logged in as کیانوش صفاپور (OM, PIN 1234) via browser.
+  1073→- Verified live: new 8-cluster sidebar (desktop), dashboard «امروز من»/«نگاه هفته» segments + KPI band (390px mobile clean, no h-scroll), FloorPlan trapezoid editor intact, ZoneCount map tab renders THE REAL floor map (polygon + gondolas + cashier U + off-map zone chips + «همگام‌سازی زون‌ها» button + zone detail card with owner selects), People + Providers both show PeopleNetBar (3 nodes with counts + unified network search — «زر» query returned grouped results), supplier health strips on provider cards, Archive 3 captioned tab clusters + CycleStrip + سفارش‌ها/دفتر cross-buttons, Avatar v2 modal (3 tabs, hijab شال chip live-preview, nickname/bio saved → persisted in DB verified via Prisma query), Payroll 1405 month healthy (KPIs + roster), Shifts/Leaves headings OK.
+  1074→- Full sweep: all 33 views navigated 1-by-1 — every heading correct, zero page errors, zero console errors.
+  1075→- Fixed during audit: shared Modal Escape-close (WAI-ARIA).
+  1076→- Noted (non-blocking, roadmap): supplier lead-time/fill-rate needs receiving attribution (phase 2); already documented in docs/MASTER_PROMPT.md §9.
+  1077→
+  1078→Stage Summary:
+  1079→- Round-18 features all verified end-to-end in browser (desktop + mobile). Audit deliverable: docs/MASTER_PROMPT.md (§10 pitfalls list updated with SW regression root cause).
+  1080→
+  1081→---
+  1082→Task ID: 18-H (main agent)
+  1083→Agent: Z.ai Code (main session)
+  1084→Task: Complete master prompt for other agents
+  1085→
+  1086→Work Log:
+  1087→- Wrote docs/MASTER_PROMPT.md — the full rebuild/continuation spec: identity & origin, 7 non-negotiable laws, fixed stack, design system law, academic IA, complete feature catalogue (17+9 requirement rounds incl. avatar v2 field table, payroll 1405 engine details, zone-sync inference rules, archive cycle, clusters), 63-model data map, API surface, acceptance checklist, roadmap ledger, 10 historical pitfalls.
+  1088→
+  1089→Stage Summary:
+  1090→- Any capable agent can now rebuild or extend SarResid to the exact current state from docs/MASTER_PROMPT.md + worklog.md conventions.
+  1091→
+  1092→---
+  1093→Task ID: R+S+A (resilience + schema preflight + anchor)
+  1094→Agent: Z.ai Code (main session)
+  1095→Task: 服务器宕机后重建 — 先建不倒翁系统(watchdog+备份+git快照), 再统一 schema 预置, 锚点提交
+  1096→
+  1097→Work Log:
+  1098→- Triage: server UP (round-18 code); ALL round-19 code lost in crash recovery; only db/custom.db retained changes
+  1099→- Root cause identified: parallel agents running db:push concurrently + recovery rolled back to last commit
+  1100→- Resilience built: /api/health (DB deep probe, 503 on down), scripts/watchdog.ts (L1: 45s health probe + 3-fail auto-restart; L2: 10min VACUUM INTO online backups + integrity_check + 12-rotation in db/backups/auto + mirror ~/sarresid-backups; L3: 3h git auto-snapshot), docs/RESILIENCE.md
+  1101→- Watchdog started detached (PID confirmed), first backup 4.02MB integrity ✓
+  1102→- Schema preflight in ONE push: Offday model (date unique, OFFDAY|FRIDAY), LeaveRequest.replacementId/Name, Order.paymentRef (+POS payMethod comment), PreOrder.payMethod/paymentRef/history — verified all columns in DB ✓
+  1103→- Fixed FloorPlan DB row to corrected Hyper Zeytoon geometry: 2560×1200 bounding, bottom leg 2160cm (27×80cm tiles) + 400×400 diagonal at street corner + recessed door alcove 640×80cm at x1440..2080
+  1104→- Anchor commit: restore point pre-wave
+  1105→
+  1106→Stage Summary:
+  1107→- 平台恢复 + 三层防单点故障常驻运行
+  1108→- schema/DB 数据层全部就位, agents 禁触 schema/db:push
+  1109→- 店铺几何按用户口径修正: 底边长臂≈22m(27块80cm砖)+对角线+内凹门廊, 宽12m
+  1110→

@@ -1,0 +1,975 @@
+{
+  "generatedAt": "2026-09-11T20:01:19+00:00",
+  "method": "25 web searches (23 English + 2 Persian) via z-ai web_search CLI; sources restricted to items actually observed in search results (peer-reviewed journals, university repositories, NBER/SSRN working papers, ECR Shrinkage/OOS research and industry barometers).",
+  "themes": [
+    {
+      "id": "shrinkage",
+      "titleEn": "Retail Shrinkage & Loss Prevention",
+      "keyFindings": [
+        "Global shrinkage has been measured at 1.36-1.48% of retail sales; the Global Retail Theft Barometer put 2007 global shrink at 1.36% of sales (~US$98B) and US 2013-14 shrink at 1.48% (~US$42B).",
+        "2024 global retail shrink is projected around US$132B with an 18% year-over-year rise in average shoplifting incidents; theft accounts for roughly two-thirds of shrink and ~73% of US shrink (~US$90B) is considered preventable.",
+        "NRF (2024) reports a 93% increase in average annual shoplifting incidents in 2023 vs 2019, showing shrink is worsening rather than being controlled."
+      ],
+      "evidence": [
+        {
+          "authors": "Loss Prevention Media (reporting Global Retail Theft Barometer)",
+          "year": 2015,
+          "title": "The Global Retail Theft Barometer",
+          "venue": "Loss Prevention Media",
+          "url": "https://losspreventionmedia.com",
+          "finding": "US shrink rate 2013-14 was 1.48% of sales, total shrink US$42 billion."
+        },
+        {
+          "authors": "Global Retail Theft Barometer",
+          "year": 2007,
+          "title": "Winning the Retail Shrinkage Market (GRTB 2007 data)",
+          "venue": "Asmag summary of GRTB",
+          "url": "https://www.asmag.com",
+          "finding": "Global shrinkage estimated at 1.36% of retail sales, equal to US$98 billion."
+        },
+        {
+          "authors": "BuildingSecurity.com retail security research",
+          "year": 2026,
+          "title": "Retail Theft & Shrinkage Statistics 2026",
+          "venue": "Building Security",
+          "url": "https://www.buildingsecurity.com",
+          "finding": "Projected global retail shrink of US$132B in 2024 and an 18% increase in average shoplifting incidents vs 2023."
+        },
+        {
+          "authors": "National Retail Federation",
+          "year": 2024,
+          "title": "The Impact of Retail Theft & Violence 2024",
+          "venue": "NRF",
+          "url": "https://nrf.com",
+          "finding": "Retailers reported a 93% increase in average shoplifting incidents per year in 2023 versus 2019 and a 90% increase in dollar loss."
+        },
+        {
+          "authors": "InVue retail security research",
+          "year": 2026,
+          "title": "6 Retail Shrinkage Statistics and What They Mean",
+          "venue": "InVue",
+          "url": "https://invue.com",
+          "finding": "Theft is the leading contributor to retail shrink at 66%, and about 73% of the US$90B US shrink is preventable."
+        }
+      ],
+      "platformImplication": "Margin guard + receiving discrepancy logging + ActivityLog audit trail + reports (stock diffs, price changes) make shrink visible daily instead of at annual stock-take; notification criticals flag suspicious patterns (cancelled orders, negative adjustments, receiving mismatches)."
+    },
+    {
+      "id": "food-waste",
+      "titleEn": "Food Waste & Perishables Loss in Grocery Retail",
+      "keyFindings": [
+        "Retail-level food waste is a measurable share of sales: in US studies waste ranges from ~4% in meat to ~11% in dairy categories (Buzby et al., 2014, via ECR Loss).",
+        "Retailers generate roughly 5% of food waste in the EU and ~8.9-13% in North America; up to 40% of the US food supply is wasted annually, and US retailers produced 3.98M tons of surplus food in 2024 with 25% landfilled or incinerated.",
+        "Academic reviews show quantification is the first step: only ~2% of UK food waste occurs at retail (WRAP), but loss rates are higher in smaller stores - Schneider finds loss rates decline as store sales area and turnover increase, hitting small supermarkets hardest."
+      ],
+      "evidence": [
+        {
+          "authors": "Buzby, J.C. et al.",
+          "year": 2014,
+          "title": "Retail food waste reduction report: Sell more, waste less (citing Buzby et al. 2014)",
+          "venue": "ECR Shrinkage & Loss Research Group",
+          "url": "https://ecrloss.com",
+          "finding": "Waste as a percentage of aggregated sales varies between ~4% for meat and ~11% for dairy products in the USA."
+        },
+        {
+          "authors": "Huang, I.Y. et al.",
+          "year": 2020,
+          "title": "Food waste management: a review of retailers' business practices",
+          "venue": "International Journal of Retail & Distribution Management (repository: Harper Adams University)",
+          "url": "https://hau.repository.guildhe.ac.uk",
+          "finding": "Only a small proportion of overall food waste is generated at retail level, e.g. ~2% in the UK (WRAP), so retail waste is concentrated and controllable."
+        },
+        {
+          "authors": "Olabode, O. et al.",
+          "year": 2025,
+          "title": "Food loss and waste management in the retail food supply",
+          "venue": "ScienceDirect (journal article)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "About 13% of food is lost between harvest and the supply chain and 17% wasted domestically and in food services; investment in waste-reduction measures yields positive returns."
+        },
+        {
+          "authors": "Todd, E.C.D.",
+          "year": 2024,
+          "title": "Impact of Food Waste on Society, Specifically at Retail and Consumer Levels",
+          "venue": "PMC / NIH (review)",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "Up to 40% of the US food supply is wasted annually - roughly 549 pounds per person per year."
+        },
+        {
+          "authors": "Schneider, F.",
+          "year": 2015,
+          "title": "Food waste (and loss) at the retail level",
+          "venue": "Thünen Institute literature collection",
+          "url": "https://literatur.thuenen.de",
+          "finding": "Food loss rates decline with increasing sales area, purchase frequency and store turnover - small supermarkets suffer proportionally higher waste."
+        },
+        {
+          "authors": "ReFED",
+          "year": 2025,
+          "title": "Solutions for Food Waste in Grocery Stores for Retailers",
+          "venue": "ReFED Insights Engine",
+          "url": "https://refed.org",
+          "finding": "In 2024 US retailers generated 3.98M tons of surplus food, 25% of which went to landfill or incineration."
+        }
+      ],
+      "platformImplication": "Perishable categories need first-expiry visibility and daily waste logging: expiry/batch fields on receiving, waste entry per product/category, weekly waste-rate report by category, and briefing chips for near-expiry SKUs."
+    },
+    {
+      "id": "planogram-shelf-space",
+      "titleEn": "Shelf Space Allocation & Planogram Science",
+      "keyFindings": [
+        "Shelf Space Allocation Problem (SSAP) is an established operations-research field; recent systematic literature reviews catalogue models that jointly optimize shelf design, space and product placement.",
+        "Peer-reviewed case studies (e.g. joint shelf design and space allocation, Omega 2022) demonstrate real planogram optimization at store level improves category performance.",
+        "Localization matters: Aalto thesis work shows store-specific (vs one-size-fits-all) planograms affect retail performance, and RELEX industry research estimates optimizing shelf space for spoilage-risk goods can decrease waste by up to 10%."
+      ],
+      "evidence": [
+        {
+          "authors": "(systematic literature review)",
+          "year": 2024,
+          "title": "Shelf Space Allocation Problem (SSAP) in the Retail Industry: A Systematic Literature Review",
+          "venue": "ResearchGate",
+          "url": "https://www.researchgate.net/publication/387453771",
+          "finding": "SSAP is a mature research field with a growing set of models for allocating limited shelf space across SKUs to maximize profit."
+        },
+        {
+          "authors": "(Omega authors)",
+          "year": 2022,
+          "title": "Joint shelf design and shelf space allocation problem for retailers",
+          "venue": "Omega (Elsevier)",
+          "url": "https://www.sciencedirect.com/science/article/abs/pii/S030504832200041X",
+          "finding": "Jointly determining shelf design and space allocation outperforms sequential planning; a real store planogram was optimized in a case study."
+        },
+        {
+          "authors": "(Aalto University master's thesis)",
+          "year": 2025,
+          "title": "Performance Impact of Shelf Space Planning Localization",
+          "venue": "Aaltodoc (Aalto University)",
+          "url": "https://aaltodoc.aalto.fi",
+          "finding": "Localizing planograms from enterprise level to store-specific shelf planning measurably affects key retail performance indicators."
+        },
+        {
+          "authors": "RELEX Solutions research",
+          "year": 2023,
+          "title": "Boost profitability through store-specific planogram optimization",
+          "venue": "RELEX Solutions",
+          "url": "https://www.relexsolutions.com/resources/planogram-optimization",
+          "finding": "Optimizing shelf space for goods at risk of spoilage for a particular store can decrease waste by up to 10%."
+        }
+      ],
+      "platformImplication": "The existing planogram module should store per-store, per-shelf allocations with facings and position ranks, and cross-link each SKU to velocity/margin so planogram revisions are driven by data, not guesswork."
+    },
+    {
+      "id": "perishable-ordering",
+      "titleEn": "Perishable Ordering: Newsvendor Science",
+      "keyFindings": [
+        "The newsvendor model is the canonical single-period decision for perishables: order quantity before uncertain demand, balancing overage (waste) and underage (lost sales).",
+        "Modern extensions (emergency shipment options, two-period contracts, e-grocery adaptation) keep the newsvendor core relevant for grocery replenishment science.",
+        "E-grocery research (Winkelmann) argues classic newsvendor assumptions are too restrictive for modern perishable retail, motivating demand-history-driven ordering supported by record-accurate systems."
+      ],
+      "evidence": [
+        {
+          "authors": "Wikipedia (canonical reference)",
+          "year": 2025,
+          "title": "Newsvendor model",
+          "venue": "Wikipedia / operations management literature",
+          "url": "https://en.wikipedia.org",
+          "finding": "The newsvendor model determines optimal inventory levels for perishable products ordered before uncertain demand is realized."
+        },
+        {
+          "authors": "Poormoaied, S. et al.",
+          "year": 2021,
+          "title": "Emergency Shipment Decision in Newsvendor Model",
+          "venue": "ScienceDirect (Elsevier)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "Adding a single emergency-shipment opportunity during the season materially changes optimal ordering for perishables."
+        },
+        {
+          "authors": "Wei, C.C.",
+          "year": 2021,
+          "title": "Supply Chain Replenishment Decision for Newsvendor",
+          "venue": "MDPI",
+          "url": "https://www.mdpi.com",
+          "finding": "A two-period newsvendor model with supplier-set wholesale prices in period one determines ordering quantities for period two."
+        },
+        {
+          "authors": "Winkelmann, D. et al.",
+          "year": 2026,
+          "title": "Managing inventories for perishable e-groceries",
+          "venue": "PMC / NIH",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "Literature suggests the newsvendor model for e-grocery replenishment, but its restrictive assumptions call for richer, data-driven demand models."
+        }
+      ],
+      "platformImplication": "Order workflow should show per-SKU demand history, recent waste and days-of-cover at order time - a lightweight 'newsvendor helper' that nudges quantities without demanding full OR sophistication."
+    },
+    {
+      "id": "inventory-foundations",
+      "titleEn": "Classic Inventory Science: EOQ, ABC & Safety Stock",
+      "keyFindings": [
+        "EOQ (Harris 1913, 'How Many Parts to Make at Once') is the 100+ year foundation of ordering science; centenary retrospectives confirm thousands of derivative models.",
+        "ABC/Pareto classification concentrates control effort: studies show ~10% of items absorb ~70% of budget (Class A), and one retail implementation found 6% of items carried 80% of cost.",
+        "Safety stock = reorder point minus expected lead-time demand; formal ROP/SS formulas exist to protect service levels against demand and lead-time variability (Gonçalves et al. 2020 review)."
+      ],
+      "evidence": [
+        {
+          "authors": "Cárdenas-Barrón, L.E.",
+          "year": 2014,
+          "title": "Celebrating a century of the economic order quantity model",
+          "venue": "ScienceDirect (Elsevier)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "EOQ theory was published in 1913 in Factory, The Magazine of Management under the title 'How many parts to make at once' (Harris, 1913)."
+        },
+        {
+          "authors": "Erlenkotter, D.",
+          "year": 1990,
+          "title": "Ford Whitman Harris and the Economic Order Quantity Model",
+          "venue": "Operations Research (INFORMS)",
+          "url": "https://pubsonline.informs.org",
+          "finding": "Harris first presented the familiar EOQ model in 1913; the square-root formula became fundamental to management science."
+        },
+        {
+          "authors": "Gupta, R.",
+          "year": 2011,
+          "title": "ABC and VED Analysis in Medical Stores Inventory Control",
+          "venue": "PMC / NIH",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "Per Pareto's principle, ~10% of items consume ~70% of budget (Group A), the next 20% consume 20% (Group B), and the remaining 70% of items consume 10% (Group C)."
+        },
+        {
+          "authors": "(retail ABC implementation study)",
+          "year": 2020,
+          "title": "Implementation of the ABC Analysis to the Inventory",
+          "venue": "ResearchGate",
+          "url": "https://www.researchgate.net",
+          "finding": "ABC identified Class A as 6% of items carrying 80% of cost, enabling retailers to focus control on slow-moving/obsolete stock."
+        },
+        {
+          "authors": "Gonçalves, J.N.C. et al.",
+          "year": 2020,
+          "title": "Operations research models and methods for safety stock",
+          "venue": "PMC / NIH (review)",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "Safety stock is by definition the reorder point minus expected lead-time demand; OR provides models to set both under variability."
+        }
+      ],
+      "platformImplication": "Auto-classify SKUs (A/B/C by revenue or margin share), show ABC badges in order workflow, and compute suggested reorder points from sales velocity - turning the platform into applied inventory science, not just a ledger."
+    },
+    {
+      "id": "demand-forecasting",
+      "titleEn": "Demand Forecasting & Intermittent Demand",
+      "keyFindings": [
+        "Accurate forecasting is imperative for appropriate inventory decisions; intermittent demand (slow movers, specialty SKUs) is a distinct research problem where simple exponential smoothing fails.",
+        "Croston's (1972) method decomposes intermittent demand into size and interval, each smoothed separately, and remains the standard baseline (later unbiased variants like SBA/TSB exist).",
+        "Comparative studies confirm method choice matters: wrong methods for intermittent series produce biased, costly stock decisions."
+      ],
+      "evidence": [
+        {
+          "authors": "Tian, X. et al.",
+          "year": 2021,
+          "title": "Forecasting intermittent demand for inventory management",
+          "venue": "ScienceDirect (Elsevier)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "Examines intermittent-demand forecasting for retail; accurate demand forecasting is imperative for appropriate inventory management."
+        },
+        {
+          "authors": "Croston, J.D. (via Hyndman's forecast library docs)",
+          "year": 1972,
+          "title": "Forecasts for intermittent demand using Croston's method",
+          "venue": "robjhyndman.com forecast package documentation",
+          "url": "https://pkg.robjhyndman.com",
+          "finding": "Croston's method uses separate simple-exponential-smoothing on demand size and demand interval for intermittent series."
+        },
+        {
+          "authors": "Lindsey, M.D. et al.",
+          "year": 2008,
+          "title": "A Comparison of Methods for Forecasting Intermittent Demand",
+          "venue": "SFA faculty showcase",
+          "url": "https://facultyshowcase.sfasu.edu",
+          "finding": "Prior research favorably compares Croston's method against simple exponential smoothing when nonzero demand occurs infrequently."
+        },
+        {
+          "authors": "Prestwich, S. et al.",
+          "year": 2014,
+          "title": "Forecasting Intermittent Demand by Hyperbolic-Exponential Smoothing",
+          "venue": "University of Edinburgh research explorer",
+          "url": "https://www.research.ed.ac.uk",
+          "finding": "A Croston+Bayesian hybrid (HES) is unbiased on non-intermittent and intermittent series, improving on the standard method."
+        }
+      ],
+      "platformImplication": "Reorder suggestions should use velocity-aware forecasting (moving average for fast movers, Croston-like logic for intermittent SKUs) and expose forecast vs actual in reports so owners trust the math."
+    },
+    {
+      "id": "inventory-record-accuracy",
+      "titleEn": "Inventory Record Inaccuracy (IRA) & Cycle Counting",
+      "keyFindings": [
+        "Documented inventory-record inaccuracy rates run 33-80% across industry, with grocery stores often exceeding 60% of records wrong at any point in time (ECR/Cardiff research).",
+        "One large retail count study found 60% of counted inventory records inaccurate; US retail accuracy benchmarks sit at only 58-63%.",
+        "IRI causes unexpected stockouts, overstock, lost sales and rework; cycle counting plus error-removal rate exceeding error-creation rate is the corrective mechanism (Strategos).",
+        "Academic work (On the measurement of inventory record inaccuracies, 2025) confirms inaccurate records are a source of major cost and service inefficiency in retailing."
+      ],
+      "evidence": [
+        {
+          "authors": "ECR Loss research",
+          "year": 2026,
+          "title": "Predicting Inventory Record Inaccuracy: A practical guide",
+          "venue": "ECR Shrinkage & Loss Research Group",
+          "url": "https://ecrloss.com/research-paper/predicting-inventory-record-inaccuracy",
+          "finding": "Inaccuracy rates between 33% and 80% are documented across the industry, with grocery stores often exceeding 60%."
+        },
+        {
+          "authors": "ECR / Cardiff University (Fisher, DeHoratius et al.)",
+          "year": 2007,
+          "title": "Inventory Inaccuracy in Retailing: Does it Matter?",
+          "venue": "Cardiff University / ECR report",
+          "url": "https://www.cardiff.ac.uk/__data/assets/pdf_file/0003/1729236/84486-ECR-Inventory-Inaccuracy-Report-v12.pdf",
+          "finding": "About 60% of inventory records are likely to be wrong at any point in time; correcting them improved measured store performance."
+        },
+        {
+          "authors": "Loss Prevention Magazine",
+          "year": 2020,
+          "title": "Improving Inventory Record Accuracy",
+          "venue": "Loss Prevention Media",
+          "url": "https://losspreventionmedia.com/improving-inventory-record-accuracy",
+          "finding": "First-count data revealed 60% of inventory records counted were inaccurate."
+        },
+        {
+          "authors": "(International Review of Retail, Distribution and Consumer Research)",
+          "year": 2025,
+          "title": "On the measurement of inventory record inaccuracies",
+          "venue": "Taylor & Francis",
+          "url": "https://www.tandfonline.com/doi/full/10.1080/09593969.2025.2608729",
+          "finding": "Inventory records are often inaccurate and this is a known source of major cost and service inefficiencies in retailing."
+        },
+        {
+          "authors": "(distribution-center performance study)",
+          "year": 2023,
+          "title": "The impacts of inventory record inaccuracy and cycle counting on distribution center performance",
+          "venue": "ResearchGate",
+          "url": "https://www.researchgate.net/publication/370036063",
+          "finding": "IRI creates book-vs-physical mismatches causing unexpected stockouts or overstock, lost sales and rework; cycle counting mitigates."
+        }
+      ],
+      "platformImplication": "Digital stock ledger + receiving reconciliation + barcode-verified counts + scheduled count tasks (A-items counted most often) directly attack the 60% wrong-record problem; price-check streak already gamifies daily shelf verification."
+    },
+    {
+      "id": "shelf-availability",
+      "titleEn": "Out-of-Stocks & On-Shelf Availability",
+      "keyFindings": [
+        "The landmark Gruen & Corsten worldwide study across 40 studies found an average 8.3% out-of-stock rate at retail shelf.",
+        "Process breakdowns - store ordering and replenishing practices - account for the overwhelming majority of OOS causes (91% per Corsten & Gruen; HBR-cited work says 72% of stockouts stem from faulty in-store ordering/replenishing).",
+        "OOS is not primarily an inventory-level problem but an execution problem: fixing store-level workflows (ordering, receiving, shelf-restock) is the highest-leverage intervention."
+      ],
+      "evidence": [
+        {
+          "authors": "Gruen, T.W. & Corsten, D.",
+          "year": 2002,
+          "title": "Retail Out-of-Stocks: A Worldwide Examination of Extent, Causes and Consumer Responses",
+          "venue": "GMA / ECR worldwide study",
+          "url": "https://www.supplychain247.com/images/pdfs/GMA_2002_Worldwide_OOS_Study.pdf",
+          "finding": "After examining 40 studies, the average worldwide out-of-stock rate is 8.3%."
+        },
+        {
+          "authors": "Corsten, D. & Gruen, T.W.",
+          "year": 2003,
+          "title": "Desperately seeking shelf availability: an examination of the extent, the causes, and the efforts to address retail out-of-stocks",
+          "venue": "International Journal of Retail & Distribution Management, 31(12)",
+          "url": "https://www.emerald.com/ijrdm/article/31/12/605/152138",
+          "finding": "Out-of-stock problems reflect ineffective store processes, not merely inventory levels."
+        },
+        {
+          "authors": "Corsten, D. & Gruen, T.W. (via Accelerated Analytics)",
+          "year": 2019,
+          "title": "Retail Round-Up: Out-of-Stocks Problems & Solutions",
+          "venue": "Accelerated Analytics (citing Corsten & Gruen)",
+          "url": "https://www.acceleratedanalytics.com/blog/2019/01/30/retail-round-up-out-of-stocks-problems-solutions",
+          "finding": "Breakdowns in the work process accounted for 91% of out-of-stock causes, namely store stocking, store ordering and replenishing."
+        },
+        {
+          "authors": "Harvard Business Review study (via One Key Resources)",
+          "year": 2023,
+          "title": "How to Prevent Stockouts in Inventory Management",
+          "venue": "One Key Resources (citing HBR)",
+          "url": "https://onekeyresources.milwaukeetool.com",
+          "finding": "72% of stockouts were due to faulty in-store ordering and replenishing practices - retailers ordering too little or too much."
+        },
+        {
+          "authors": "Breugelmans, E. et al.",
+          "year": 2006,
+          "title": "The impact of the stock-out policy on online category purchase and choice decisions",
+          "venue": "ScienceDirect (Elsevier)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "How retailers handle stock-outs measurably shifts consumer category purchase and choice decisions - availability policy is commercial policy."
+        }
+      ],
+      "platformImplication": "Low-stock alerts with reorder-point suggestions + order drafts + delivery/receiving tracking close the replenishment loop that causes 72-91% of stockouts; briefing surfaces 'critical stock' every morning."
+    },
+    {
+      "id": "supply-chain-distortion",
+      "titleEn": "Bullwhip Effect & Information Distortion",
+      "keyFindings": [
+        "Lee, Padmanabhan & Whang (Management Science, 1997) formalized four bullwhip sources: demand signal processing, rationing game, order batching, and price variations.",
+        "Distorted order information causes excessive inventory investment, poor customer service, lost revenues, misguided capacity plans and ineffective transportation.",
+        "For a supermarket, the antidote is accurate, timely, order-by-order data (no batching by memory, no panic ordering) - exactly what a digital ordering system enforces."
+      ],
+      "evidence": [
+        {
+          "authors": "Lee, H.L., Padmanabhan, V. & Whang, S.",
+          "year": 1997,
+          "title": "Information Distortion in a Supply Chain: The Bullwhip Effect",
+          "venue": "Management Science, 43(4), 546-558",
+          "url": "https://www.jstor.org/stable/2634565",
+          "finding": "Order information tends to be distorted as it moves upstream, amplifying demand variability 12.5-25%+ and misguiding upstream decisions."
+        },
+        {
+          "authors": "Lee, H.L., Padmanabhan, V. & Whang, S.",
+          "year": 1997,
+          "title": "The Bullwhip Effect in Supply Chains",
+          "venue": "MIT Sloan Management Review",
+          "url": "https://sloanreview.mit.edu/article/the-bullwhip-effect-in-supply-chains",
+          "finding": "Distorted information leads to tremendous inefficiencies: excessive inventory investment, poor customer service and lost revenues."
+        },
+        {
+          "authors": "Stanford GSB publication record",
+          "year": 1997,
+          "title": "Information Distortion in a Supply Chain: The Bullwhip Effect",
+          "venue": "Stanford Graduate School of Business",
+          "url": "https://www.gsb.stanford.edu/faculty-research/publications/information-distortion-supply-chain-bullwhip-effect",
+          "finding": "Analyzes four sources of the bullwhip effect: demand signal processing, rationing game, order batching, and price variations."
+        }
+      ],
+      "platformImplication": "Timestamped, quantity-accurate digital orders with margin guard replace phoned/verbal panic orders - reducing order batching and demand-signal distortion toward suppliers (Holoo export gives suppliers clean data)."
+    },
+    {
+      "id": "fefo-markdown",
+      "titleEn": "FEFO Rotation & Markdown/Dynamic Pricing of Perishables",
+      "keyFindings": [
+        "FEFO (first-expired-first-out) reduces waste versus FIFO for date-sensitive goods; research documents cost savings but also implementation challenges in perishable food supply chains.",
+        "Shelf-life modelling can optimize FEFO cold chains (Hertog et al., cited 266+), and industry implementations report food-waste reductions up to ~35% from proper perishable inventory management.",
+        "Dynamic/markdown pricing research consistently confirms profitability, spoilage-reduction and sustainability benefits for perishables - price cuts triggered by remaining shelf life or quality signals."
+      ],
+      "evidence": [
+        {
+          "authors": "Kandasamy, J. et al.",
+          "year": 2025,
+          "title": "Analysis of key challenges to implementation of FEFO in perishable food supply chains",
+          "venue": "ScienceDirect (Elsevier)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "Documents implementation difficulties of FEFO in perishable food supply chains; FEFO helps businesses save money by reducing food waste."
+        },
+        {
+          "authors": "Hertog, M.L. et al.",
+          "year": 2014,
+          "title": "Shelf life modelling for first-expired-first-out warehouse management",
+          "venue": "PMC / NIH",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "Quality-change models estimating remaining shelf life can optimize first-expired-first-out cold-chain management."
+        },
+        {
+          "authors": "Balloon One (industry implementation)",
+          "year": 2024,
+          "title": "Perishable Goods Inventory Management: FEFO Strategies",
+          "venue": "Balloon One",
+          "url": "https://balloonone.com",
+          "finding": "Proper perishable goods inventory management including FEFO can reduce food waste by up to 35%."
+        },
+        {
+          "authors": "Villa, G. et al.",
+          "year": 2026,
+          "title": "An ILS-VND approach to dynamic pricing of perishables",
+          "venue": "ScienceDirect (Elsevier)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "Dynamic pricing adjusts prices over time based on shelf life, demand elasticity, product quality and customer profile."
+        },
+        {
+          "authors": "Riesenegger, L. et al.",
+          "year": 2026,
+          "title": "Balancing profitability and waste reduction: markdown policies for perishables",
+          "venue": "Taylor & Francis",
+          "url": "https://www.tandfonline.com",
+          "finding": "Optimal markdown policies balancing profitability and waste reduction are derived from demand interactions and nonlinear demand effects."
+        },
+        {
+          "authors": "Hassini, E. et al.",
+          "year": 2026,
+          "title": "IoT-Enabled Quality-Triggered Markdown Pricing for perishables",
+          "venue": "PMC / NIH",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "IoT quality signals can trigger markdowns; cites data-driven dynamic pricing as a proven waste-reduction lever at retailers."
+        }
+      ],
+      "platformImplication": "Add expiry-date capture on receiving + FEFO-priority picking list + end-of-day markdown suggestion for near-expiry items; existing shelf-label printing enables same-day reduced-price tags."
+    },
+    {
+      "id": "workforce-gamification",
+      "titleEn": "Workforce Scheduling, Execution & Gamification",
+      "keyFindings": [
+        "Better (worker-friendly) scheduling measurably moves the P&L: a field study found store productivity +5.1%, store sales +3.3%, and labor cost -1.8%.",
+        "A Management Science (2022) field study shows assertive but employee-conscious scheduling improved store performance because employees exerted more effort and complied more with schedules.",
+        "Gamification research: ~89% of employees report higher productivity and 52% of HR departments report improved retention after gamification; peer-reviewed work shows gamification raises work engagement via basic-need satisfaction and enjoyment."
+      ],
+      "evidence": [
+        {
+          "authors": "University of Oregon (Lundqvist/field study report)",
+          "year": 2022,
+          "title": "Study finds worker-friendly scheduling boosts bottom line",
+          "venue": "University of Oregon News",
+          "url": "https://news.uoregon.edu/content/study-finds-worker-friendly-scheduling-boosts-bottom-line",
+          "finding": "Store productivity rose 5.1%, store sales rose 3.3% and labor declined 1.8% under improved scheduling practices."
+        },
+        {
+          "authors": "(Management Science field study)",
+          "year": 2022,
+          "title": "Doing Well by Doing Good: Improving Retail Store Performance with Assertive Labor Scheduling",
+          "venue": "Management Science (INFORMS)",
+          "url": "https://pubsonline.informs.org/doi/10.1287/mnsc.2021.4291",
+          "finding": "Store execution improved because employees exerted more effort and found it easier to comply with schedules."
+        },
+        {
+          "authors": "(SSRN working paper)",
+          "year": 2026,
+          "title": "Gamified Employee Engagement: A Google Trends Analysis",
+          "venue": "SSRN",
+          "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6632200",
+          "finding": "Industry survey data show 89% of employees report higher productivity and 52% of HR departments report improved retention after gamification."
+        },
+        {
+          "authors": "(Cogent Business & Management)",
+          "year": 2023,
+          "title": "Understanding the effects of gamification on work engagement",
+          "venue": "Taylor & Francis (Cogent Business & Management)",
+          "url": "https://www.tandfonline.com/doi/full/10.1080/23311975.2023.2287586",
+          "finding": "Gamification positively influenced work engagement, mediated by basic need satisfaction and enjoyment."
+        },
+        {
+          "authors": "(Tampere University systematic review)",
+          "year": 2021,
+          "title": "Gamification and Employee Well-being: A Systematic Literature Review",
+          "venue": "Tampere University research portal",
+          "url": "https://researchportal.tuni.fi/files/112198818/0518.pdf",
+          "finding": "Gamification is used to improve organizational performance such as work productivity and satisfaction, largely through employee well-being."
+        }
+      ],
+      "platformImplication": "The existing tasks/SOP/gamification stack (streaks, leaderboards, task completion) is evidence-aligned; extend with shift/task templates and completion-rate metrics in reports to replicate the +5.1% productivity mechanism."
+    },
+    {
+      "id": "digital-transformation",
+      "titleEn": "Digital Transformation of Grocery Operations",
+      "keyFindings": [
+        "Reinartz et al. (Journal of Retailing 2019, 1000+ citations) establishes digital transformation as a reshaper of retailing value creation across activities, touchpoints and data.",
+        "Reviews of grocery digitalization document scanners, AI and AR redefining in-store operations and consumer experience - scanning technology being the oldest and most proven layer.",
+        "Dissertation-level work (UW 2023) confirms digital transformation has profound measurable impact on grocery retail economics, not just marketing."
+      ],
+      "evidence": [
+        {
+          "authors": "Reinartz, W. et al.",
+          "year": 2019,
+          "title": "The impact of digital transformation on the retailing value creation",
+          "venue": "Journal of Retailing (ScienceDirect)",
+          "url": "https://www.sciencedirect.com",
+          "finding": "Digital transformation restructures retailing value creation; retail platforms realize efficiency gains through fast, frictionless, product-focused interactions."
+        },
+        {
+          "authors": "Wolniak, R. et al.",
+          "year": 2024,
+          "title": "Digital Transformation of Grocery In-Store Shopping - Scanners, Artificial Intelligence, Augmented Reality and Beyond: A Review",
+          "venue": "PMC / NIH (review)",
+          "url": "https://pmc.ncbi.nlm.nih.gov",
+          "finding": "Reviews innovations (scanners, AI, AR) that redefined grocery consumer experience and store operations over recent decades."
+        },
+        {
+          "authors": "Yang, Z.",
+          "year": 2023,
+          "title": "Essays on the Digital Transformation of Retail Grocery Industry",
+          "venue": "University of Washington dissertation",
+          "url": "https://digital.lib.washington.edu",
+          "finding": "Dissertation evidence of profound impact of digital transformation on grocery retail industry economics."
+        },
+        {
+          "authors": "McKinsey & Company",
+          "year": 2020,
+          "title": "Digital disruption at the grocery store",
+          "venue": "McKinsey & Company",
+          "url": "https://www.mckinsey.com",
+          "finding": "Five trends are shaping grocery transformation; understanding them is key for grocers to achieve profitable growth."
+        }
+      ],
+      "platformImplication": "Every digitized loop (order->receiving->shelf label->price check->Holoo export) is a mini digital transformation; the platform should keep demonstrating scan-first flows (barcode scan-to-pick, camera input) which the literature marks as the most proven layer."
+    },
+    {
+      "id": "data-capture-accuracy",
+      "titleEn": "Barcode/RFID Data Capture vs Manual Entry",
+      "keyFindings": [
+        "Human data entry typically errs once per 300 characters (~1-4% of fields, spiking to 18-40% in degraded conditions); barcode scanning reduces entry error rates to as low as 1 in 70 million characters.",
+        "RFID item-level research shows inventory accuracy improvement of >27% with understock down 21%; RFID read rates reach 99.5% in well-designed systems.",
+        "Grocery RFID pilots report improved stock accuracy, faster inventory counts and better date rotation - the same outcomes barcode-first digitization targets at lower cost."
+      ],
+      "evidence": [
+        {
+          "authors": "Loftware",
+          "year": 2017,
+          "title": "Cost of a failed barcode scan",
+          "venue": "Loftware",
+          "url": "https://www.loftware.com/resources/blog/2022/cost-of-a-failed-barcode-scan",
+          "finding": "The typical error rate for human data entry is one error per 300 characters; barcode scanners are far more accurate."
+        },
+        {
+          "authors": "Taylor Data Systems / industry benchmark",
+          "year": 2025,
+          "title": "Barcode scanning reduces data entry errors by 99.9%",
+          "venue": "LinkedIn industry post",
+          "url": "https://www.linkedin.com/posts/taylordatasys_manual-data-entry-leads-to-frequent-errors-activity-7411796152976576513-QxG-",
+          "finding": "Barcode scanning cuts entry error rates to as low as 1 in 70 million scanned characters."
+        },
+        {
+          "authors": "Lido / Parseur benchmarks",
+          "year": 2026,
+          "title": "Data entry error rates: how much manual mistakes really cost",
+          "venue": "Lido.app / Parseur",
+          "url": "https://www.lido.app/blog/data-entry-error-rates",
+          "finding": "Manual data entry averages 1-4% field-level error rate; some studies observe spikes of 18-40%."
+        },
+        {
+          "authors": "University of Arkansas RFID Research Center",
+          "year": 2009,
+          "title": "New Study Shows RFID Significantly Improves Item-Level Inventory Accuracy",
+          "venue": "University of Arkansas News",
+          "url": "https://news.uark.edu",
+          "finding": "Item-level RFID simulation showed overall inventory accuracy improved by more than 27%, with understock decreased by 21%."
+        },
+        {
+          "authors": "ECR Loss",
+          "year": 2025,
+          "title": "RFID for Grocery Retailers: Five Lessons Learned",
+          "venue": "ECR Shrinkage & Loss Research Group",
+          "url": "https://ecrloss.com",
+          "finding": "Retailers reported improved stock accuracy, faster inventory counts and better date rotation using RFID."
+        }
+      ],
+      "platformImplication": "Keep pushing scan-first design (barcode receiving, scan-to-pick, 626 GS1 support) - the evidence quantifies exactly what errors are eliminated when humans stop typing SKUs and prices."
+    },
+    {
+      "id": "customer-experience",
+      "titleEn": "Service Quality, Promotions & Category Management",
+      "keyFindings": [
+        "Service quality drives satisfaction and loyalty in supermarkets (RSQS/SERVQUAL stream); self-checkout service quality research (949+ citations) links service technology to loyalty via satisfaction.",
+        "Promotions are pervasive in food retail (~13.4% average promotion rate in supermarkets) and rigorous Nielsen-scanner research (Hitsch et al., NBER) quantifies price/promotion elasticities.",
+        "Category management and assortment planning are established academic-industrial practices (Cachon 2004; Kök review with 800+ citations; Kurt Salmon ECR origins)."
+      ],
+      "evidence": [
+        {
+          "authors": "Orel, F.D. & Kara, A.",
+          "year": 2014,
+          "title": "Supermarket self-checkout service quality, customer satisfaction, and loyalty",
+          "venue": "Journal of Retailing and Consumer Services (PSU Pure)",
+          "url": "https://pure.psu.edu",
+          "finding": "Self-checkout service quality positively influences loyalty through the customer-satisfaction path."
+        },
+        {
+          "authors": "(Emerald journal study)",
+          "year": 2020,
+          "title": "The effect of service quality on customer satisfaction and loyalty in supermarkets",
+          "venue": "Emerald",
+          "url": "https://www.emerald.com",
+          "finding": "Supermarket service quality significantly affects customer satisfaction and loyalty."
+        },
+        {
+          "authors": "Hitsch, G.J. et al.",
+          "year": 2019,
+          "title": "Prices and Promotions in U.S. Retail Markets",
+          "venue": "NBER Working Paper",
+          "url": "https://www.nber.org",
+          "finding": "Uses Nielsen RMS weekly store-level scanner data (~50,000 products) to quantify retail price and promotion patterns."
+        },
+        {
+          "authors": "Cachon, G.P.",
+          "year": 2004,
+          "title": "Category Management and Coordination in Retail",
+          "venue": "University of Pennsylvania repository (Management Science)",
+          "url": "https://repository.upenn.edu",
+          "finding": "Studies assortment planning across merchandise categories and coordination between retailer and vendor category captains."
+        },
+        {
+          "authors": "Kök, A.G. et al.",
+          "year": 2009,
+          "title": "Assortment Planning: Review of Literature and Industry Practice",
+          "venue": "Koç University (research chapter)",
+          "url": "https://mysite.ku.edu.tr",
+          "finding": "Comprehensive review of assortment planning literature and retailer practice; assortment breadth/depth decisions are strategic."
+        }
+      ],
+      "platformImplication": "Margin-aware price board + printed shelf labels + price-change report let owners run disciplined promotions (measure lift via before/after sales in reports) instead of uncontrolled discounting that erodes margin."
+    },
+    {
+      "id": "iranian-research",
+      "titleEn": "Persian / Iranian Academic Research (فارسی)",
+      "keyFindings": [
+        "Iranian academic literature covers chain-store development consequences, digital marketing effects on chain-store performance, industrial-management roles in reducing food waste, and VMI/inventory-control models.",
+        "Food-waste supply-chain research in Persian venues emphasizes economic and environmental losses of food waste from production to consumption.",
+        "Persian sources confirm the same science applies locally: inventory control, supplier integration (VMI) and waste management are active research topics in Iranian journals (ElmNet, Noormags, SID, Civilica)."
+      ],
+      "evidence": [
+        {
+          "authors": "مسعودی‌پور و همکاران",
+          "year": 2023,
+          "title": "شناسایی و تحلیل پیامدهای توسعه فروشگاه‌های زنجیره‌ای در کشور",
+          "venue": "فصلنامه مدیریت صنایع (smt.isu.ac.ir)",
+          "url": "https://smt.isu.ac.ir",
+          "finding": "Identifies and analyzes positive and negative consequences of chain-store development in Iran via literature-based multi-step research."
+        },
+        {
+          "authors": "موسی رحیمی و همکاران",
+          "year": 2022,
+          "title": "بررسی تاثیر بازاریابی دیجیتال بر عملکرد فروشگاه‌های زنجیره‌ای با تاکید بر نقش میانجی قابلیت‌های بازاریابی",
+          "venue": "مجله بازاریابی (majournal.ir)",
+          "url": "https://majournal.ir",
+          "finding": "Digital marketing significantly affects Iranian chain-store performance, mediated by marketing capabilities (descriptive-survey method)."
+        },
+        {
+          "authors": "وحید صادقی و همکاران",
+          "year": 2022,
+          "title": "نقش مدیریت صنعتی در کاهش ضایعات مواد غذایی",
+          "venue": "مجله بازاریابی / openaccess (majournal.ir)",
+          "url": "https://majournal.ir",
+          "finding": "Exploratory study of industrial management's role in reducing food waste; provides managerial recommendations for waste reduction."
+        },
+        {
+          "authors": "(Civilica مقاله)",
+          "year": 2024,
+          "title": "اقدامات مصرف‌کننده و زنجیره تأمین در مدیریت ضایعات مواد غذایی",
+          "venue": "Civilica",
+          "url": "https://civilica.com",
+          "finding": "Food waste spans all supply-chain sections (agriculture, processing, households, food services) requiring coordinated supply-chain action."
+        }
+      ],
+      "platformImplication": "Persian RTL UI, Jalali dates and Persian digit inputs are not cosmetic - they are the adoption precondition the Iranian literature implies; local research themes (chain-store development, waste) validate the platform's core roadmap."
+    }
+  ],
+  "manualSystemProblems": [
+    {
+      "problem": "Manual data entry of SKUs, quantities and prices is error-prone",
+      "evidence": [
+        "Loftware (2017): human data entry error ~1 per 300 characters",
+        "Lido/Parseur benchmarks (2026): 1-4% field-level error rate, spikes of 18-40%",
+        "Radaro: handwriting misinterpretation, data inconsistency, lost paperwork produce inaccurate records"
+      ],
+      "cost": "1-4 wrong values per 100 typed fields; each wrong price/qty propagates into orders, margins and reconciliation"
+    },
+    {
+      "problem": "Paper-based ordering and replenishing practices cause the majority of stockouts",
+      "evidence": [
+        "Gruen & Corsten (2002): 8.3% average worldwide OOS rate",
+        "Corsten & Gruen (2003): 91% of OOS causes are work-process breakdowns (store stocking/ordering/replenishing)",
+        "HBR-cited study: 72% of stockouts due to faulty in-store ordering and replenishing practices"
+      ],
+      "cost": "Up to ~8% of demand moments unserved; lost sales plus customer switching"
+    },
+    {
+      "problem": "Inventory records kept by hand diverge from physical stock",
+      "evidence": [
+        "ECR/Cardiff (2007): ~60% of inventory records likely wrong at any point",
+        "ECR Loss (2026): documented inaccuracy 33-80%, grocery often >60%",
+        "Loss Prevention Magazine (2020): 60% of counted records inaccurate"
+      ],
+      "cost": "Phantom stockouts, overstock, rework and recount labor; safety decisions made on wrong data"
+    },
+    {
+      "problem": "Manual counting, label rewriting and paperwork consume staff hours",
+      "evidence": [
+        "360 Retail Management (2025): manual inventory counts, paper-based ordering and disconnected POS create compounding inefficiencies",
+        "Wynn (2021): manual inventory errors inherited through departments increased expenses and financial loss"
+      ],
+      "cost": "Recurring multi-hour daily/weekly per-store labor; error-prone re-keying between paper and computer"
+    },
+    {
+      "problem": "Shrinkage goes undetected until periodic stock-takes",
+      "evidence": [
+        "Global Retail Theft Barometer: shrink 1.36-1.48% of sales (~US$98-132B globally)",
+        "InVue (2026): 73% of US shrink considered preventable"
+      ],
+      "cost": "Roughly 1.4% of revenue leaking; prevention requires visibility paper cannot provide"
+    },
+    {
+      "problem": "No expiry/FEFO tracking on paper leads to avoidable perishable waste",
+      "evidence": [
+        "Kandasamy (2025): FEFO reduces waste but is hard to execute without systems",
+        "Balloon One: up to 35% food-waste reduction from proper perishable inventory management",
+        "Buzby et al. (2014): category waste runs 4% (meat) to 11% (dairy) of sales"
+      ],
+      "cost": "4-11% of category sales written off; expiry checks skipped when done from memory"
+    },
+    {
+      "problem": "Hand-written schedules and SOPs produce inconsistent execution",
+      "evidence": [
+        "University of Oregon (2022): improved scheduling lifts productivity +5.1% and sales +3.3% while cutting labor -1.8%",
+        "Management Science (2022): execution improves when staff can comply easily with schedules/tasks"
+      ],
+      "cost": "Forgone ~5% productivity and ~3% sales from unmanaged scheduling and unclear task assignment"
+    }
+  ],
+  "scientificMethods": [
+    {
+      "id": "eoq",
+      "name": "Economic Order Quantity (EOQ)",
+      "origin": "Ford W. Harris, 1913, 'How Many Parts to Make at Once', Factory, The Magazine of Management",
+      "formula": "EOQ = sqrt(2DS/H)  — D: annual demand, S: cost per order, H: annual holding cost per unit",
+      "what": "Balances ordering cost against holding cost to find the order size that minimizes total inventory cost; over a century old and still the base model taught everywhere.",
+      "evidence": [
+        "Cárdenas-Barrón (2014), ScienceDirect - centenary of EOQ",
+        "Erlenkotter (1990), Operations Research - history of Harris' EOQ",
+        "Drake (2014), ideas.repec.org - A Century of the EOQ"
+      ],
+      "implementation": "For each fast-moving SKU, estimate monthly demand from order history; order in EOQ-like batches from suppliers instead of ad-hoc quantities; review S and H occasionally (delivery fee vs cold-storage cost)."
+    },
+    {
+      "id": "abc",
+      "name": "ABC Analysis (Pareto classification)",
+      "origin": "Pareto principle (80/20); formalized as ABC inventory analysis in US Air Force practice (General Electric, 1950s, commonly credited to H. Ford Dick)",
+      "formula": "Rank SKUs by annual consumption value; Class A = top ~10-20% of items ≈ 70-80% of value, B = next 20-30% ≈ 15-20%, C = remaining ~70% ≈ 5-10%",
+      "what": "Not every product deserves equal attention: a small share of SKUs carries most of the money. Count A-items most often, watch their margins daily, keep C-items on simple rules.",
+      "evidence": [
+        "Gupta (2011), PMC - 10% of items ≈ 70% of budget (Group A)",
+        "ResearchGate retail study - Class A = 6% of items with 80% of cost",
+        "NetSuite (2023) - ABC identifies the 20% of goods delivering ~80% of value"
+      ],
+      "implementation": "Auto-tag products A/B/C from sales value in the platform; A-items: tight reorder points, frequent price checks, priority shelf audits; C-items: occasional review, bulk orders."
+    },
+    {
+      "id": "safety-stock-rop",
+      "name": "Safety Stock & Reorder Point (ROP)",
+      "origin": "Classical OR inventory theory; reviewed in Gonçalves et al. (2020)",
+      "formula": "SS = Z × σ_LT (z-score of target service level × std-dev of lead-time demand); ROP = (average daily demand × lead time) + SS",
+      "what": "The stock level at which you must reorder, padded by a statistical buffer for demand spikes and supplier delays; Gonçalves defines safety stock as ROP minus expected lead-time demand.",
+      "evidence": [
+        "Gonçalves (2020), PMC - OR models for safety stock; SS = ROP − expected lead-time demand",
+        "NetStock/Omniful practitioner formulas - ROP = demand during lead time + safety stock",
+        "ResearchGate RF Media study - web-based system applying SS/ROP to fix inventory problems"
+      ],
+      "implementation": "Compute per-SKU average daily sales and variability from order/receiving history; alert when projected days-of-cover falls below lead time; A-items get higher service targets (Z)."
+    },
+    {
+      "id": "newsvendor",
+      "name": "Newsvendor (single-period perishable ordering)",
+      "origin": "Classic operations-management model (dating to 1888 Edgeworth / formalized 20th century); modern grocery extensions by Poormoaied (2021), Wei (2021), Winkelmann (2026)",
+      "formula": "Q* = F⁻¹[ Cu / (Cu + Co) ]  — critical fractile: Cu = lost margin per unit short, Co = cost per unsold unit, F = cumulative demand distribution",
+      "what": "For goods that expire after one cycle, order the quantity where the profit of selling one more unit balances the loss of wasting one more unit.",
+      "evidence": [
+        "Poormoaied (2021), ScienceDirect - emergency shipment in newsvendor",
+        "Wei (2021), MDPI - two-period newsvendor replenishment",
+        "Winkelmann (2026), PMC - perishable e-grocery inventory management"
+      ],
+      "implementation": "For dairy/bread/produce SKUs, show expected daily sale vs typical waste at order time; nudge quantity toward the fractile between under-order (empty shelf) and over-order (bin)."
+    },
+    {
+      "id": "croston",
+      "name": "Croston's Method (intermittent demand forecasting)",
+      "origin": "Croston, J.D., 1972, Operations Research Quarterly; popularized in Hyndman's forecast literature",
+      "formula": "Separately smooth demand size (S_t = αz_t + (1-α)S_{t-1}) and demand interval (P_t = αp_t + (1-α)P_{t-1}); forecast = S_t / P_t; SBA variant divides by (2 − α) to debias",
+      "what": "Many supermarket SKUs sell irregularly (specialty, bulk, seasonal); ordinary averaging mispredicts. Croston forecasts only when demand occurs, separating how much from how often.",
+      "evidence": [
+        "Tian (2021), ScienceDirect - intermittent demand forecasting for retail",
+        "Hyndman forecast docs - Croston's method as separate SES on size and interval",
+        "Lindsey (2008) and Prestwich (2014) - comparative improvements over SES"
+      ],
+      "implementation": "Classify SKUs with sparse sales history; apply Croston-style estimates for reorder suggestions instead of daily averages which would suggest near-zero stock."
+    },
+    {
+      "id": "fefo",
+      "name": "FEFO (First-Expired-First-Out rotation)",
+      "origin": "Perishable-goods warehouse/shelf practice; modelled by Hertog et al. (2014); challenges studied by Kandasamy et al. (2025)",
+      "formula": "Policy: pick/sell units with earliest expiry date first (vs FIFO by receipt date); optimize when Σ quality loss vs holding cost is minimized",
+      "what": "Date-sensitive goods must rotate by expiry, not by arrival; doing this systematically cuts waste substantially.",
+      "evidence": [
+        "Hertog (2014), PMC - shelf-life modelling for FEFO",
+        "Kandasamy (2025), ScienceDirect - FEFO challenges and savings",
+        "Balloon One - up to 35% waste reduction with FEFO-driven perishable management"
+      ],
+      "implementation": "Capture expiry/lot at receiving, sort shelf/pick lists by earliest expiry, auto-generate a near-expiry list each morning for markdown or promotion decisions."
+    },
+    {
+      "id": "cycle-counting",
+      "name": "Cycle Counting (perpetual inventory verification)",
+      "origin": "Distribution/warehouse practice; ECR inventory-inaccuracy research (Cardiff 2007); Strategos methodology",
+      "formula": "Accuracy% = (exact-match SKU count / SKUs counted) × 100; correct when error-removal rate > error-creation rate; count A-items most frequently (e.g. A monthly, B quarterly, C annually)",
+      "what": "Instead of one disruptive annual stock-take, count a small set of SKUs every day on a schedule, prioritizing high-value A items - keeping book stock close to physical stock continuously.",
+      "evidence": [
+        "ECR/Cardiff (2007) - ~60% of records wrong; corrections improved performance",
+        "Strategos - accuracy improves only when error removal exceeds error creation",
+        "ResearchGate (2023) - cycle counting mitigates IRI impacts on DC performance"
+      ],
+      "implementation": "Generate daily count tasks (batch of 10-30 SKUs, A-weighted), verify via barcode scan, auto-post adjustments with ActivityLog trail; streak gamification keeps staff consistent."
+    },
+    {
+      "id": "bullwhip-information",
+      "name": "Order Data Discipline (bullwhip mitigation)",
+      "origin": "Lee, Padmanabhan & Whang (1997), Management Science",
+      "formula": "Not a formula but a mechanism: share/keep accurate POS-level demand (no order batching by memory, no rationing-driven inflation, avoid frequent price swings)",
+      "what": "Irregular, batched, panic ordering amplifies variability upstream (suppliers over- or under-produce); clean per-SKU digital orders dampen the distortion.",
+      "evidence": [
+        "Lee et al. (1997), Management Science 43(4) - four bullwhip sources",
+        "MIT Sloan Review (1997) - inefficiencies from distorted order information",
+        "Stanford GSB - demand signal processing, rationing game, order batching, price variations"
+      ],
+      "implementation": "Every order digitized with timestamp + exact quantities; margin guard prevents price-swing-driven orders; Holoo export gives the accounting side the same clean signal."
+    }
+  ],
+  "gaps": [
+    "Affordable demand forecasting for small/independent grocers: research and enterprise tools target large chains (Nielsen-scale data), leaving SMBs with spreadsheets; a lightweight, explainable forecast inside the ops platform is still rare.",
+    "Item-level expiry/FEFO enforcement at store level: RFID and IoT solutions exist but cost prohibitive for small supermarkets; low-cost barcode + expiry-capture workflows remain under-adopted.",
+    "Dynamic pricing for perishables is academically mature but operationally deployed almost only by large retailers; SMBs lack simple markdown suggestion tools integrated with shelf-label printing.",
+    "Integrated supplier/accounting loops in local markets: systems like Holoo (accounting) and store-operations apps remain disconnected; reconciliation is still manual for most Iranian stores.",
+    "Persian-language analytics and RTL-first retail software is scarce; global retail suites lack Jalali calendars, Persian digit handling and Iranian barcode (GS1 626) familiarity.",
+    "Computer-vision shelf auditing and on-shelf availability sensors are demonstrated in research but not accessible to SMB grocers.",
+    "Offline-first mobile execution (receiving, counts, price checks) with reliable sync is a known unmet need where connectivity is unstable.",
+    "Workforce task-science (micro-learning, SOP adherence analytics, gamified execution) rarely appears inside supermarket operations software; it lives in separate HR tools."
+  ],
+  "roi": [
+    {
+      "metric": "Data-entry error rate",
+      "manual": "1-4% of fields (spikes 18-40%); ~1 error per 300 characters",
+      "digitized": "Barcode scanning: as low as 1 error in 70 million characters",
+      "source": "Loftware (2017); Lido/Parseur benchmarks (2026); Taylor Data Systems (2025)"
+    },
+    {
+      "metric": "Inventory record accuracy",
+      "manual": "58-63% typical US retail accuracy; ~60% of records wrong in grocery studies (33-80% documented)",
+      "digitized": ">27% accuracy improvement demonstrated with item-level RFID/cycle-counting programs",
+      "source": "ECR Loss (2026); ECR/Cardiff (2007); University of Arkansas (2009)"
+    },
+    {
+      "metric": "Out-of-stock rate",
+      "manual": "8.3% average worldwide (up to ~30% for promoted items in OOS literature)",
+      "digitized": "Process-driven digital ordering/replenishment targets the 72-91% of OOS causes that are workflow failures",
+      "source": "Gruen & Corsten (2002); Corsten & Gruen (2003); HBR-cited study"
+    },
+    {
+      "metric": "Perishable food waste",
+      "manual": "4% (meat) to 11% (dairy) of category sales; retail share of food waste ~5% EU / ~8.9-13% NA",
+      "digitized": "Up to ~35% waste reduction reported with FEFO-driven perishable management; up to 10% waste cut from spoilage-aware planograms",
+      "source": "Buzby et al. (2014); Balloon One; RELEX (2023)"
+    },
+    {
+      "metric": "Shrinkage (% of sales)",
+      "manual": "1.36-1.48% of sales (GRTB 2007 / 2013-14); rising incidents (+93% shoplifting 2023 vs 2019, NRF)",
+      "digitized": "Continuous visibility + audit trails target the ~73% of shrink considered preventable",
+      "source": "Global Retail Theft Barometer; NRF (2024); InVue (2026)"
+    },
+    {
+      "metric": "Scheduling & execution productivity",
+      "manual": "Hand-written schedules, verbal task assignment",
+      "digitized": "+5.1% store productivity, +3.3% sales, -1.8% labor cost from structured scheduling programs",
+      "source": "University of Oregon field study (2022); Management Science (2022)"
+    },
+    {
+      "metric": "Order processing time",
+      "manual": "Paper order writing, phone calls, re-keying into accounting - hours per day across ordering/receiving/reconciliation",
+      "digitized": "Draft orders from reorder points, scan-based receiving, one-click Holoo export - minutes per day; manual counts replaced by scheduled digital counts",
+      "source": "Wynn (2021); 360 Retail Management (2025); practitioner benchmarks (NetSuite, Strategos)"
+    },
+    {
+      "metric": "Employee engagement & task follow-through",
+      "manual": "Verbal instructions, no feedback loop",
+      "digitized": "89% of employees report higher productivity with gamification; 52% of HR report improved retention",
+      "source": "SSRN (2026); Cogent Business & Management (2023)"
+    }
+  ]
+}

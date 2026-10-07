@@ -1,0 +1,718 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { AppCtx, SectionCard, StatCard, Pill, EmptyState, Labeled, FaPriceInput } from '@/components/app/ui-bits'
+     7→import { BarChart, LineChart, Donut } from '@/components/app/charts'
+     8→import { JalaliDatePicker, useHolidays } from '@/components/app/jalali-widgets'
+     9→import { CATEGORY_EMOJI } from '@/lib/constants'
+    10→import { faNum, faMoney, todayIso, formatJalaliShort } from '@/lib/jalali'
+    11→import { Modal } from '@/components/views/Orders'
+    12→import { cn } from '@/lib/utils'
+    13→import {
+    14→  Sigma, Crosshair, Repeat2, TrendingUp, Trash2, ClipboardCheck, Plus, X, FlaskConical, Sparkles,
+    15→} from 'lucide-react'
+    16→
+    17→/* ───────────────────────── types ───────────────────────── */
+    18→type AbcRow = { id: string; name: string; category: string; annualValue: number; stock: number; sellPrice: number; rank: number; share: number; cumPct: number; cls: 'A' | 'B' | 'C' }
+    19→type RopRow = { id: string; name: string; category: string; stock: number; dailyDemand: number; sdDaily: number; ss: number; rop: number; below: boolean; suggest: number }
+    20→type EoqRow = { id: string; name: string; category: string; annualDemand: number; buyPrice: number; eoq: number; ordersPerYear: number; cycleDays: number }
+    21→type FcRow = { id: string; name: string; category: string; history: number[]; forecastNext: number; method: string; mae: number; trend: string }
+    22→type ScienceData = { abc: { rows: AbcRow[]; summary: { cls: string; count: number; share: number; value: number }[]; total: number } | null; rop: { rows: RopRow[]; serviceLevel: string; leadTime: number; z: number } | null; eoq: { rows: EoqRow[]; orderCost: number; holdingRate: number } | null; forecast: { rows: FcRow[]; alpha: number } | null }
+    23→
+    24→type Waste = { id: string; productName: string; category: string; qty: number; unit: string; reason: string; estValue: number; forDate: string; note: string; createdByName: string }
+    25→type WasteData = {
+    26→  reasons: Record<string, string>
+    27→  waste: Waste[]
+    28→  stats: { totalValue: number; count: number; byReason: Record<string, number>; byCategory: Record<string, number>; days: number }
+    29→  products: { id: string; name: string; category: string; unit: string; price: number }[]
+    30→  expiryAlerts: { productId: string; productName: string; expiryDate: string; qty: number; receivedQty: number | null }[]
+    31→}
+    32→type CountItem = { productId: string; productName: string; unit: string; systemQty: number; countedQty: number | null; diff: number; buyPrice: number }
+    33→type Count = { id: string; title: string; category: string; forDate: string; status: string; items: CountItem[]; accuracy: number | null; diffValue: number; createdByName: string }
+    34→
+    35→const TABS = [
+    36→  { key: 'abc', label: 'تحلیل ABC', icon: Sigma },
+    37→  { key: 'rop', label: 'نقطه سفارش', icon: Crosshair },
+    38→  { key: 'eoq', label: 'EOQ', icon: Repeat2 },
+    39→  { key: 'forecast', label: 'پیش‌بینی تقاضا', icon: TrendingUp },
+    40→  { key: 'waste', label: 'دفتر ضایعات', icon: Trash2 },
+    41→  { key: 'count', label: 'شمارش چرخه‌ای', icon: ClipboardCheck },
+    42→] as const
+    43→
+    44→const REASON_COLOR: Record<string, string> = {
+    45→  EXPIRED: '#b3372f', DAMAGED: '#c96f4a', SPOILED: '#8a6d10', THEFT: '#6d28d9', OTHER: '#6b7280',
+    46→}
+    47→const CLS_COLOR: Record<string, string> = { A: '#b3372f', B: '#c9a227', C: '#0e7a4a' }
+    48→
+    49→export default function ScienceView({ ctx, param }: { ctx: AppCtx; param?: string }) {
+    50→  const valid = param && TABS.some((t) => t.key === param) ? (param as (typeof TABS)[number]['key']) : 'abc'
+    51→  const [tab, setTab] = useState<(typeof TABS)[number]['key']>(valid)
+    52→  const [consumedParam, setConsumedParam] = useState(param)
+    53→  // اگر با پارامتر تازه به این نما آمد (مثل science/count از شمارش زون)، تب هدف باز شود
+    54→  if (param !== consumedParam) {
+    55→    setConsumedParam(param)
+    56→    if (param && TABS.some((t) => t.key === param)) setTab(param as (typeof TABS)[number]['key'])
+    57→  }
+    58→  const holidays = useHolidays()
+    59→
+    60→  /* science computations */
+    61→  const [sl, setSl] = useState('95')
+    62→  const [lead, setLead] = useState(3)
+    63→  const [alpha, setAlpha] = useState(0.3)
+    64→  const [data, setData] = useState<ScienceData | null>(null)
+    65→  const [busy, setBusy] = useState(false)
+    66→  const [q, setQ] = useState('')
+    67→
+    68→  const loadScience = useCallback(async () => {
+    69→    setBusy(true)
+    70→    try {
+    71→      const d = await api<ScienceData>(`/api/science?sl=${sl}&lead=${lead}&alpha=${alpha}`)
+    72→      setData(d)
+    73→    } catch (e: any) {
+    74→      toast.error(e.message)
+    75→    } finally {
+    76→      setBusy(false)
+    77→    }
+    78→  }, [sl, lead, alpha])
+    79→
+    80→  useEffect(() => {
+    81→    if (['abc', 'rop', 'eoq', 'forecast'].includes(tab)) loadScience()
+    82→  }, [tab, loadScience])
+    83→
+    84→  /* waste */
+    85→  const [wasteData, setWasteData] = useState<WasteData | null>(null)
+    86→  const loadWaste = useCallback(async () => {
+    87→    try {
+    88→      setWasteData(await api<WasteData>('/api/waste?days=30'))
+    89→    } catch (e: any) {
+    90→      toast.error(e.message)
+    91→    }
+    92→  }, [])
+    93→  useEffect(() => {
+    94→    if (tab === 'waste') loadWaste()
+    95→  }, [tab, loadWaste])
+    96→
+    97→  const [wOpen, setWOpen] = useState(false)
+    98→  const [wForm, setWForm] = useState({ productId: '', productName: '', category: 'عمومی', qty: 1 as number | '', unit: 'عدد', reason: 'EXPIRED', estValue: '' as number | '', forDate: todayIso(), note: '' })
+    99→
+   100→  /* cycle count */
+   101→  const [countData, setCountData] = useState<{ counts: Count[]; products: { id: string; name: string; category: string; unit: string; stock: number; buyPrice: number }[]; categories: string[] } | null>(null)
+   102→  const loadCounts = useCallback(async () => {
+   103→    try {
+   104→      setCountData(await api('/api/cyclecount'))
+   105→    } catch (e: any) {
+   106→      toast.error(e.message)
+   107→    }
+   108→  }, [])
+   109→  useEffect(() => {
+   110→    if (tab === 'count') loadCounts()
+   111→  }, [tab, loadCounts])
+   112→
+   113→  const [openCount, setOpenCount] = useState<Count | null>(null)
+   114→  const [countForm, setCountForm] = useState({ title: '', category: '' })
+   115→
+   116→  const filtered = <T extends { name: string }>(rows: T[]) =>
+   117→    q.trim() ? rows.filter((r) => r.name.includes(q.trim())) : rows
+   118→
+   119→  return (
+   120→    <div className="space-y-5">
+   121→      {/* header */}
+   122→      <div className="glow-card hero-emerald relative overflow-hidden rounded-2xl p-5 text-white sm:p-6">
+   123→        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+   124→          <div>
+   125→            <h1 className="flex items-center gap-2 text-xl font-black sm:text-2xl">
+   126→              <FlaskConical size={22} className="text-[#c9a227]" /> جعبه‌ابزار علمی موجودی
+   127→            </h1>
+   128→            <p className="mt-1 text-xs text-[#e9f0e4]/85">
+   129→              مدل‌های ABC، نقطه سفارش، EOQ، پیش‌بینی، ضایعات و شمارش چرخه‌ای — همه مستند به ادبیات علمی (هریس ۱۹۱۳، پارتو، کراستون ۱۹۷۲)
+   130→            </p>
+   131→          </div>
+   132→          <button
+   133→            onClick={() => ctx.navigate('research')}
+   134→            className="flex items-center gap-1.5 rounded-xl bg-[#c9a227] px-4 py-2 text-xs font-black text-[#0b2e20] shadow-lg transition hover:brightness-110"
+   135→          >
+   136→            <Sparkles size={14} /> پژوهش‌نامه علمی
+   137→          </button>
+   138→        </div>
+   139→      </div>
+   140→
+   141→      {/* tabs */}
+   142→      <div className="scroll-gold flex gap-2 overflow-x-auto pb-1">
+   143→        {TABS.map((t) => (
+   144→          <button
+   145→            key={t.key}
+   146→            onClick={() => setTab(t.key)}
+   147→            className={cn(
+   148→              'flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-black transition-all',
+   149→              tab === t.key
+   150→                ? 'border-[#0e7a4a] bg-[#0e7a4a] text-white shadow-lg shadow-[#0e7a4a]/25'
+   151→                : 'border-border bg-card text-foreground hover:border-[#c9a227]/60 hover:bg-secondary'
+   152→            )}
+   153→          >
+   154→            <t.icon size={15} /> {t.label}
+   155→          </button>
+   156→        ))}
+   157→      </div>
+   158→
+   159→      {/* ═══════════ ABC ═══════════ */}
+   160→      {tab === 'abc' && (
+   161→        <div className="space-y-4 fade-in-up">
+   162→          {busy && !data && <LoadingBlock />}
+   163→          {data?.abc && (
+   164→            <>
+   165→              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   166→                {data.abc.summary.map((s) => (
+   167→                  <div key={s.cls} className="glow-card rounded-2xl bg-card p-4">
+   168→                    <div className="flex items-center justify-between">
+   169→                      <span className="flex h-9 w-9 items-center justify-center rounded-xl font-black text-white" style={{ background: CLS_COLOR[s.cls] }}>
+   170→                        {s.cls}
+   171→                      </span>
+   172→                      <span className="text-2xl font-black text-foreground">{faNum(Math.round(s.share))}٪</span>
+   173→                    </div>
+   174→                    <p className="mt-2 text-xs font-bold text-muted-foreground">
+   175→                      {faNum(s.count)} قلم • ارزش سالانه {faMoney(s.value)}
+   176→                    </p>
+   177→                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+   178→                      <div className="h-full rounded-full" style={{ width: `${s.share}%`, background: CLS_COLOR[s.cls] }} />
+   179→                    </div>
+   180→                  </div>
+   181→                ))}
+   182→                <StatCard label="ارزش مصرف سالانه (تخمینی)" value={`${faMoney(data.abc.total)}`} hint="بر پایه فروش ۹۰ روز اخیر" tone="gold" />
+   183→              </div>
+   184→
+   185→              <SectionCard
+   186→                title="اصول پارتو در عمل"
+   187→                subtitle="گروه A را دائم کنترل کن (شمارش چرخه‌ای ماهانه)؛ گروه C را ساده و فصلی مدیریت کن — Gupta 2011"
+   188→                icon={<Sigma size={18} />}
+   189→              >
+   190→                <div className="mb-4 grid gap-4 md:grid-cols-2">
+   191→                  <LineChart
+   192→                    data={data.abc.rows.slice(0, 40).map((r) => ({ label: String(r.rank), value: +r.cumPct.toFixed(1) }))}
+   193→                    height={150}
+   194→                    color="#c9a227"
+   195→                    formatValue={(v) => `${faNum(v)}٪ تجمعی`}
+   196→                  />
+   197→                  <Donut
+   198→                    data={data.abc.summary.map((s) => ({ label: `گروه ${s.cls}`, value: Math.round(s.share) }))}
+   199→                    centerLabel="سهم از ارزش"
+   200→                    centerValue={`${faNum(Math.round(data.abc.total > 0 ? data.abc.summary[0].share : 0))}٪ گروه A`}
+   201→                  />
+   202→                </div>
+   203→                <div className="scroll-gold max-h-96 overflow-y-auto">
+   204→                  <table className="w-full text-right text-xs">
+   205→                    <thead className="sticky top-0 bg-card shadow-[0_1px_0_0_#e5e1d3]">
+   206→                      <tr className="text-muted-foreground">
+   207→                        <th className="p-2">رتبه</th>
+   208→                        <th className="p-2">کالا</th>
+   209→                        <th className="p-2">دسته</th>
+   210→                        <th className="p-2">سهم</th>
+   211→                        <th className="p-2">تجمعی</th>
+   212→                        <th className="p-2">گروه</th>
+   213→                      </tr>
+   214→                    </thead>
+   215→                    <tbody>
+   216→                      {filtered(data.abc.rows).map((r) => (
+   217→                        <tr key={r.id} className="border-t border-border/60 hover:bg-secondary/50">
+   218→                          <td className="p-2 font-bold">{faNum(r.rank)}</td>
+   219→                          <td className="max-w-52 truncate p-2 font-bold">{r.name}</td>
+   220→                          <td className="p-2 text-muted-foreground">{CATEGORY_EMOJI[r.category] || '📦'} {r.category}</td>
+   221→                          <td className="p-2">{faNum(r.share.toFixed(1))}٪</td>
+   222→                          <td className="p-2">{faNum(r.cumPct.toFixed(1))}٪</td>
+   223→                          <td className="p-2">
+   224→                            <Pill label={`گروه ${r.cls}`} color="#fff" bg={CLS_COLOR[r.cls]} />
+   225→                          </td>
+   226→                        </tr>
+   227→                      ))}
+   228→                    </tbody>
+   229→                  </table>
+   230→                </div>
+   231→              </SectionCard>
+   232→            </>
+   233→          )}
+   234→        </div>
+   235→      )}
+   236→
+   237→      {/* ═══════════ ROP ═══════════ */}
+   238→      {tab === 'rop' && (
+   239→        <div className="space-y-4 fade-in-up">
+   240→          <SectionCard
+   241→            title="نقطه سفارش مجدد و ذخیره احتیاطی"
+   242→            subtitle="ROP = تقاضای روزانه × زمان تأمین + z×σ×√L — Gonçalves et al. 2020"
+   243→            icon={<Crosshair size={18} />}
+   244→            actions={
+   245→              <>
+   246→                <select value={sl} onChange={(e) => setSl(e.target.value)} className="rounded-xl border border-input bg-white px-3 py-2 text-xs font-bold">
+   247→                  <option value="90">سطح خدمت ۹۰٪</option>
+   248→                  <option value="95">سطح خدمت ۹۵٪</option>
+   249→                  <option value="98">سطح خدمت ۹۸٪</option>
+   250→                  <option value="99">سطح خدمت ۹۹٪</option>
+   251→                </select>
+   252→                <select value={lead} onChange={(e) => setLead(Number(e.target.value))} className="rounded-xl border border-input bg-white px-3 py-2 text-xs font-bold">
+   253→                  {[1, 2, 3, 5, 7].map((d) => (
+   254→                    <option key={d} value={d}>{faNum(d)} روز زمان تأمین</option>
+   255→                  ))}
+   256→                </select>
+   257→              </>
+   258→            }
+   259→          >
+   260→            {busy && !data && <LoadingBlock />}
+   261→            {data?.rop && (
+   262→              <>
+   263→                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+   264→                  <StatCard label="کالاهای زیر نقطه سفارش" value={data.rop.rows.filter((r) => r.below).length} tone="rose" hint="نیاز به سفارش فوری" />
+   265→                  <StatCard label="کل کالاهای دارای تقاضا" value={data.rop.rows.length} tone="emerald" />
+   266→                  <StatCard label="سطح خدمت انتخابی" value={`${faNum(sl)}٪`} tone="gold" hint={`z = ${faNum(data.rop.z)}`} />
+   267→                  <StatCard label="زمان تأمین" value={`${faNum(lead)} روز`} tone="olive" />
+   268→                </div>
+   269→                <div className="scroll-gold max-h-96 overflow-y-auto">
+   270→                  <table className="w-full text-right text-xs">
+   271→                    <thead className="sticky top-0 bg-card shadow-[0_1px_0_0_#e5e1d3]">
+   272→                      <tr className="text-muted-foreground">
+   273→                        <th className="p-2">کالا</th>
+   274→                        <th className="p-2">موجودی</th>
+   275→                        <th className="p-2">تقاضا/روز</th>
+   276→                        <th className="p-2">ذخیره احتیاطی</th>
+   277→                        <th className="p-2">نقطه سفارش</th>
+   278→                        <th className="p-2">وضعیت</th>
+   279→                        <th className="p-2">سفارش پیشنهادی</th>
+   280→                      </tr>
+   281→                    </thead>
+   282→                    <tbody>
+   283→                      {filtered(data.rop.rows).slice(0, 120).map((r) => (
+   284→                        <tr key={r.id} className={cn('border-t border-border/60', r.below && 'bg-[#fee2e2]/40')}>
+   285→                          <td className="max-w-52 truncate p-2 font-bold">{r.name}</td>
+   286→                          <td className="p-2">{faNum(r.stock)}</td>
+   287→                          <td className="p-2">{faNum(r.dailyDemand)}</td>
+   288→                          <td className="p-2">{faNum(r.ss)}</td>
+   289→                          <td className="p-2 font-black">{faNum(r.rop)}</td>
+   290→                          <td className="p-2">
+   291→                            {r.below ? <Pill label="زیر نقطه سفارش!" color="#b3372f" /> : <Pill label="پایدار" color="#0e7a4a" />}
+   292→                          </td>
+   293→                          <td className="p-2 font-bold text-[#8a6d10]">{r.suggest > 0 ? `${faNum(r.suggest)} عدد` : '—'}</td>
+   294→                        </tr>
+   295→                      ))}
+   296→                    </tbody>
+   297→                  </table>
+   298→                </div>
+   299→              </>
+   300→            )}
+   301→          </SectionCard>
+   302→        </div>
+   303→      )}
+   304→
+   305→      {/* ═══════════ EOQ ═══════════ */}
+   306→      {tab === 'eoq' && (
+   307→        <div className="fade-in-up">
+   308→          <SectionCard
+   309→            title="مقدار اقتصادی سفارش (EOQ)"
+   310→            subtitle="EOQ = √(2DS/H) — فورد هریس، ۱۹۱۳؛ نرخ نگهداری بالا در تورم ایران پیش‌فرض ۴۰٪ است"
+   311→            icon={<Repeat2 size={18} />}
+   312→          >
+   313→            {busy && !data && <LoadingBlock />}
+   314→            {data?.eoq && (
+   315→              <div className="scroll-gold max-h-96 overflow-y-auto">
+   316→                <table className="w-full text-right text-xs">
+   317→                  <thead className="sticky top-0 bg-card shadow-[0_1px_0_0_#e5e1d3]">
+   318→                    <tr className="text-muted-foreground">
+   319→                      <th className="p-2">کالا</th>
+   320→                      <th className="p-2">تقاضای سالانه</th>
+   321→                      <th className="p-2">EOQ</th>
+   322→                      <th className="p-2">سفارش در سال</th>
+   323→                      <th className="p-2">چرخه (روز)</th>
+   324→                    </tr>
+   325→                  </thead>
+   326→                  <tbody>
+   327→                    {filtered(data.eoq.rows).slice(0, 120).map((r) => (
+   328→                      <tr key={r.id} className="border-t border-border/60 hover:bg-secondary/50">
+   329→                        <td className="max-w-52 truncate p-2 font-bold">{r.name}</td>
+   330→                        <td className="p-2">{faNum(r.annualDemand)}</td>
+   331→                        <td className="p-2 font-black text-[#0e7a4a]">{faNum(r.eoq)}</td>
+   332→                        <td className="p-2">{faNum(r.ordersPerYear)} بار</td>
+   333→                        <td className="p-2">{faNum(r.cycleDays)} روز</td>
+   334→                      </tr>
+   335→                    ))}
+   336→                  </tbody>
+   337→                </table>
+   338→              </div>
+   339→            )}
+   340→          </SectionCard>
+   341→        </div>
+   342→      )}
+   343→
+   344→      {/* ═══════════ FORECAST ═══════════ */}
+   345→      {tab === 'forecast' && (
+   346→        <div className="fade-in-up">
+   347→          <SectionCard
+   348→            title="پیش‌بینی تقاضای هفته بعد"
+   349→            subtitle="هموارسازی نمایی (α) + کراستون برای تقاضای متناوب — Croston 1972"
+   350→            icon={<TrendingUp size={18} />}
+   351→            actions={
+   352→              <select value={alpha} onChange={(e) => setAlpha(Number(e.target.value))} className="rounded-xl border border-input bg-white px-3 py-2 text-xs font-bold">
+   353→                <option value={0.1}>α = ۰٫۱ (محافظه‌کار)</option>
+   354→                <option value={0.3}>α = ۰٫۳ (متعادل)</option>
+   355→                <option value={0.5}>α = ۰٫۵ (پرخاشگر)</option>
+   356→              </select>
+   357→            }
+   358→          >
+   359→            {busy && !data && <LoadingBlock />}
+   360→            {data?.forecast && (
+   361→              <div className="space-y-3">
+   362→                {filtered(data.forecast.rows).slice(0, 24).map((r) => (
+   363→                  <div key={r.id} className="glow-card rounded-2xl bg-card p-3">
+   364→                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   365→                      <span className="text-sm font-black">{r.name}</span>
+   366→                      <span className="flex items-center gap-2">
+   367→                        <Pill label={r.method} color="#0e7a4a" />
+   368→                        <Pill label={`روند ${r.trend}`} color={r.trend === 'صعودی' ? '#0e7a4a' : r.trend === 'نزولی' ? '#b3372f' : '#6b7280'} />
+   369→                        <span className="rounded-xl bg-[#c9a227]/15 px-3 py-1 text-xs font-black text-[#8a6d10]">
+   370→                          هفته بعد: {faNum(r.forecastNext)} عدد
+   371→                        </span>
+   372→                      </span>
+   373→                    </div>
+   374→                    <BarChart data={r.history.map((v, i) => ({ label: `هفته ${faNum(i + 1)}`, value: v }))} height={70} color="#77934a" />
+   375→                  </div>
+   376→                ))}
+   377→                {data.forecast.rows.length === 0 && <EmptyState emoji="📉" title="هنوز داده فروش کافی نیست" hint="پس از ثبت پیش‌فاکتورهای فروش، پیش‌بینی خودکار محاسبه می‌شود" />}
+   378→              </div>
+   379→            )}
+   380→          </SectionCard>
+   381→        </div>
+   382→      )}
+   383→
+   384→      {/* ═══════════ WASTE ═══════════ */}
+   385→      {tab === 'waste' && wasteData && (
+   386→        <div className="space-y-4 fade-in-up">
+   387→          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   388→            <StatCard label="ارزش ضایعات ۳۰ روز" value={faMoney(wasteData.stats.totalValue)} tone="rose" hint="هدف: زیر ۱٫۵٪ فروش — GRTB" />
+   389→            <StatCard label="تعداد موارد" value={wasteData.stats.count} tone="stone" />
+   390→            <StatCard label="هشدار انقضا (۱۴ روز آینده)" value={wasteData.expiryAlerts.length} tone="gold" hint="اولویت FEFO" />
+   391→            <div className="glow-card flex flex-col items-center justify-center rounded-2xl bg-card p-3">
+   392→              <button
+   393→                onClick={() => {
+   394→                  const p = wasteData.products[0]
+   395→                  setWForm((f) => ({
+   396→                    ...f,
+   397→                    productId: p?.id || '',
+   398→                    productName: p?.name || '',
+   399→                    category: p?.category || 'عمومی',
+   400→                    unit: p?.unit || 'عدد',
+   401→                    estValue: p ? p.price : '',
+   402→                    qty: 1,
+   403→                  }))
+   404→                  setWOpen(true)
+   405→                }}
+   406→                className="flex items-center gap-2 rounded-xl bg-[#b3372f] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#b3372f]/30 transition hover:brightness-110"
+   407→              >
+   408→                <Plus size={16} /> ثبت ضایعات
+   409→              </button>
+   410→            </div>
+   411→          </div>
+   412→
+   413→          {wasteData.expiryAlerts.length > 0 && (
+   414→            <SectionCard title="هشدار FEFO — اول انقضا، اول خارج" subtitle="First-Expired-First-Out تا ۳۵٪ ضایعات را کم می‌کند (RELEX)" icon={<Trash2 size={18} />}>
+   415→              <div className="scroll-gold flex max-h-44 gap-2 overflow-x-auto pb-1">
+   416→                {wasteData.expiryAlerts.map((a, i) => (
+   417→                  <div key={i} className="min-w-44 rounded-xl border border-[#c9a227]/40 bg-[#fdf6dd]/70 p-3">
+   418→                    <p className="truncate text-xs font-black">{a.productName}</p>
+   419→                    <p className="mt-1 text-[10px] font-bold text-[#a04c2a]">انقضا: {formatJalaliShort(a.expiryDate)}</p>
+   420→                    <p className="text-[10px] text-muted-foreground">موجودی: {faNum(a.receivedQty ?? a.qty)}</p>
+   421→                  </div>
+   422→                ))}
+   423→              </div>
+   424→            </SectionCard>
+   425→          )}
+   426→
+   427→          <div className="grid gap-4 lg:grid-cols-3">
+   428→            <SectionCard title="به تفکیک دلیل" icon={<Trash2 size={18} />} className="lg:col-span-2">
+   429→              <div className="grid gap-4 md:grid-cols-2">
+   430→                <BarChart
+   431→                  data={Object.entries(wasteData.stats.byReason).map(([k, v]) => ({ label: wasteData.reasons[k] || k, value: v }))}
+   432→                  color="#b3372f"
+   433→                  formatValue={(v) => faMoney(v)}
+   434→                />
+   435→                <Donut
+   436→                  data={Object.entries(wasteData.stats.byCategory).slice(0, 6).map(([k, v]) => ({ label: k, value: Math.round(v) }))}
+   437→                />
+   438→              </div>
+   439→            </SectionCard>
+   440→            <SectionCard title="آخرین ثبت‌ها" icon={<Plus size={18} />}>
+   441→              <div className="scroll-gold max-h-72 space-y-2 overflow-y-auto">
+   442→                {wasteData.waste.slice(0, 30).map((w) => (
+   443→                  <div key={w.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/30 p-2.5">
+   444→                    <div className="min-w-0">
+   445→                      <p className="truncate text-xs font-bold">{w.productName}</p>
+   446→                      <p className="text-[10px] text-muted-foreground">
+   447→                        {faNum(w.qty)} {w.unit} • {formatJalaliShort(w.forDate)}
+   448→                      </p>
+   449→                    </div>
+   450→                    <div className="flex shrink-0 flex-col items-end gap-1">
+   451→                      <Pill label={wasteData.reasons[w.reason] || w.reason} color={REASON_COLOR[w.reason]} />
+   452→                      <button
+   453→                        onClick={async () => {
+   454→                          try {
+   455→                            await api(`/api/waste?id=${w.id}`, { method: 'DELETE' })
+   456→                            toast.success('ثبت ضایعات حذف شد')
+   457→                            loadWaste()
+   458→                          } catch (e: any) {
+   459→                            toast.error(e.message)
+   460→                          }
+   461→                        }}
+   462→                        className="text-[10px] font-bold text-[#b3372f] hover:underline"
+   463→                      >
+   464→                        حذف
+   465→                      </button>
+   466→                    </div>
+   467→                  </div>
+   468→                ))}
+   469→                {wasteData.waste.length === 0 && <EmptyState emoji="🧹" title="ضایعاتی ثبت نشده" hint="نگهداری تمیزِ داده ضایعات، شاخص کسری موجودی را واقعی نگه می‌دارد" />}
+   470→              </div>
+   471→            </SectionCard>
+   472→          </div>
+   473→        </div>
+   474→      )}
+   475→
+   476→      {/* ═══════════ CYCLE COUNT ═══════════ */}
+   477→      {tab === 'count' && countData && (
+   478→        <div className="space-y-4 fade-in-up">
+   479→          <SectionCard
+   480→            title="شمارش چرخه‌ای انبار"
+   481→            subtitle="بر اساس پژوهش ECR/کاردیف: ~۶۰٪ سوابق موجودی در هر لحظه نادرست است — شمارش دسته A هفتگی، B ماهانه، C فصلی"
+   482→            icon={<ClipboardCheck size={18} />}
+   483→            actions={
+   484→              <div className="flex items-end gap-2">
+   485→                <div className="w-44">
+   486→                  <select value={countForm.category} onChange={(e) => setCountForm((f) => ({ ...f, category: e.target.value }))} className="w-full rounded-xl border border-input bg-white px-3 py-2 text-xs font-bold">
+   487→                    <option value="">انتخاب دسته…</option>
+   488→                    {countData.categories.map((c) => (
+   489→                      <option key={c} value={c}>{CATEGORY_EMOJI[c] || '📦'} {c}</option>
+   490→                    ))}
+   491→                  </select>
+   492→                </div>
+   493→                <button
+   494→                  onClick={async () => {
+   495→                    if (!countForm.category) return toast.error('دسته را انتخاب کنید')
+   496→                    try {
+   497→                      const d = await api<{ count: Count }>('/api/cyclecount', { method: 'POST', body: { category: countForm.category } })
+   498→                      setOpenCount(d.count)
+   499→                      loadCounts()
+   500→                      toast.success('برگه شمارش ساخته شد')
+   501→                    } catch (e: any) {
+   502→                      toast.error(e.message)
+   503→                    }
+   504→                  }}
+   505→                  className="flex items-center gap-1.5 rounded-xl bg-[#0e7a4a] px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:brightness-110"
+   506→                >
+   507→                  <Plus size={14} /> برگه جدید
+   508→                </button>
+   509→              </div>
+   510→            }
+   511→          >
+   512→            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+   513→              {countData.counts.map((c) => {
+   514→                const counted = c.items.filter((i) => i.countedQty !== null).length
+   515→                return (
+   516→                  <div key={c.id} className="glow-card rounded-2xl bg-card p-4">
+   517→                    <div className="mb-2 flex items-center justify-between">
+   518→                      <span className="text-sm font-black">{c.title}</span>
+   519→                      <Pill label={c.status === 'OPEN' ? 'باز' : `بسته — دقت ${faNum(c.accuracy ?? 0)}٪`} color={c.status === 'OPEN' ? '#c9a227' : '#0e7a4a'} />
+   520→                    </div>
+   521→                    <p className="text-[11px] text-muted-foreground">
+   522→                      {c.category} • {formatJalaliShort(c.forDate)} • {faNum(counted)}/{faNum(c.items.length)} شمرده‌شده
+   523→                    </p>
+   524→                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+   525→                      <div className="h-full rounded-full bg-[#0e7a4a]" style={{ width: `${(counted / Math.max(1, c.items.length)) * 100}%` }} />
+   526→                    </div>
+   527→                    <div className="mt-3 flex gap-2">
+   528→                      <button onClick={() => setOpenCount(c)} className="flex-1 rounded-xl bg-secondary px-3 py-2 text-xs font-black text-primary hover:brightness-95">
+   529→                        {c.status === 'OPEN' ? 'ادامه شمارش' : 'مشاهده'}
+   530→                      </button>
+   531→                      {c.status === 'OPEN' && (
+   532→                        <button
+   533→                          onClick={async () => {
+   534→                            try {
+   535→                              await api(`/api/cyclecount?id=${c.id}`, { method: 'DELETE' })
+   536→                              toast.success('برگه حذف شد')
+   537→                              loadCounts()
+   538→                            } catch (e: any) {
+   539→                              toast.error(e.message)
+   540→                            }
+   541→                          }}
+   542→                          className="rounded-xl bg-[#fee2e2] px-3 py-2 text-xs font-black text-[#b3372f]"
+   543→                        >
+   544→                          حذف
+   545→                        </button>
+   546→                      )}
+   547→                    </div>
+   548→                  </div>
+   549→                )
+   550→              })}
+   551→              {countData.counts.length === 0 && (
+   552→                <div className="sm:col-span-2 lg:col-span-3">
+   553→                  <EmptyState emoji="📋" title="برگه شمارشی وجود ندارد" hint="از یک دسته شروع کنید؛ شمارش چرخه‌ای جایگزین تعطیلی سالانه انبار می‌شود" />
+   554→                </div>
+   555→              )}
+   556→            </div>
+   557→          </SectionCard>
+   558→        </div>
+   559→      )}
+   560→
+   561→      {/* ── count modal ── */}
+   562→      {openCount && (
+   563→        <CountModal
+   564→          count={openCount}
+   565→          onClose={() => setOpenCount(null)}
+   566→          onChanged={() => {
+   567→            loadCounts()
+   568→          }}
+   569→        />
+   570→      )}
+   571→
+   572→      {/* ── waste modal ── */}
+   573→      {wOpen && wasteData && (
+   574→        <Modal title="ثبت ضایعات جدید" onClose={() => setWOpen(false)}>
+   575→          <div className="grid gap-3 sm:grid-cols-2">
+   576→            <div className="sm:col-span-2">
+   577→              <Labeled label="کالا">
+   578→                <select
+   579→                  value={wForm.productId}
+   580→                  onChange={(e) => {
+   581→                    const p = wasteData.products.find((x) => x.id === e.target.value)
+   582→                    setWForm((f) => ({ ...f, productId: e.target.value, productName: p?.name || '', category: p?.category || 'عمومی', unit: p?.unit || 'عدد', estValue: p ? (f.qty || 0) * p.price : f.estValue }))
+   583→                  }}
+   584→                  className="w-full rounded-xl border border-input bg-white px-3 py-2.5 text-sm font-bold"
+   585→                >
+   586→                  <option value="">انتخاب کالا…</option>
+   587→                  {wasteData.products.map((p) => (
+   588→                    <option key={p.id} value={p.id}>{p.name}</option>
+   589→                  ))}
+   590→                </select>
+   591→              </Labeled>
+   592→            </div>
+   593→            <Labeled label="مقدار">
+   594→              <FaPriceInput value={wForm.qty} onChange={(v) => {
+   595→                const p = wasteData.products.find((x) => x.id === wForm.productId)
+   596→                setWForm((f) => ({ ...f, qty: v || 0, estValue: p && v ? v * p.price : f.estValue }))
+   597→              }} className="rounded-xl border border-input bg-white px-3 py-2.5" />
+   598→            </Labeled>
+   599→            <Labeled label="دلیل">
+   600→              <select value={wForm.reason} onChange={(e) => setWForm((f) => ({ ...f, reason: e.target.value }))} className="w-full rounded-xl border border-input bg-white px-3 py-2.5 text-sm font-bold">
+   601→                {Object.entries(wasteData.reasons).map(([k, v]) => (
+   602→                  <option key={k} value={k}>{v}</option>
+   603→                ))}
+   604→              </select>
+   605→            </Labeled>
+   606→            <Labeled label="ارزش برآوردی (تومان)">
+   607→              <FaPriceInput value={wForm.estValue} onChange={(v) => setWForm((f) => ({ ...f, estValue: v }))} className="rounded-xl border border-input bg-white px-3 py-2.5" />
+   608→            </Labeled>
+   609→            <Labeled label="تاریخ">
+   610→              <JalaliDatePicker value={wForm.forDate} onChange={(v) => setWForm((f) => ({ ...f, forDate: v }))} holidays={holidays} />
+   611→            </Labeled>
+   612→            <div className="sm:col-span-2">
+   613→              <Labeled label="یادداشت">
+   614→                <input value={wForm.note} onChange={(e) => setWForm((f) => ({ ...f, note: e.target.value }))} className="w-full rounded-xl border border-input bg-white px-3 py-2.5 text-sm" placeholder="مثلاً: بسته‌بندی آسیب‌دیده در حمل" />
+   615→              </Labeled>
+   616→            </div>
+   617→          </div>
+   618→          <div className="mt-4 flex justify-end gap-2">
+   619→            <button onClick={() => setWOpen(false)} className="rounded-xl bg-muted px-4 py-2.5 text-sm font-bold">انصراف</button>
+   620→            <button
+   621→              onClick={async () => {
+   622→                if (!wForm.productId || !wForm.qty) return toast.error('کالا و مقدار را وارد کنید')
+   623→                try {
+   624→                  await api('/api/waste', { method: 'POST', body: wForm })
+   625→                  toast.success('ضایعات ثبت شد 🧹')
+   626→                  setWOpen(false)
+   627→                  loadWaste()
+   628→                } catch (e: any) {
+   629→                  toast.error(e.message)
+   630→                }
+   631→              }}
+   632→              className="rounded-xl bg-[#0e7a4a] px-5 py-2.5 text-sm font-black text-white shadow-lg"
+   633→            >
+   634→              ثبت
+   635→            </button>
+   636→          </div>
+   637→        </Modal>
+   638→      )}
+   639→    </div>
+   640→  )
+   641→}
+   642→
+   643→function LoadingBlock() {
+   644→  return (
+   645→    <div className="flex items-center justify-center py-10">
+   646→      <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#c9a227]/30 border-t-[#c9a227]" />
+   647→    </div>
+   648→  )
+   649→}
+   650→
+   651→/** برگه شمارش: ورود تعداد شمارش‌شده + بستن با اصلاح خودکار موجودی */
+   652→function CountModal({ count, onClose, onChanged }: { count: Count; onClose: () => void; onChanged: () => void }) {
+   653→  const [items, setItems] = useState<CountItem[]>(count.items)
+   654→  const [saving, setSaving] = useState(false)
+   655→  const counted = items.filter((i) => i.countedQty !== null).length
+   656→  const diffs = items.filter((i) => i.countedQty !== null && i.diff !== 0)
+   657→  const acc = counted ? Math.round(((counted - diffs.length) / counted) * 100) : null
+   658→
+   659→  const setQty = (productId: string, v: number | '') => {
+   660→    setItems((arr) =>
+   661→      arr.map((it) => (it.productId === productId ? { ...it, countedQty: v === '' ? null : v, diff: v === '' ? 0 : (v as number) - it.systemQty } : it))
+   662→    )
+   663→  }
+   664→
+   665→  const save = async (close: boolean) => {
+   666→    setSaving(true)
+   667→    try {
+   668→      await api('/api/cyclecount', {
+   669→        method: 'PUT',
+   670→        body: {
+   671→          id: count.id,
+   672→          close,
+   673→          updates: items.filter((i) => i.countedQty !== null).map((i) => ({ productId: i.productId, countedQty: i.countedQty })),
+   674→        },
+   675→      })
+   676→      toast.success(close ? 'برگه بسته شد و موجودی‌ها اصلاح شد ✅' : 'شمارش ذخیره شد')
+   677→      onChanged()
+   678→      if (close) onClose()
+   679→    } catch (e: any) {
+   680→      toast.error(e.message)
+   681→    } finally {
+   682→      setSaving(false)
+   683→    }
+   684→  }
+   685→
+   686→  return (
+   687→    <Modal title={`برگه شمارش — ${count.title}`} onClose={onClose}>
+   688→      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+   689→        <Pill label={`${faNum(counted)}/${faNum(items.length)} شمرده‌شده`} color="#0e7a4a" />
+   690→        {acc !== null && <Pill label={`دقت: ${faNum(acc)}٪`} color={acc >= 95 ? '#0e7a4a' : acc >= 80 ? '#c9a227' : '#b3372f'} />}
+   691→        {diffs.length > 0 && <Pill label={`${faNum(diffs.length)} مغایرت`} color="#b3372f" />}
+   692→        <span className="text-muted-foreground">کالای مغایرت را با مقدار واقعی پر کنید؛ در بستن برگه، موجودی اصلاح می‌شود</span>
+   693→      </div>
+   694→      <div className="scroll-gold max-h-[55vh] space-y-2 overflow-y-auto pl-1">
+   695→        {items.map((it) => (
+   696→          <div key={it.productId} className={cn('flex items-center gap-2 rounded-xl border p-2.5', it.diff !== 0 && it.countedQty !== null ? 'border-[#b3372f]/40 bg-[#fee2e2]/30' : 'border-border/70 bg-muted/20')}>
+   697→            <div className="min-w-0 flex-1">
+   698→              <p className="truncate text-xs font-bold">{it.productName}</p>
+   699→              <p className="text-[10px] text-muted-foreground">سیستم: {faNum(it.systemQty)} {it.unit}</p>
+   700→            </div>
+   701→            {it.countedQty !== null && it.diff !== 0 && (
+   702→              <Pill label={`${it.diff > 0 ? '+' : ''}${faNum(it.diff)}`} color={it.diff > 0 ? '#8a6d10' : '#b3372f'} />
+   703→            )}
+   704→            <FaPriceInput value={it.countedQty ?? ''} onChange={(v) => setQty(it.productId, v)} className="w-24 rounded-xl border border-input bg-white px-2 py-2" ariaLabel={`شمارش ${it.productName}`} />
+   705→          </div>
+   706→        ))}
+   707→      </div>
+   708→      <div className="mt-4 flex flex-wrap justify-end gap-2">
+   709→        <button onClick={onClose} className="rounded-xl bg-muted px-4 py-2.5 text-sm font-bold">بستن پنجره</button>
+   710→        <button onClick={() => save(false)} disabled={saving} className="rounded-xl bg-secondary px-5 py-2.5 text-sm font-black text-primary shadow">ذخیره شمارش</button>
+   711→        <button onClick={() => save(true)} disabled={saving || counted === 0} className="rounded-xl bg-[#0e7a4a] px-5 py-2.5 text-sm font-black text-white shadow-lg disabled:opacity-50">
+   712→          بستن برگه + اصلاح موجودی
+   713→        </button>
+   714→      </div>
+   715→    </Modal>
+   716→  )
+   717→}
+   718→

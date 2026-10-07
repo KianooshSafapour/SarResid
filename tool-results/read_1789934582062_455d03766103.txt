@@ -1,0 +1,948 @@
+     1→'use client'
+     2→
+     3→/* ═══════════════════════════════════════════════════════════════════════════
+     4→ * مدیریت داده‌ها — وضعیت داده‌ها | بازنشانی و پاک‌سازی | ورود از اکسل با تطبیق ستون‌ها
+     5→ * گاردهای سمت سرور: GET /api/admin/db → canViewApi('data') ، عملیات مخرب → cap «db.reset»
+     6→ * ورود داده → cap «db.import». هر عملیات مخرب با تسلیح دومرحله‌ای و برای
+     7→ * پاک‌سازی‌ها با تأیید تایپیِ عبارت فارسی انجام می‌شود (برگشت‌ناپذیر).
+     8→ * ═══════════════════════════════════════════════════════════════════════════ */
+     9→
+    10→import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+    11→import { toast } from 'sonner'
+    12→import * as XLSX from 'xlsx'
+    13→import { api } from '@/lib/client'
+    14→import { faNum, faMoney, formatJalaliDateTime, parseFaNumber } from '@/lib/jalali'
+    15→import { SectionCard, StatCard, Pill, EmptyState, type AppCtx } from '@/components/app/ui-bits'
+    16→import { Modal } from '@/components/views/Orders'
+    17→import { cn } from '@/lib/utils'
+    18→import { DatabaseBackup, ShieldAlert, FileSpreadsheet, Save, RefreshCw, CheckCircle2, Circle } from 'lucide-react'
+    19→
+    20→type DbStats = {
+    21→  counts: {
+    22→    products: number; providers: number; customers: number; orders: number; orderItems: number
+    23→    cheques: number; payments: number; preorders: number; users: number; personnel: number
+    24→    zoneCounts: number; tasks: number; messages: number; activities: number; archiveDocs: number
+    25→    customerEvents: number; saleEngagements: number; holidayCount: number
+    26→  }
+    27→  demoFlag: string
+    28→  lastReset: { at: string; by: string }
+    29→  dbSizeMB: number
+    30→  realDataChecklist: { key: string; label: string; done: boolean }[]
+    31→}
+    32→
+    33→type FieldDef = { key: string; label: string; required: boolean }
+    34→type DryResult = {
+    35→  valid: number
+    36→  invalid: { row: number; error: string }[]
+    37→  willCreate: number
+    38→  willUpdate: number
+    39→  willSkip: number
+    40→  sample: Record<string, unknown>[]
+    41→}
+    42→type ApplyResult = { ok: boolean; created: number; updated: number; skipped: number; errors: { row: number; error: string }[]; totalInvalid: number }
+    43→
+    44→const ALLOWED_ROLES = ['OWNER', 'GM', 'OM', 'ADMIN', 'IT', 'ACC']
+    45→
+    46→/** برچسب فارسی جدول‌های حذف‌شده در خلاصهٔ نتیجه */
+    47→const TABLE_FA: Record<string, string> = {
+    48→  product: 'کالا', provider: 'تأمین‌کننده', customer: 'مشتری', customerEvent: 'رخداد مشتری',
+    49→  orderItem: 'قلم سفارش', order: 'سفارش', cheque: 'چک', payment: 'پرداخت', preOrder: 'پیش‌فاکتور',
+    50→  saleEngagement: 'پیشنهاد فروش', complaint: 'شکایت', extraActivity: 'فعالیت ویژه', notifOutbox: 'اعلان',
+    51→  zoneCount: 'شمارش زون', laborHour: 'ساعت کاری', leaveRequest: 'مرخصی', urgentQuestion: 'پرسش فوری',
+    52→  archiveDocItem: 'قلم سند', archiveDoc: 'سند آرشیو', archiveCustody: 'امانی', docEvent: 'رخداد سند',
+    53→  activityLog: 'لاگ فعالیت', award: 'قدردانی',
+    54→}
+    55→
+    56→export default function DataAdminView({ ctx }: { ctx: AppCtx }) {
+    57→  const [tab, setTab] = useState<'status' | 'danger' | 'import'>('status')
+    58→
+    59→  // گارد سمت کلاینت — سرور هم مستقلاً گارد می‌گذارد
+    60→  if (!ctx.user || !ALLOWED_ROLES.includes(ctx.user.role)) {
+    61→    return (
+    62→      <div className="space-y-6">
+    63→        <SectionCard title="مدیریت داده‌ها" subtitle="بازنشانی، پاک‌سازی و ورود دادهٔ واقعی">
+    64→          <EmptyState emoji="🔒" title="دسترسی محدود — فقط مالک، مدیران و IT" hint="این بخش داده‌های کل سامانه را اداره می‌کند و برای نقش‌های عملیاتی باز نیست." />
+    65→        </SectionCard>
+    66→      </div>
+    67→    )
+    68→  }
+    69→
+    70→  return (
+    71→    <div className="space-y-5">
+    72→      {/* سربرگ + نوار تب‌ها */}
+    73→      <div className="glow-card gold-glow-border arch-top rounded-2xl bg-card p-4 sm:p-5 fade-in-up">
+    74→        <div className="flex flex-wrap items-center justify-between gap-3">
+    75→          <div className="flex items-center gap-3">
+    76→            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-primary"><DatabaseBackup size={22} /></span>
+    77→            <div>
+    78→              <h1 className="text-lg font-black text-foreground">مدیریت داده‌ها</h1>
+    79→              <p className="text-xs text-muted-foreground">وضعیت دیتابیس، بازنشانی دادهٔ نمایشی، پاک‌سازی و ورود دادهٔ واقعی از اکسل</p>
+    80→            </div>
+    81→          </div>
+    82→          <nav className="flex flex-wrap gap-1.5 rounded-2xl bg-muted/60 p-1.5">
+    83→            {([
+    84→              ['status', '📊 وضعیت داده‌ها'],
+    85→              ['danger', '🧨 بازنشانی و پاک‌سازی'],
+    86→              ['import', '📥 ورود از اکسل (تطبیق ستون‌ها)'],
+    87→            ] as const).map(([key, label]) => (
+    88→              <button
+    89→                key={key}
+    90→                onClick={() => setTab(key)}
+    91→                className={cn(
+    92→                  'rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all',
+    93→                  tab === key ? 'bg-primary text-white shadow-md' : 'text-foreground/70 hover:bg-background'
+    94→                )}
+    95→              >
+    96→                {label}
+    97→              </button>
+    98→            ))}
+    99→          </nav>
+   100→        </div>
+   101→      </div>
+   102→
+   103→      {tab === 'status' && <StatusTab onGoto={setTab} />}
+   104→      {tab === 'danger' && <DangerTab />}
+   105→      {tab === 'import' && <ImportWizard onDone={() => { /* آمار در تب وضعیت با ورود دوباره تازه می‌شود */ }} />}
+   106→    </div>
+   107→  )
+   108→}
+   109→
+   110→/* ═════════════════════════════ تب ۱ — وضعیت داده‌ها ═════════════════════════════ */
+   111→
+   112→function StatusTab({ onGoto }: { onGoto: (t: 'status' | 'danger' | 'import') => void }) {
+   113→  const [stats, setStats] = useState<DbStats | null>(null)
+   114→  const [busy, setBusy] = useState(false)
+   115→
+   116→  const load = useCallback(() => {
+   117→    api<DbStats>('/api/admin/db').then(setStats).catch((e) => toast.error(e.message))
+   118→  }, [])
+   119→  useEffect(load, [load])
+   120→
+   121→  const isReal = stats?.demoFlag === 'real'
+   122→
+   123→  const setMode = async (mode: 'demo' | 'real') => {
+   124→    setBusy(true)
+   125→    try {
+   126→      await api('/api/admin/db', { method: 'POST', body: { action: 'set-mode', mode } })
+   127→      toast.success(mode === 'real' ? 'سامانه به حالت «دادهٔ واقعی» رفت 🌿' : 'سامانه به حالت «دادهٔ نمایشی» برگشت 🟡')
+   128→      load()
+   129→    } catch (e) {
+   130→      toast.error((e as Error).message)
+   131→    } finally {
+   132→      setBusy(false)
+   133→    }
+   134→  }
+   135→
+   136→  const c = stats?.counts
+   137→  const tiles: { label: string; value: number; tone: 'emerald' | 'gold' | 'terra' | 'rose' | 'olive' | 'stone'; icon: string; hint?: string }[] = c ? [
+   138→    { label: 'کالاها', value: c.products, tone: 'emerald', icon: '📦' },
+   139→    { label: 'تأمین‌کنندگان', value: c.providers, tone: 'olive', icon: '🚚' },
+   140→    { label: 'مشتریان', value: c.customers, tone: 'gold', icon: '🧑‍🤝‍🧑' },
+   141→    { label: 'سفارش‌ها', value: c.orders, tone: 'emerald', icon: '🧾' },
+   142→    { label: 'اقلام سفارش', value: c.orderItems, tone: 'stone', icon: '📄' },
+   143→    { label: 'چک‌ها', value: c.cheques, tone: 'gold', icon: '💰' },
+   144→    { label: 'پرداخت‌ها', value: c.payments, tone: 'terra', icon: '💳' },
+   145→    { label: 'پیش‌فاکتورهای فروش', value: c.preorders, tone: 'emerald', icon: '🛒' },
+   146→    { label: 'کاربران', value: c.users, tone: 'stone', icon: '👥' },
+   147→    { label: 'پروندهٔ پرسنل', value: c.personnel, tone: 'olive', icon: '🗂️' },
+   148→    { label: 'شمارش‌های زون', value: c.zoneCounts, tone: 'emerald', icon: '⚖️' },
+   149→    { label: 'وظایف', value: c.tasks, tone: 'gold', icon: '✅' },
+   150→    { label: 'پیام‌ها', value: c.messages, tone: 'stone', icon: '✉️' },
+   151→    { label: 'لاگ فعالیت‌ها', value: c.activities, tone: 'terra', icon: '📜' },
+   152→    { label: 'اسناد آرشیو', value: c.archiveDocs, tone: 'olive', icon: '🗄️' },
+   153→    { label: 'رخدادهای مشتری', value: c.customerEvents, tone: 'gold', icon: '💞' },
+   154→    { label: 'پیشنهادهای فروش', value: c.saleEngagements, tone: 'emerald', icon: '🤝' },
+   155→    { label: 'تعطیلات رسمی', value: c.holidayCount, tone: 'rose', icon: '🗓️' },
+   156→  ] : []
+   157→
+   158→  return (
+   159→    <div className="space-y-5">
+   160→      {/* حالت داده + حجم + آخرین بازنشانی */}
+   161→      <SectionCard
+   162→        title="حالت دادهٔ سامانه"
+   163→        subtitle="این نشان تعیین می‌کند سامانه در فاز تمرین است یا بهره‌برداری واقعی"
+   164→        icon={<span className="text-lg">{isReal ? '🌿' : '🟡'}</span>}
+   165→        actions={
+   166→          <ArmedButton
+   167→            tone="gold"
+   168→            label={isReal ? 'بازگشت به حالت نمایشی' : 'انتقال به دادهٔ واقعی'}
+   169→            onClick={() => setMode(isReal ? 'demo' : 'real')}
+   170→            disabled={busy}
+   171→          />
+   172→        }
+   173→      >
+   174→        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   175→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   176→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">وضعیت فعلی</p>
+   177→            {isReal
+   178→              ? <Pill label="دادهٔ واقعی 🌿" color="#0e7a4a" bg="#dcfce7" className="px-3 py-1 text-xs" />
+   179→              : <Pill label="دادهٔ نمایشی 🟡" color="#8a6d10" bg="#fdf6dd" className="px-3 py-1 text-xs" />}
+   180→            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+   181→              {isReal
+   182→                ? 'دادهٔ واقعی فروشگاه — عملیات با احتیاط و پس از پشتیبان‌گیری.'
+   183→                : 'دادهٔ دمو برای آموزش و تمرین — تا ورود دادهٔ واقعی.'}
+   184→            </p>
+   185→          </div>
+   186→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   187→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">حجم دیتابیس روی دیسک</p>
+   188→            <p className="text-2xl font-black text-[#8a6d10]">{stats ? `${faNum(stats.dbSizeMB)} مگابایت` : '…'}</p>
+   189→            <p className="mt-2 text-[11px] text-muted-foreground">فایل SQLite — پشتیبان‌گیری از «مدیریت سامانه»</p>
+   190→          </div>
+   191→          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   192→            <p className="mb-2 text-[11px] font-bold text-muted-foreground">آخرین بازنشانی دادهٔ نمایشی</p>
+   193→            <p className="text-sm font-black text-foreground">
+   194→              {stats?.lastReset?.at ? formatJalaliDateTime(stats.lastReset.at) : 'تاکنون بازنشانی نشده'}
+   195→            </p>
+   196→            {stats?.lastReset?.by && <p className="mt-1 text-[11px] text-muted-foreground">توسط: {stats.lastReset.by}</p>}
+   197→          </div>
+   198→        </div>
+   199→      </SectionCard>
+   200→
+   201→      {/* آمار همهٔ جدول‌ها */}
+   202→      <SectionCard
+   203→        title="آمار جدول‌ها"
+   204→        subtitle="تعداد رکوردهای هر بخش — با ورود و پاک‌سازی، همین‌جا تازه می‌شود"
+   205→        icon={<RefreshCw size={18} />}
+   206→        actions={
+   207→          <button onClick={load} className="rounded-xl border border-border bg-white/60 px-3 py-2 text-xs font-extrabold hover:bg-muted">
+   208→            <RefreshCw size={14} className="inline" /> به‌روزرسانی
+   209→          </button>
+   210→        }
+   211→      >
+   212→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+   213→          {tiles.map((t) => (
+   214→            <StatCard key={t.label} label={t.label} value={faNum(t.value)} tone={t.tone} icon={<span className="text-base">{t.icon}</span>} />
+   215→          ))}
+   216→          {!stats && <p className="col-span-full py-6 text-center text-xs text-muted-foreground">در حال خواندن آمار…</p>}
+   217→        </div>
+   218→      </SectionCard>
+   219→
+   220→      {/* چک‌لیست دادهٔ واقعی */}
+   221→      <SectionCard title="چک‌لیست گذار به دادهٔ واقعی" subtitle="راهنمای گام‌به‌گام برای جایگزینی دادهٔ دمو با دادهٔ واقعی فروشگاه" icon={<CheckCircle2 size={18} />}>
+   222→        <div className="space-y-2">
+   223→          {stats?.realDataChecklist?.map((item) => (
+   224→            <div key={item.key} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
+   225→              <span className="flex items-center gap-2 text-sm font-bold text-foreground">
+   226→                {item.done ? <CheckCircle2 size={18} className="text-[#0e7a4a]" /> : <Circle size={18} className="text-muted-foreground" />}
+   227→                {item.label}
+   228→              </span>
+   229→              {item.done
+   230→                ? <Pill label="انجام شد ✓" color="#0e7a4a" bg="#dcfce7" />
+   231→                : <Pill label="در انتظار" color="#a16207" bg="#fef9c3" />}
+   232→            </div>
+   233→          ))}
+   234→        </div>
+   235→        <div className="mt-4 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/60 p-4">
+   236→          <p className="text-xs font-black text-[#8a6d10]">🌿 برای ورود دادهٔ واقعی فروشگاه:</p>
+   237→          <ol className="mt-2 list-inside list-decimal space-y-1.5 text-xs leading-6 text-foreground/80">
+   238→            <li>سقف دمو را پاک کنید — از تب «🧨 بازنشانی و پاک‌سازی» → «بازنشانی دادهٔ نمایشی».</li>
+   239→            <li>از تب «📥 ورود از اکسل» محصولات واقعی را با تطبیق ستون‌ها وارد کنید (سپس تأمین‌کنندگان و مشتریان).</li>
+   240→            <li>حالت را به «دادهٔ واقعی 🌿» ببرید تا همه یاد بگیرند سامانه در فاز بهره‌برداری است.</li>
+   241→          </ol>
+   242→          <button
+   243→            onClick={() => onGoto('import')}
+   244→            className="mt-3 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white hover:opacity-90"
+   245→          >
+   246→            شروع ورود داده از اکسل
+   247→          </button>
+   248→        </div>
+   249→      </SectionCard>
+   250→    </div>
+   251→  )
+   252→}
+   253→
+   254→/* ═════════════════════════════ تب ۲ — بازنشانی و پاک‌سازی ═════════════════════════════ */
+   255→
+   256→type DangerCard = {
+   257→  action: string
+   258→  title: string
+   259→  icon: string
+   260→  desc: string
+   261→  phrase: string | null // null = فقط تسلیح دومرحله‌ای؛ متن = تأیید تایپی هم لازم است
+   262→  tone: 'rose' | 'gold'
+   263→}
+   264→
+   265→const DANGER_CARDS: DangerCard[] = [
+   266→  {
+   267→    action: 'reset-demo', title: 'بازنشانی دادهٔ نمایشی', icon: '🗄️', tone: 'rose', phrase: null,
+   268→    desc: 'همهٔ داده‌های عملیاتی دمو پاک می‌شود: سفارش‌ها و اقلام، چک‌ها، پرداخت‌ها، پیش‌فاکتورهای فروش، رخدادهای مشتری، پیشنهادهای فروش، شکایت‌ها، اعلان‌ها، شمارش‌های زون، ساعت‌کاری، مرخصی‌ها، پرسش‌های فوری، اسناد آرشیو، لاگ فعالیت‌ها و قدردانی‌ها. کاربران، کالاها، تأمین‌کنندگان، مشتریان، تعطیلات، نقش‌ها، زون‌ها و پرسنل حفظ می‌شوند.',
+   269→  },
+   270→  {
+   271→    action: 'purge-products', title: 'حذف کامل محصولات', icon: '📦', tone: 'rose', phrase: 'حذف محصولات',
+   272→    desc: 'همهٔ کالاها برای همیشه حذف می‌شوند. اگر سفارشی به کالاها وصل باشد سامانه اجازه نمی‌دهد — ابتدا «بازنشانی دادهٔ نمایشی» را اجرا کنید.',
+   273→  },
+   274→  {
+   275→    action: 'purge-providers', title: 'حذف کامل تأمین‌کنندگان', icon: '🚚', tone: 'rose', phrase: 'حذف تأمین‌کنندگان',
+   276→    desc: 'همهٔ تأمین‌کنندگان حذف می‌شوند؛ کدهای طرف‌حساب در اسناد قبلی فقط به‌صورت نام باقی می‌مانند.',
+   277→  },
+   278→  {
+   279→    action: 'purge-customers', title: 'حذف کامل مشتریان', icon: '🧑‍🤝‍🧑', tone: 'rose', phrase: 'حذف مشتریان',
+   280→    desc: 'همهٔ مشتریان و رخدادهای CRM آن‌ها (بازدید، خرید، تولد، کمپین‌ها) برای همیشه حذف می‌شود.',
+   281→  },
+   282→]
+   283→
+   284→function DangerTab() {
+   285→  const [armed, setArmed] = useState<string | null>(null)
+   286→  const [purge, setPurge] = useState<DangerCard | null>(null)
+   287→  const [typed, setTyped] = useState('')
+   288→  const [busy, setBusy] = useState(false)
+   289→
+   290→  useEffect(() => {
+   291→    if (!armed) return
+   292→    const t = setTimeout(() => setArmed(null), 6000)
+   293→    return () => clearTimeout(t)
+   294→  }, [armed])
+   295→
+   296→  const runAction = async (action: string, confirm?: string) => {
+   297→    setBusy(true)
+   298→    try {
+   299→      const res = await api<{ ok: boolean; summary?: { deleted: Record<string, number> } }>('/api/admin/db', {
+   300→        method: 'POST',
+   301→        body: { action, confirm },
+   302→      })
+   303→      const del = res.summary?.deleted || {}
+   304→      const keys = Object.keys(del)
+   305→      if (keys.length) {
+   306→        toast.success(`انجام شد — ${keys.map((k) => `${faNum(del[k])} «${TABLE_FA[k] || k}»`).join('، ')} حذف شد`)
+   307→      } else {
+   308→        toast.info('انجام شد — موردی برای حذف وجود نداشت')
+   309→      }
+   310→      setPurge(null)
+   311→      setTyped('')
+   312→      setArmed(null)
+   313→    } catch (e) {
+   314→      toast.error((e as Error).message)
+   315→    } finally {
+   316→      setBusy(false)
+   317→    }
+   318→  }
+   319→
+   320→  return (
+   321→    <div className="space-y-5">
+   322→      {/* هشدار برگشت‌ناپذیری */}
+   323→      <div className="flex items-start gap-3 rounded-2xl border border-[#b3372f]/40 bg-[#b3372f]/8 p-4 fade-in-up">
+   324→        <ShieldAlert size={22} className="mt-0.5 shrink-0 text-[#b3372f]" />
+   325→        <div>
+   326→          <p className="text-sm font-black text-[#b3372f]">منطقهٔ خطر — این عملیات‌ها برگشت‌ناپذیرند</p>
+   327→          <p className="mt-1 text-xs leading-6 text-foreground/75">
+   328→            پیش از هر اقدام، از «مدیریت سامانه» نسخهٔ پشتیبان دیتابیس را بگیرید. هر عملیات با دو بار زدن دکمه تسلیح می‌شود و
+   329→            پاک‌سازی‌های کامل به تایپِ عبارت فارسی دقیق نیاز دارند. همهٔ اقدامات در لاگ فعالیت ثبت و به مدیریت اعلان می‌شود.
+   330→          </p>
+   331→        </div>
+   332→      </div>
+   333→
+   334→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   335→        {DANGER_CARDS.map((d) => (
+   336→          <div key={d.action} className="glow-card gold-glow-border rounded-2xl bg-card p-4 sm:p-5 fade-in-up">
+   337→            <div className="mb-2 flex items-center gap-2.5">
+   338→              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#b3372f]/10 text-lg">{d.icon}</span>
+   339→              <h3 className="text-sm font-black text-foreground">{d.title}</h3>
+   340→            </div>
+   341→            <p className="mb-4 text-xs leading-6 text-muted-foreground">{d.desc}</p>
+   342→            <ArmedButton
+   343→              label={d.phrase ? 'حذف کامل…' : 'بازنشانی کن'}
+   344→              onClick={() => {
+   345→                if (d.phrase) {
+   346→                  setPurge(d)
+   347→                  setTyped('')
+   348→                } else {
+   349→                  runAction(d.action)
+   350→                }
+   351→              }}
+   352→              disabled={busy}
+   353→              className="w-full sm:w-auto"
+   354→            />
+   355→          </div>
+   356→        ))}
+   357→
+   358→        {/* نگهداری سبک — اعلان‌های قدیمی */}
+   359→        <div className="glow-card rounded-2xl bg-card p-4 sm:p-5 fade-in-up lg:col-span-2">
+   360→          <div className="mb-2 flex items-center gap-2.5">
+   361→            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#c9a227]/15 text-lg">🧹</span>
+   362→            <h3 className="text-sm font-black text-foreground">پاک‌سازی اعلان‌های قدیمی دمو</h3>
+   363→          </div>
+   364→          <p className="mb-4 text-xs leading-6 text-muted-foreground">
+   365→            اعلان‌های مرکز اعلان‌ها که بیش از ۷ روز از ثبتشان گذشته باشد پاک می‌شود — برای سبک‌ماندن صندوق ورودی تیم. عملیات امن است و دادهٔ عملیاتی را دست نمی‌زند.
+   366→          </p>
+   367→          <ArmedButton tone="gold" label="پاک‌سازی اعلان‌های بالای ۷ روز" onClick={() => runAction('purge-demo-notifs')} disabled={busy} />
+   368→        </div>
+   369→      </div>
+   370→
+   371→      {/* مودال تأیید تایپی */}
+   372→      {purge && (
+   373→        <Modal title={`تأیید نهایی — ${purge.title}`} onClose={() => { setPurge(null); setTyped('') }}>
+   374→          <p className="rounded-xl bg-[#b3372f]/10 p-3 text-xs font-bold leading-6 text-[#b3372f]">
+   375→            این عملیات برگشت‌ناپذیر است و رکوردها بدون امکان بازیابی حذف می‌شوند. اگر مطمئن نیستید، ابتدا پشتیبان بگیرید.
+   376→          </p>
+   377→          <p className="text-xs text-muted-foreground">برای تأیید، عبارت زیر را دقیقاً تایپ کنید:</p>
+   378→          <p className="select-none rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd] px-3 py-2.5 text-center text-base font-black text-[#8a6d10]">
+   379→            {purge.phrase}
+   380→          </p>
+   381→          <input
+   382→            value={typed}
+   383→            onChange={(e) => setTyped(e.target.value)}
+   384→            placeholder="عبارت تأیید را اینجا بنویسید…"
+   385→            className="w-full rounded-xl border border-input bg-white/90 px-4 py-3 text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+   386→          />
+   387→          <button
+   388→            disabled={typed.trim() !== purge.phrase || busy}
+   389→            onClick={() => runAction(purge.action, purge.phrase || undefined)}
+   390→            className="w-full rounded-xl bg-[#b3372f] py-3 text-sm font-extrabold text-white transition-opacity disabled:opacity-40"
+   391→          >
+   392→            {busy ? 'در حال اجرا…' : 'حذف برای همیشه'}
+   393→          </button>
+   394→        </Modal>
+   395→      )}
+   396→    </div>
+   397→  )
+   398→}
+   399→
+   400→/* ═════════════════════════════ تب ۳ — ورود از اکسل با تطبیق ستون‌ها ═════════════════════════════ */
+   401→
+   402→const KINDS: { key: 'products' | 'providers' | 'customers'; label: string; icon: string; hint: string }[] = [
+   403→  { key: 'products', label: 'کالاها', icon: '📦', hint: 'نام، بارکد، کد هلو، قیمت‌ها، موجودی، تأمین‌کننده' },
+   404→  { key: 'providers', label: 'تأمین‌کنندگان', icon: '🚚', hint: 'نام، رابط، تلفن، نوع، شرکت‌های نمایندگی' },
+   405→  { key: 'customers', label: 'مشتریان', icon: '🧑‍🤝‍🧑', hint: 'نام، تلفن، تولد شمسی، تیئر، برچسب‌ها' },
+   406→]
+   407→
+   408→/** ستون‌های قیمتی — قبل از ارسال، ارقام فارسی/جداکننده‌ها به عدد تبدیل می‌شود */
+   409→const NUMERIC_FIELDS = new Set(['buyPrice', 'sellPrice', 'sellPrice2', 'stock', 'reorderLevel'])
+   410→
+   411→/** جدول حدس هوشمند ستون‌ها — تطبیق دقیق و سپس جزئی (فارسی + انگلیسی) */
+   412→const GUESS: Record<string, Record<string, string[]>> = {
+   413→  products: {
+   414→    name: ['نام کالا', 'شرح کالا', 'نام کالای موجود', 'نام', 'کالا', 'شرح', 'عنوان', 'name', 'product', 'product name', 'item'],
+   415→    barcodes: ['بارکد', 'بارکد کالا', 'کد بارکد', 'بارکد محصول', 'barcode', 'barcodes'],
+   416→    holooCode: ['کد هلو', 'کد کالا در هلو', 'کد کالا', 'کد', 'holoocode', 'holoo code', 'holoocode', 'code'],
+   417→    unit: ['واحد', 'واحد شمارش', 'واحد کالا', 'unit'],
+   418→    brand: ['برند', 'برند کالا', 'مارک', 'brand'],
+   419→    category: ['دسته', 'دسته‌بندی', 'گروه کالا', 'گروه', 'category'],
+   420→    buyPrice: ['قیمت خرید', 'بهای خرید', 'قیمت خرید کالا', 'خرید', 'buyprice', 'buy price', 'cost'],
+   421→    sellPrice: ['قیمت فروش', 'قیمت فروش کالا', 'فروش', 'قیمت', 'sellprice', 'sell price', 'price'],
+   422→    sellPrice2: ['قیمت فروش ۲', 'قیمت فروش دوم', 'فروش ۲', 'قیمت ویژه', 'sellprice2', 'sell price 2'],
+   423→    stock: ['موجودی', 'موجودی انبار', 'تعداد', 'شمار', 'stock', 'qty'],
+   424→    reorderLevel: ['نقطه سفارش', 'نقطهٔ سفارش', 'حد سفارش', 'سطح سفارش', 'reorder'],
+   425→    providerName: ['تأمین‌کننده', 'تامین کننده', 'تأمین', 'پخش', 'فروشنده', 'provider', 'supplier'],
+   426→  },
+   427→  providers: {
+   428→    name: ['نام تأمین‌کننده', 'تامین کننده', 'نام', 'شرکت', 'provider', 'supplier', 'name'],
+   429→    personName: ['نام رابط', 'رابط', 'نام فرد', 'نام شخص', 'مسئول', 'contact', 'person'],
+   430→    phone: ['تلفن', 'موبایل', 'شماره تماس', 'همراه', 'شماره', 'phone', 'mobile', 'tel'],
+   431→    type: ['نوع', 'type'],
+   432→    companyNames: ['شرکت‌ها', 'برندها', 'شرکت های نمایندگی', 'نمایندگی', 'companies', 'company'],
+   433→  },
+   434→  customers: {
+   435→    name: ['نام مشتری', 'نام و نام خانوادگی', 'نام', 'مشتری', 'customer', 'name'],
+   436→    phone: ['تلفن', 'موبایل', 'شماره تماس', 'همراه', 'شماره', 'phone', 'mobile', 'tel'],
+   437→    birthday: ['تاریخ تولد', 'تولد', 'birthday'],
+   438→    tier: ['تیئر', 'تییر', 'سطح مشتری', 'tier'],
+   439→    tags: ['برچسب', 'تگ', 'برچسب‌ها', 'تگ‌ها', 'tags', 'tag'],
+   440→  },
+   441→}
+   442→
+   443→const MAP_KEY = (kind: string) => `hz-import-map-${kind}`
+   444→
+   445→const normHeader = (s: string) => s.toLowerCase().replace(/\u200c/g, '').replace(/\s+/g, ' ').trim()
+   446→
+   447→function autoGuess(headers: string[], kind: string): Record<string, number> {
+   448→  const aliases = GUESS[kind] || {}
+   449→  const map: Record<string, number> = {}
+   450→  const claimed = new Set<number>()
+   451→  // گذر ۱ — تطبیق دقیق
+   452→  for (const key of Object.keys(aliases)) {
+   453→    for (const a of aliases[key]) {
+   454→      const i = headers.findIndex((h, idx) => !claimed.has(idx) && normHeader(h) === normHeader(a))
+   455→      if (i >= 0) { map[key] = i; claimed.add(i); break }
+   456→    }
+   457→  }
+   458→  // گذر ۲ — تطبیق جزئی (شامل‌مشتق دوطرفه با حداقل طول)
+   459→  for (const key of Object.keys(aliases)) {
+   460→    if (map[key] !== undefined) continue
+   461→    for (const a of aliases[key]) {
+   462→      const needle = normHeader(a)
+   463→      if (needle.length < 3) continue
+   464→      const i = headers.findIndex((h, idx) => {
+   465→        if (claimed.has(idx)) return false
+   466→        const n = normHeader(h)
+   467→        return n.length >= 3 && (n.includes(needle) || needle.includes(n))
+   468→      })
+   469→      if (i >= 0) { map[key] = i; claimed.add(i); break }
+   470→    }
+   471→  }
+   472→  return map
+   473→}
+   474→
+   475→function ImportWizard({ onDone }: { onDone: () => void }) {
+   476→  const [kind, setKind] = useState<'products' | 'providers' | 'customers'>('products')
+   477→  const [fields, setFields] = useState<FieldDef[]>([])
+   478→  const [matrix, setMatrix] = useState<string[][]>([])
+   479→  const [fileName, setFileName] = useState('')
+   480→  const [headerRow, setHeaderRow] = useState(true)
+   481→  const [strategy, setStrategy] = useState<'skip' | 'merge'>('merge')
+   482→  const [mapping, setMapping] = useState<Record<string, number>>({})
+   483→  const [dry, setDry] = useState<DryResult | null>(null)
+   484→  const [applied, setApplied] = useState<ApplyResult | null>(null)
+   485→  const [busy, setBusy] = useState(false)
+   486→  const fileRef = useRef<HTMLInputElement>(null)
+   487→
+   488→  // فیلدهای پلتفرم از سرور — مرجع رسمی تطبیق
+   489→  useEffect(() => {
+   490→    api<{ kind: string; mappingHint: FieldDef[] }>(`/api/import?kind=${kind}`)
+   491→      .then((d) => setFields(d.mappingHint))
+   492→      .catch((e) => toast.error(e.message))
+   493→  }, [kind])
+   494→
+   495→  const headers = useMemo(() => {
+   496→    if (!matrix.length) return []
+   497→    if (headerRow) return matrix[0].map((h, i) => (String(h).trim() || `ستون ${faNum(i + 1)}`))
+   498→    return matrix[0].map((_, i) => `ستون ${faNum(i + 1)}`)
+   499→  }, [matrix, headerRow])
+   500→
+   501→  const dataRows = useMemo(() => {
+   502→    const base = headerRow ? matrix.slice(1) : matrix
+   503→    return base.filter((r) => r.some((cell) => String(cell).trim() !== ''))
+   504→  }, [matrix, headerRow])
+   505→
+   506→  // حدس هوشمند + بازیابی پیش‌تنظیم ذخیره‌شده برای همین نوع داده
+   507→  useEffect(() => {
+   508→    if (!headers.length || !fields.length) return
+   509→    const guessed = autoGuess(headers, kind)
+   510→    try {
+   511→      const saved = JSON.parse(localStorage.getItem(MAP_KEY(kind)) || 'null') as Record<string, number> | null
+   512→      if (saved && typeof saved === 'object') {
+   513→        for (const [k, v] of Object.entries(saved)) {
+   514→          if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < headers.length) guessed[k] = v
+   515→        }
+   516→      }
+   517→    } catch { /* پیش‌تنظیم خراب — نادیده */ }
+   518→    setMapping(guessed)
+   519→    setDry(null)
+   520→    setApplied(null)
+   521→  }, [headers, kind, fields])
+   522→
+   523→  const requiredMissing = fields.filter((f) => f.required && (mapping[f.key] === undefined || mapping[f.key] < 0))
+   524→
+   525→  /** ساخت ردیف‌های تختِ {فیلد پلتفرم: مقدار} — فقط ستون‌های تطبیق‌شده، تبدیل ارقام فارسی */
+   526→  const buildRows = (): Record<string, unknown>[] => {
+   527→    const out: Record<string, unknown>[] = []
+   528→    for (const r of dataRows) {
+   529→      const obj: Record<string, unknown> = {}
+   530→      for (const f of fields) {
+   531→        const col = mapping[f.key]
+   532→        if (col === undefined || col < 0 || col >= r.length) continue
+   533→        const raw = String(r[col] ?? '').trim()
+   534→        if (raw === '') continue
+   535→        obj[f.key] = NUMERIC_FIELDS.has(f.key) ? parseFaNumber(raw) : raw
+   536→      }
+   537→      if (Object.keys(obj).length) out.push(obj)
+   538→    }
+   539→    return out
+   540→  }
+   541→
+   542→  const onFile = async (file: File | undefined) => {
+   543→    if (!file) return
+   544→    try {
+   545→      const buf = await file.arrayBuffer()
+   546→      const wb = XLSX.read(buf, { type: 'array' })
+   547→      const ws = wb.Sheets[wb.SheetNames[0]]
+   548→      const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' })
+   549→      const rows = raw.map((r) => (Array.isArray(r) ? r.map((cell) => (cell == null ? '' : String(cell).trim())) : []))
+   550→      if (!rows.length) {
+   551→        toast.error('برگهٔ اکسل خالی است')
+   552→        return
+   553→      }
+   554→      setMatrix(rows)
+   555→      setFileName(file.name)
+   556→      setDry(null)
+   557→      setApplied(null)
+   558→      toast.success(`فایل خوانده شد — ${faNum(rows.length)} سطر، ${faNum(rows[0].length)} ستون`)
+   559→    } catch (e) {
+   560→      toast.error('خواندن فایل ناموفق بود: ' + (e as Error).message)
+   561→    }
+   562→  }
+   563→
+   564→  const savePreset = () => {
+   565→    try {
+   566→      localStorage.setItem(MAP_KEY(kind), JSON.stringify(mapping))
+   567→      toast.success(`تطبیق ستون‌ها برای «${KINDS.find((k) => k.key === kind)?.label}» ذخیره شد — دفعهٔ بعد خودکار بازیابی می‌شود (در همین مرورگر)`)
+   568→    } catch {
+   569→      toast.error('ذخیرهٔ تطبیق در مرورگر ممکن نشد')
+   570→    }
+   571→  }
+   572→
+   573→  const doDry = async () => {
+   574→    setBusy(true)
+   575→    try {
+   576→      const res = await api<DryResult>('/api/import', { method: 'POST', body: { kind, rows: buildRows(), mode: 'dry-run', strategy } })
+   577→      setDry(res)
+   578→      setApplied(null)
+   579→      if (res.valid === 0) toast.error('هیچ سطر معتبری پیدا نشد — تطبیق ستون‌ها را بررسی کنید')
+   580→      else toast.info(`بررسی شد — ${faNum(res.valid)} سطر معتبر، ${faNum(res.invalid.length)} سطر خطادار، ${faNum(res.willCreate)} ایجاد، ${faNum(res.willUpdate)} بروزرسانی`)
+   581→    } catch (e) {
+   582→      toast.error((e as Error).message)
+   583→    } finally {
+   584→      setBusy(false)
+   585→    }
+   586→  }
+   587→
+   588→  const doApply = async () => {
+   589→    setBusy(true)
+   590→    try {
+   591→      const res = await api<ApplyResult>('/api/import', { method: 'POST', body: { kind, rows: buildRows(), mode: 'apply', strategy } })
+   592→      setApplied(res)
+   593→      setDry(null)
+   594→      toast.success(`ورود داده انجام شد — ${faNum(res.created)} جدید، ${faNum(res.updated)} بروزرسانی، ${faNum(res.skipped)} ردشدن${res.totalInvalid ? `، ${faNum(res.totalInvalid)} سطر خطادار` : ''}`)
+   595→      onDone()
+   596→    } catch (e) {
+   597→      toast.error((e as Error).message)
+   598→    } finally {
+   599→      setBusy(false)
+   600→    }
+   601→  }
+   602→
+   603→  const stepTitle = (n: number, title: string, hint?: string) => (
+   604→    <div className="mb-3 flex items-start gap-2.5">
+   605→      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#c9a227] text-xs font-black text-white">{faNum(n)}</span>
+   606→      <div>
+   607→        <h3 className="text-sm font-black text-foreground">{title}</h3>
+   608→        {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
+   609→      </div>
+   610→    </div>
+   611→  )
+   612→
+   613→  return (
+   614→    <div className="space-y-5">
+   615→      {/* گام ۱ — نوع داده */}
+   616→      <SectionCard title="۱. نوع دادهٔ ورودی را انتخاب کنید" icon={<span className="text-lg">🗂️</span>}>
+   617→        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   618→          {KINDS.map((k) => (
+   619→            <button
+   620→              key={k.key}
+   621→              onClick={() => { setKind(k.key); setMatrix([]); setFileName(''); setDry(null); setApplied(null) }}
+   622→              className={cn(
+   623→                'rounded-2xl border-2 p-4 text-right transition-all',
+   624→                kind === k.key
+   625→                  ? 'border-[#0e7a4a] bg-[#0e7a4a]/8 shadow-md'
+   626→                  : 'border-border bg-card hover:border-[#c9a227]/60'
+   627→              )}
+   628→            >
+   629→              <div className="flex items-center gap-2">
+   630→                <span className="text-2xl">{k.icon}</span>
+   631→                <span className="text-sm font-black text-foreground">{k.label}</span>
+   632→                {kind === k.key && <Pill label="انتخاب‌شده" color="#0e7a4a" bg="#dcfce7" className="mr-auto" />}
+   633→              </div>
+   634→              <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{k.hint}</p>
+   635→            </button>
+   636→          ))}
+   637→        </div>
+   638→      </SectionCard>
+   639→
+   640→      {/* گام ۲ — فایل + پیش‌نمایش خام */}
+   641→      <SectionCard title="۲. فایل اکسل را بدهید" subtitle="xlsx / xls / csv — خواندن فایل در همین مرورگر انجام می‌شود؛ فایل جایی آپلود نمی‌شود" icon={<FileSpreadsheet size={18} />}>
+   642→        <div
+   643→          className="rounded-2xl border-2 border-dashed border-[#c9a227]/50 bg-[#fdf6dd]/40 p-6 text-center"
+   644→          onDragOver={(e) => e.preventDefault()}
+   645→          onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0]) }}
+   646→        >
+   647→          <FileSpreadsheet size={34} className="mx-auto mb-2 text-[#8a6d10]" />
+   648→          <p className="text-sm font-black">{fileName ? `فایل: ${fileName}` : 'فایل را اینجا رها کنید یا انتخاب کنید'}</p>
+   649→          <p className="mx-auto mt-1 max-w-md text-[11px] leading-5 text-muted-foreground">
+   650→            {matrix.length
+   651→              ? `${faNum(matrix.length)} سطر و ${faNum(headers.length)} ستون شناسایی شد`
+   652→              : 'سطر اول می‌تواند نام ستون‌ها باشد — در گزینهٔ پایین مشخص می‌کنید'}
+   653→          </p>
+   654→          <button onClick={() => fileRef.current?.click()} className="mt-3 rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-white hover:opacity-90">
+   655→            📁 انتخاب فایل
+   656→          </button>
+   657→          <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" hidden onChange={(e) => onFile(e.target.files?.[0] || undefined)} />
+   658→        </div>
+   659→
+   660→        {matrix.length > 0 && (
+   661→          <>
+   662→            <div className="mt-3 flex flex-wrap items-center gap-4 rounded-xl bg-muted/40 px-4 py-2.5">
+   663→              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold">
+   664→                <input type="checkbox" checked={headerRow} onChange={(e) => { setHeaderRow(e.target.checked); setDry(null); setApplied(null) }} className="h-4 w-4 accent-[#0e7a4a]" />
+   665→                ردیف اول، نام ستون‌ها است
+   666→              </label>
+   667→              <span className="text-[11px] text-muted-foreground">ردیف داده: {faNum(dataRows.length)}</span>
+   668→            </div>
+   669→            <div className="scroll-gold mt-3 max-h-64 overflow-auto rounded-xl border border-border">
+   670→              <table className="w-full text-right text-[11px]">
+   671→                <thead className="sticky top-0 bg-secondary">
+   672→                  <tr>
+   673→                    <th className="p-2 text-muted-foreground">#</th>
+   674→                    {headers.map((h, i) => (
+   675→                      <th key={i} className="whitespace-nowrap p-2 font-black text-foreground">{h}</th>
+   676→                    ))}
+   677→                  </tr>
+   678→                </thead>
+   679→                <tbody>
+   680→                  {dataRows.slice(0, 8).map((r, ri) => (
+   681→                    <tr key={ri} className="border-t border-border/50 odd:bg-muted/20">
+   682→                      <td className="p-2 text-muted-foreground">{faNum(ri + 1)}</td>
+   683→                      {headers.map((_, ci) => (
+   684→                        <td key={ci} className="max-w-36 truncate p-2">{r[ci] || '—'}</td>
+   685→                      ))}
+   686→                    </tr>
+   687→                  ))}
+   688→                </tbody>
+   689→              </table>
+   690→            </div>
+   691→            <p className="mt-1.5 text-[11px] text-muted-foreground">۸ سطر اول — برای دیدن همهٔ ستون‌ها جدول را اسکرول کنید</p>
+   692→          </>
+   693→        )}
+   694→      </SectionCard>
+   695→
+   696→      {/* گام ۳ — تطبیق ستون‌ها */}
+   697→      {matrix.length > 0 && fields.length > 0 && (
+   698→        <SectionCard
+   699→          title="۳. ستون‌های فایل را به فیلدهای سامانه تطبیق دهید"
+   700→          subtitle="حدس اولیه خودکار زده شده — هر مورد را در صورت نیاز عوض کنید؛ ستون‌های ستاره‌دار الزامی‌اند"
+   701→          icon={<span className="text-lg">🔗</span>}
+   702→          actions={
+   703→            <button onClick={savePreset} className="rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd] px-3 py-2 text-xs font-extrabold text-[#8a6d10] hover:bg-[#fdf6dd]/80">
+   704→              <Save size={14} className="inline" /> ذخیرهٔ این تطبیق برای همیشه
+   705→            </button>
+   706→          }
+   707→        >
+   708→          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+   709→            {fields.map((f) => (
+   710→              <label key={f.key} className="block rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+   711→                <span className="mb-1.5 flex items-center gap-1 text-xs font-black text-foreground">
+   712→                  {f.label}
+   713→                  {f.required && <span className="text-[#b3372f]">*</span>}
+   714→                </span>
+   715→                <select
+   716→                  value={mapping[f.key] === undefined || mapping[f.key] < 0 ? '' : String(mapping[f.key])}
+   717→                  onChange={(e) => {
+   718→                    const v = e.target.value === '' ? -1 : Number(e.target.value)
+   719→                    setMapping((m) => ({ ...m, [f.key]: v }))
+   720→                    setDry(null)
+   721→                    setApplied(null)
+   722→                  }}
+   723→                  className={cn(
+   724→                    'w-full rounded-lg border bg-white/90 px-3 py-2 text-xs font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20',
+   725→                    mapping[f.key] !== undefined && mapping[f.key] >= 0 ? 'border-[#0e7a4a]/40' : 'border-input'
+   726→                  )}
+   727→                >
+   728→                  <option value="">— تطبیق نشده —</option>
+   729→                  {headers.map((h, i) => (
+   730→                    <option key={i} value={i}>{`${h} · ستون ${faNum(i + 1)}`}</option>
+   731→                  ))}
+   732→                </select>
+   733→              </label>
+   734→            ))}
+   735→          </div>
+   736→
+   737→          {/* گام ۴ — گزینه‌ها */}
+   738→          <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl bg-muted/40 px-4 py-3">
+   739→            <span className="text-xs font-black text-foreground">رفتار با رکوردهای موجود:</span>
+   740→            <label className="flex cursor-pointer items-center gap-1.5 text-xs font-bold">
+   741→              <input type="radio" checked={strategy === 'skip'} onChange={() => { setStrategy('skip'); setDry(null); setApplied(null) }} className="h-4 w-4 accent-[#0e7a4a]" />
+   742→              رد کردن موجودها (فقط جدیدها ساخته می‌شوند)
+   743→            </label>
+   744→            <label className="flex cursor-pointer items-center gap-1.5 text-xs font-bold">
+   745→              <input type="radio" checked={strategy === 'merge'} onChange={() => { setStrategy('merge'); setDry(null); setApplied(null) }} className="h-4 w-4 accent-[#0e7a4a]" />
+   746→              ترکیب با موجودها (فیلدهای پر به‌روز می‌شوند)
+   747→            </label>
+   748→          </div>
+   749→
+   750→          {requiredMissing.length > 0 && (
+   751→            <p className="mt-3 rounded-xl bg-[#fef9c3] p-3 text-xs font-bold text-[#a16207]">
+   752→              ⚠️ فیلد الزامی «{requiredMissing[0].label}» هنوز به ستونی تطبیق داده نشده — دکمهٔ اجرا تا آن موقع غیرفعال است.
+   753→            </p>
+   754→          )}
+   755→
+   756→          {/* گام ۵ و ۶ — پیش‌نمایش و اجرا */}
+   757→          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+   758→            <button
+   759→              onClick={doDry}
+   760→              disabled={busy || dataRows.length === 0 || requiredMissing.length > 0}
+   761→              className="rounded-xl bg-primary px-5 py-2.5 text-xs font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+   762→            >
+   763→              🔍 پیش‌نمایش و بررسی
+   764→            </button>
+   765→            <ArmedButton
+   766→              label="اجرای ورود داده"
+   767→              armedLabel="مطمئنید؟ دوباره بزنید"
+   768→              onClick={doApply}
+   769→              disabled={busy || !dry || dry.valid === 0 || requiredMissing.length > 0}
+   770→            />
+   771→            {!dry && <span className="text-[11px] text-muted-foreground">برای فعال‌شدن اجرا، ابتدا «پیش‌نمایش و بررسی» را بزنید</span>}
+   772→          </div>
+   773→
+   774→          {/* نتیجهٔ بررسی */}
+   775→          {dry && (
+   776→            <div className="mt-4 space-y-3 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-4 fade-in-up">
+   777→              <p className="text-xs font-black text-[#8a6d10]">نتیجهٔ بررسی — هیچ داده‌ای هنوز ذخیره نشده است</p>
+   778→              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+   779→                <MiniStat label="معتبر" value={dry.valid} tone="text-[#0e7a4a]" />
+   780→                <MiniStat label="ایجاد می‌شوند" value={dry.willCreate} tone="text-[#0e7a4a]" />
+   781→                <MiniStat label="بروز می‌شوند" value={dry.willUpdate} tone="text-[#8a6d10]" />
+   782→                <MiniStat label="رد می‌شوند" value={dry.willSkip} tone="text-[#556057]" />
+   783→                <MiniStat label="خطادار" value={dry.invalid.length} tone="text-[#b3372f]" />
+   784→              </div>
+   785→
+   786→              {dry.invalid.length > 0 && (
+   787→                <div className="scroll-gold max-h-40 overflow-y-auto rounded-xl border border-[#b3372f]/30 bg-white/70">
+   788→                  <table className="w-full text-right text-[11px]">
+   789→                    <thead className="sticky top-0 bg-[#b3372f]/10">
+   790→                      <tr><th className="p-2">سطر</th><th className="p-2">خطا</th></tr>
+   791→                    </thead>
+   792→                    <tbody>
+   793→                      {dry.invalid.slice(0, 50).map((it, i) => (
+   794→                        <tr key={i} className="border-t border-border/50">
+   795→                          <td className="p-2 font-black">{faNum(it.row)}</td>
+   796→                          <td className="p-2 text-[#b3372f]">{it.error}</td>
+   797→                        </tr>
+   798→                      ))}
+   799→                    </tbody>
+   800→                  </table>
+   801→                </div>
+   802→              )}
+   803→
+   804→              {dry.sample.length > 0 && (
+   805→                <>
+   806→                  <p className="pt-1 text-[11px] font-bold text-muted-foreground">نمونهٔ ۱۰ سطر اول پس از تطبیق:</p>
+   807→                  <div className="scroll-gold max-h-56 overflow-auto rounded-xl border border-border bg-white/70">
+   808→                    <table className="w-full text-right text-[11px]">
+   809→                      <thead className="sticky top-0 bg-secondary">
+   810→                        <tr>
+   811→                          <th className="p-2">نام</th>
+   812→                          {kind === 'products' && <><th className="p-2">بارکد</th><th className="p-2">کد هلو</th><th className="p-2">خرید</th><th className="p-2">فروش</th><th className="p-2">موجودی</th><th className="p-2">تأمین‌کننده</th></>}
+   813→                          {kind === 'providers' && <><th className="p-2">رابط</th><th className="p-2">تلفن</th><th className="p-2">نوع</th><th className="p-2">شرکت‌ها</th></>}
+   814→                          {kind === 'customers' && <><th className="p-2">تلفن</th><th className="p-2">تولد</th><th className="p-2">تیئر</th><th className="p-2">برچسب‌ها</th></>}
+   815→                          <th className="p-2">نتیجه</th>
+   816→                        </tr>
+   817→                      </thead>
+   818→                      <tbody>
+   819→                        {dry.sample.map((s, i) => (
+   820→                          <tr key={i} className="border-t border-border/50">
+   821→                            <td className="max-w-40 truncate p-2 font-bold">{String(s.name || '—')}</td>
+   822→                            {kind === 'products' && <>
+   823→                              <td className="p-2 font-mono" dir="ltr">{String(s.barcode || '—')}</td>
+   824→                              <td className="p-2 font-mono" dir="ltr">{String(s.holooCode || '—')}</td>
+   825→                              <td className="p-2">{s.buyPrice != null ? faMoney(Number(s.buyPrice)) : '—'}</td>
+   826→                              <td className="p-2">{s.sellPrice != null ? faMoney(Number(s.sellPrice)) : '—'}</td>
+   827→                              <td className="p-2">{s.stock != null ? faNum(Number(s.stock)) : '—'}</td>
+   828→                              <td className="max-w-28 truncate p-2">{String(s.providerName || '—')}</td>
+   829→                            </>}
+   830→                            {kind === 'providers' && <>
+   831→                              <td className="p-2">{String(s.personName || '—')}</td>
+   832→                              <td className="p-2" dir="ltr">{String(s.phone || '—')}</td>
+   833→                              <td className="p-2">{String(s.type || '—')}</td>
+   834→                              <td className="max-w-28 truncate p-2">{String(s.companyNames || '—')}</td>
+   835→                            </>}
+   836→                            {kind === 'customers' && <>
+   837→                              <td className="p-2" dir="ltr">{String(s.phone || '—')}</td>
+   838→                              <td className="p-2">{String(s.birthday || '—')}</td>
+   839→                              <td className="p-2">{String(s.tier || '—')}</td>
+   840→                              <td className="max-w-28 truncate p-2">{String(s.tags || '—')}</td>
+   841→                            </>}
+   842→                            <td className="p-2">
+   843→                              <Pill
+   844→                                label={String(s.result || '—')}
+   845→                                color={String(s.result).includes('ایجاد') ? '#0e7a4a' : String(s.result).includes('بروزرسانی') ? '#8a6d10' : '#6b7280'}
+   846→                              />
+   847→                            </td>
+   848→                          </tr>
+   849→                        ))}
+   850→                      </tbody>
+   851→                    </table>
+   852→                  </div>
+   853→                </>
+   854→              )}
+   855→            </div>
+   856→          )}
+   857→
+   858→          {/* نتیجهٔ اجرا */}
+   859→          {applied && (
+   860→            <div className="mt-4 rounded-2xl border border-[#0e7a4a]/40 bg-[#0e7a4a]/8 p-4 fade-in-up">
+   861→              <p className="text-sm font-black text-[#0e7a4a]">🎉 ورود داده کامل شد</p>
+   862→              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+   863→                <MiniStat label="ایجاد شد" value={applied.created} tone="text-[#0e7a4a]" />
+   864→                <MiniStat label="بروزرسانی شد" value={applied.updated} tone="text-[#8a6d10]" />
+   865→                <MiniStat label="رد شد" value={applied.skipped} tone="text-[#556057]" />
+   866→                <MiniStat label="خطا" value={applied.totalInvalid} tone="text-[#b3372f]" />
+   867→              </div>
+   868→              {applied.errors.length > 0 && (
+   869→                <div className="scroll-gold mt-3 max-h-36 overflow-y-auto rounded-xl bg-white/70 p-3 text-[11px]">
+   870→                  {applied.errors.map((e, i) => (
+   871→                    <p key={i}>• سطر {faNum(e.row)}: {e.error}</p>
+   872→                  ))}
+   873→                </div>
+   874→              )}
+   875→            </div>
+   876→          )}
+   877→        </SectionCard>
+   878→      )}
+   879→
+   880→      <p className="px-2 text-center text-[11px] leading-5 text-muted-foreground">
+   881→        💡 نکته: تطبیق ستون‌ها به‌ازای هر نوع داده در همین مرورگر ذخیره می‌شود («ذخیرهٔ این تطبیق برای همیشه») و دفعهٔ بعد خودکار بازیابی می‌گردد.
+   882→        سقف هر بار اجرا ۵٬۰۰۰ سطر است؛ فایل‌های بزرگ را بخش‌بخش وارد کنید.
+   883→      </p>
+   884→    </div>
+   885→  )
+   886→}
+   887→
+   888→/* ═════════════════════════════ اجزای مشترک ═════════════════════════════ */
+   889→
+   890→/** دکمهٔ تسلیح‌شونده — کلیک اول قرمز می‌شود («مطمئنید؟ دوباره بزنید») و کلیک دوم اجرا می‌کند */
+   891→function ArmedButton({
+   892→  label,
+   893→  armedLabel = 'مطمئنید؟ دوباره بزنید',
+   894→  onClick,
+   895→  disabled,
+   896→  className,
+   897→  tone = 'rose',
+   898→}: {
+   899→  label: string
+   900→  armedLabel?: string
+   901→  onClick: () => void
+   902→  disabled?: boolean
+   903→  className?: string
+   904→  tone?: 'rose' | 'gold'
+   905→}) {
+   906→  const [armed, setArmed] = useState(false)
+   907→  useEffect(() => {
+   908→    if (!armed) return
+   909→    const t = setTimeout(() => setArmed(false), 5000)
+   910→    return () => clearTimeout(t)
+   911→  }, [armed])
+   912→  return (
+   913→    <button
+   914→      type="button"
+   915→      disabled={disabled}
+   916→      onClick={() => {
+   917→        if (armed) {
+   918→          setArmed(false)
+   919→          onClick()
+   920→        } else {
+   921→          setArmed(true)
+   922→        }
+   923→      }}
+   924→      className={cn(
+   925→        'rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all disabled:opacity-40',
+   926→        armed
+   927→          ? 'animate-pulse bg-[#b3372f] text-white shadow-lg ring-2 ring-[#b3372f]/40'
+   928→          : tone === 'rose'
+   929→            ? 'border border-[#b3372f]/40 bg-[#b3372f]/10 text-[#b3372f] hover:bg-[#b3372f]/20'
+   930→            : 'border border-[#c9a227]/50 bg-[#c9a227]/10 text-[#8a6d10] hover:bg-[#c9a227]/20',
+   931→        className
+   932→      )}
+   933→    >
+   934→      {armed ? armedLabel : label}
+   935→    </button>
+   936→  )
+   937→}
+   938→
+   939→/** آمار کوچک خلاصهٔ نتیجه */
+   940→function MiniStat({ label, value, tone }: { label: string; value: number; tone: string }) {
+   941→  return (
+   942→    <div className="rounded-xl bg-white/70 px-3 py-2 text-center">
+   943→      <p className={cn('text-lg font-black', tone)}>{faNum(value)}</p>
+   944→      <p className="text-[10px] font-bold text-muted-foreground">{label}</p>
+   945→    </div>
+   946→  )
+   947→}
+   948→

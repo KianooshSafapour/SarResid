@@ -1,0 +1,648 @@
+     1→'use client'
+     2→
+     3→import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+     4→import { io, Socket } from 'socket.io-client'
+     5→import { toast } from 'sonner'
+     6→import { api } from '@/lib/client'
+     7→import { canAccess, ROLE_LABELS } from '@/lib/constants'
+     8→import { faNum } from '@/lib/jalali'
+     9→import { Avatar } from '@/components/app/ui-bits'
+    10→import LoginView from '@/components/views/Login'
+    11→import DashboardView from '@/components/views/Dashboard'
+    12→import OrdersView from '@/components/views/Orders'
+    13→import ReceivingView from '@/components/views/Receiving'
+    14→import VerifyView from '@/components/views/Verify'
+    15→import AccountingView from '@/components/views/Accounting'
+    16→import ProductsView from '@/components/views/Products'
+    17→import ProvidersView from '@/components/views/Providers'
+    18→import ChequesView from '@/components/views/Cheques'
+    19→import MessagesView from '@/components/views/Messages'
+    20→import TasksView from '@/components/views/Tasks'
+    21→import SopView from '@/components/views/Sop'
+    22→import WallView from '@/components/views/Wall'
+    23→import NotesView from '@/components/views/Notes'
+    24→import FeedbackView from '@/components/views/Feedback'
+    25→import PlanogramView from '@/components/views/Planogram'
+    26→import SalesView from '@/components/views/Sales'
+    27→import PerfView from '@/components/views/Perf'
+    28→import AdminView from '@/components/views/Admin'
+    29→import HelpView from '@/components/views/Help'
+    30→import NotifsView from '@/components/views/Notifs'
+    31→import BriefingView from '@/components/views/Briefing'
+    32→import ReportsView from '@/components/views/Reports'
+    33→import PriceCheckView from '@/components/views/PriceCheck'
+    34→import { AppCtx } from '@/components/app/ui-bits'
+    35→import BarcodeScannerHost from '@/components/app/BarcodeScanner'
+    36→import CommandPalette, { pushRecentView } from '@/components/app/CommandPalette'
+    37→import { useHolidays } from '@/components/app/jalali-widgets'
+    38→import { formatJalaliFull, todayIso } from '@/lib/jalali'
+    39→import { cn } from '@/lib/utils'
+    40→
+    41→// lucide icons
+    42→import {
+    43→  LayoutDashboard, ClipboardList, PackageCheck, Warehouse, Calculator, ShoppingBasket,
+    44→  Truck, Banknote, ListChecks, BookOpen, Newspaper, MessageCircle, NotebookPen,
+    45→  HeartHandshake, LayoutGrid, Store, Trophy, ShieldCheck, Info, Bell, Plus, LogOut,
+    46→  Menu, X, BellRing, Sunrise, CalendarDays, FileSpreadsheet, BadgePercent, Search,
+    47→} from 'lucide-react'
+    48→
+    49→type NavItem = { key: string; label: string; icon: any; badge?: number }
+    50→type NavGroup = { title: string; items: NavItem[] }
+    51→
+    52→function snoozeTargetIso(hours: number): string {
+    53→  return new Date(Date.now() + hours * 3600000).toISOString()
+    54→}
+    55→
+    56→const NAV: NavGroup[] = [
+    57→  {
+    58→    title: 'عملیات روزانه',
+    59→    items: [
+    60→      { key: 'dashboard', label: 'داشبورد', icon: LayoutDashboard },
+    61→      { key: 'orders', label: 'سفارش‌ها', icon: ClipboardList },
+    62→      { key: 'receiving', label: 'دریافت مرسوله', icon: PackageCheck },
+    63→      { key: 'verify', label: 'تأیید انبار', icon: Warehouse },
+    64→      { key: 'accounting', label: 'حسابداری و هلو', icon: Calculator },
+    65→    ],
+    66→  },
+    67→  {
+    68→    title: 'انبار و فروش',
+    69→    items: [
+    70→      { key: 'products', label: 'کالاها', icon: ShoppingBasket },
+    71→      { key: 'providers', label: 'تأمین‌کنندگان', icon: Truck },
+    72→      { key: 'planogram', label: 'پلانوگرام قفسه‌ها', icon: LayoutGrid },
+    73→      { key: 'sales', label: 'فروش و مشتریان', icon: Store },
+    74→    ],
+    75→  },
+    76→  {
+    77→    title: 'مالی',
+    78→    items: [
+    79→      { key: 'pricecheck', label: 'کنترل قیمت روزانه', icon: BadgePercent },
+    80→      { key: 'cheques', label: 'چک‌ها و پرداخت‌ها', icon: Banknote },
+    81→      { key: 'reports', label: 'گزارش‌ها و اکسل', icon: FileSpreadsheet },
+    82→    ],
+    83→  },
+    84→  {
+    85→    title: 'تیم و ارتباطات',
+    86→    items: [
+    87→      { key: 'tasks', label: 'وظایف من', icon: ListChecks },
+    88→      { key: 'sop', label: 'روال‌های استاندارد', icon: BookOpen },
+    89→      { key: 'wall', label: 'دیجیتال‌وال', icon: Newspaper },
+    90→      { key: 'messages', label: 'پیام‌ها', icon: MessageCircle },
+    91→      { key: 'notes', label: 'یادداشت‌های من', icon: NotebookPen },
+    92→      { key: 'feedback', label: 'بازخورد و ایده‌ها', icon: HeartHandshake },
+    93→      { key: 'perf', label: 'عملکرد و امتیازها', icon: Trophy },
+    94→    ],
+    95→  },
+    96→  {
+    97→    title: 'سیستم',
+    98→    items: [
+    99→      { key: 'notifs', label: 'مرکز اعلان‌ها', icon: BellRing },
+   100→      { key: 'briefing', label: 'صبح‌نامه امروز', icon: Sunrise },
+   101→      { key: 'admin', label: 'مدیریت سامانه', icon: ShieldCheck },
+   102→      { key: 'help', label: 'راهنما و آموزش', icon: Info },
+   103→    ],
+   104→  },
+   105→]
+   106→
+   107→const VIEW_TITLES: Record<string, string> = Object.fromEntries(
+   108→  NAV.flatMap((g) => g.items.map((i) => [i.key, i.label]))
+   109→)
+   110→
+   111→/** تاریخ امروز به‌همراه تعطیلی (اگر تعطیل است) — چیپ زیبای نوار بالا */
+   112→function TopbarDateChip() {
+   113→  const holidays = useHolidays()
+   114→  const today = todayIso()
+   115→  const holidayName = holidays.get(today)
+   116→  const isWeekend = [4, 5].includes(new Date().getDay()) // پنجشنبه/جمعه
+   117→  return (
+   118→    <div
+   119→      className={cn(
+   120→        'hidden items-center gap-2 rounded-xl border px-3 py-1.5 md:flex',
+   121→        holidayName
+   122→          ? 'border-[#b3372f]/30 bg-[#fee2e2]/50'
+   123→          : isWeekend
+   124→            ? 'border-[#c9a227]/40 bg-[#fdf6dd]/60'
+   125→            : 'border-border bg-card'
+   126→      )}
+   127→      title={holidayName || undefined}
+   128→    >
+   129→      <CalendarDays size={15} className={holidayName || isWeekend ? 'text-[#b3372f]' : 'text-[#0e7a4a]'} />
+   130→      <span className="text-[11px] font-extrabold text-foreground">{formatJalaliFull(todayIso())}</span>
+   131→      {holidayName && (
+   132→        <span className="rounded-lg bg-[#b3372f] px-2 py-0.5 text-[10px] font-black text-white">تعطیل — {holidayName}</span>
+   133→      )}
+   134→    </div>
+   135→  )
+   136→}
+   137→
+   138→function parseHash(): { view: string; param: string } {
+   139→  const h = window.location.hash.replace(/^#\/?/, '')
+   140→  const [view, param] = h.split('/')
+   141→  return { view: view || 'dashboard', param: param || '' }
+   142→}
+   143→
+   144→export default function AppShell() {
+   145→  const [user, setUser] = useState<AppCtx['user']>(null)
+   146→  const [loading, setLoading] = useState(true)
+   147→  const [nav, setNav] = useState({ view: 'dashboard', param: '' })
+   148→  const [sidebarOpen, setSidebarOpen] = useState(false)
+   149→  const [notifOpen, setNotifOpen] = useState(false)
+   150→  const [paletteOpen, setPaletteOpen] = useState(false)
+   151→  const [notifs, setNotifs] = useState<{ id: string; severity: string; icon: string; title: string; detail: string; go: string }[]>([])
+   152→  const [snoozedUntil, setSnoozedUntil] = useState('')
+   153→  const [socket, setSocket] = useState<Socket | null>(null)
+   154→  const [msgTick, setMsgTick] = useState(0)
+   155→  const socketRef = useRef<Socket | null>(null)
+   156→  const [deskNotif, setDeskNotif] = useState<boolean>(
+   157→    () => typeof window !== 'undefined' && 'Notification' in window && localStorage.getItem('hz-desktop-notifs') === '1'
+   158→  )
+   159→  const [deskPerm, setDeskPerm] = useState<string>(() =>
+   160→    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+   161→  ) // 'granted' | 'denied' | 'default' | 'unsupported'
+   162→
+   163→  /* اعلان دسکتاپ — وقتی تب در پس‌زمینه است، اعلان‌های فوری را با Notification API نشان بده.
+   164→   * dedupe با نقشه id→count در localStorage؛ وقتی تب دیده می‌شود فقط وضعیت را به‌روز می‌کنیم (تُست خودش خبر می‌دهد). */
+   165→  const fireDesktopNotifs = useCallback((list: { id: string; severity: string; icon: string; title: string; detail: string; count?: number }[]) => {
+   166→    try {
+   167→      if (!('Notification' in window) || Notification.permission !== 'granted') return
+   168→      const enabled = localStorage.getItem('hz-desktop-notifs') === '1'
+   169→      const seen: Record<string, number> = JSON.parse(localStorage.getItem('hz-desktop-seen') || '{}')
+   170→      const hidden = document.visibilityState === 'hidden'
+   171→      for (const n of list) {
+   172→        const cur = n.count ?? 1
+   173→        const wasSeen = seen[n.id]
+   174→        const isNew = wasSeen === undefined || cur > wasSeen
+   175→        if (enabled && hidden && isNew && n.severity === 'critical') {
+   176→          try {
+   177→            const notif = new Notification('هایپر زیتون 🫒', {
+   178→              body: `${n.icon} ${n.title}\n${n.detail.slice(0, 110)}`,
+   179→              tag: n.id,
+   180→            })
+   181→            notif.onclick = () => {
+   182→              window.focus()
+   183→              notif.close()
+   184→            }
+   185→          } catch {
+   186→            /* some engines throw on constructor — ignore */
+   187→          }
+   188→        }
+   189→        seen[n.id] = cur
+   190→      }
+   191→      // prune keys that no longer exist
+   192→      const live = new Set(list.map((n) => n.id))
+   193→      for (const k of Object.keys(seen)) if (!live.has(k)) delete seen[k]
+   194→      localStorage.setItem('hz-desktop-seen', JSON.stringify(seen))
+   195→    } catch {
+   196→      /* storage unavailable — silent */
+   197→    }
+   198→  }, [])
+   199→
+   200→  const toggleDeskNotif = useCallback(async () => {
+   201→    if (!('Notification' in window)) return toast.info('مرورگر شما از اعلان دسکتاپ پشتیبانی نمی‌کند')
+   202→    if (Notification.permission === 'denied') return toast.error('اجازه اعلان داده نشده — از نوار آدرس مرورگر (🔒) اجازه دهید')
+   203→    if (deskNotif) {
+   204→      localStorage.setItem('hz-desktop-notifs', '0')
+   205→      setDeskNotif(false)
+   206→      toast.info('اعلان دسکتاپ خاموش شد — اعلان‌ها فقط داخل سامانه می‌آیند')
+   207→      return
+   208→    }
+   209→    try {
+   210→      const perm = await Notification.requestPermission()
+   211→      setDeskPerm(perm)
+   212→      if (perm === 'granted') {
+   213→        localStorage.setItem('hz-desktop-notifs', '1')
+   214→        setDeskNotif(true)
+   215→        toast.success('اعلان دسکتاپ روشن شد — وقتی سامانه در پس‌زمینه است، فوری‌ها 🚨 روی دسکتاپ می‌آیند')
+   216→        try {
+   217→          const t = new Notification('هایپر زیتون 🫒', { body: 'اعلان دسکتاپ فعال شد ✅ — این یک پیام آزمایشی است' })
+   218→          t.onclick = () => {
+   219→            window.focus()
+   220→            t.close()
+   221→          }
+   222→        } catch {
+   223→          /* ignore */
+   224→        }
+   225→      } else {
+   226→        toast.info('برای فعال‌سازی، اجازه اعلان را در مرورگر تأیید کنید')
+   227→      }
+   228→    } catch {
+   229→      toast.error('درخواست اجازه اعلان ناموفق بود')
+   230→    }
+   231→  }, [deskNotif])
+   232→
+   233→  useEffect(() => {
+   234→    api<{ user: AppCtx['user'] }>('/api/auth/me')
+   235→      .then((d) => setUser(d.user))
+   236→      .catch(() => {})
+   237→      .finally(() => setLoading(false))
+   238→    const applyHash = () => setNav(parseHash())
+   239→    const raf = requestAnimationFrame(applyHash)
+   240→    window.addEventListener('hashchange', applyHash)
+   241→    return () => {
+   242→      cancelAnimationFrame(raf)
+   243→      window.removeEventListener('hashchange', applyHash)
+   244→    }
+   245→  }, [])
+   246→
+   247→  // websocket for real-time messaging (URL configurable for local server deployments)
+   248→  useEffect(() => {
+   249→    if (!user || socketRef.current) return
+   250→    const sockUrl = process.env.NEXT_PUBLIC_SOCKET_URL || '/?XTransformPort=3003'
+   251→    const s = io(sockUrl, {
+   252→      transports: ['websocket', 'polling'],
+   253→      reconnection: true,
+   254→      reconnectionAttempts: 8,
+   255→      reconnectionDelay: 1500,
+   256→    })
+   257→    socketRef.current = s
+   258→    s.on('connect', () => {
+   259→      s.emit('hz-join', { userId: user.id, name: user.name })
+   260→      setSocket(s)
+   261→    })
+   262→    s.on('hz-msg', (data: { toId: string; fromName: string; body: string }) => {
+   263→      if (data.toId === user.id) {
+   264→        toast(`💬 ${data.fromName}: ${data.body.slice(0, 60)}`)
+   265→        setMsgTick((t) => t + 1)
+   266→      }
+   267→    })
+   268→    return () => {
+   269→      s.disconnect()
+   270→      socketRef.current = null
+   271→    }
+   272→  }, [user?.id])
+   273→
+   274→  const navigate = useCallback((view: string, param = '') => {
+   275→    window.location.hash = `#/${view}${param ? '/' + param : ''}`
+   276→    setNav({ view, param })
+   277→    setSidebarOpen(false)
+   278→    setNotifOpen(false)
+   279→    pushRecentView(view)
+   280→    window.scrollTo({ top: 0 })
+   281→  }, [])
+   282→
+   283→  // Ctrl+K / ⌘K opens the command palette
+   284→  useEffect(() => {
+   285→    const onKey = (e: KeyboardEvent) => {
+   286→      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+   287→        e.preventDefault()
+   288→        setPaletteOpen((v) => !v)
+   289→      }
+   290→    }
+   291→    window.addEventListener('keydown', onKey)
+   292→    return () => window.removeEventListener('keydown', onKey)
+   293→  }, [])
+   294→
+   295→  const refreshNotifications = useCallback(async () => {
+   296→    if (!user) return
+   297→    try {
+   298→      const d = await api<any>('/api/notifications')
+   299→      setNotifs(d.notifications || [])
+   300→      setSnoozedUntil(d.prefs?.snoozeUntil || '')
+   301→      fireDesktopNotifs(d.notifications || [])
+   302→    } catch {
+   303→      /* silent */
+   304→    }
+   305→  }, [user, fireDesktopNotifs])
+   306→
+   307→  const bellSnooze = async (hours: number) => {
+   308→    try {
+   309→      await api('/api/notif-prefs', { method: 'PUT', body: { snoozeUntil: snoozeTargetIso(hours) } })
+   310→      toast.success(`سامانه ${faNum(hours)} ساعت ساکت شد — فقط فوری‌ها زنگ می‌خورند 😌`)
+   311→      setNotifOpen(false)
+   312→      refreshNotifications()
+   313→    } catch (e: any) {
+   314→      toast.error(e.message)
+   315→    }
+   316→  }
+   317→
+   318→  const wakeNotifs = async () => {
+   319→    try {
+   320→      await api('/api/notif-prefs', { method: 'PUT', body: { snoozeUntil: '' } })
+   321→      toast.success('سکوت موقت لغو شد — اعلان‌ها برگشتند 🔔')
+   322→      refreshNotifications()
+   323→    } catch (e: any) {
+   324→      toast.error(e.message)
+   325→    }
+   326→  }
+   327→
+   328→  useEffect(() => {
+   329→    if (!user) return
+   330→    const tick = () => refreshNotifications()
+   331→    const t0 = setTimeout(tick, 0)
+   332→    const t = setInterval(tick, 45000)
+   333→    return () => {
+   334→      clearTimeout(t0)
+   335→      clearInterval(t)
+   336→    }
+   337→  }, [user, refreshNotifications, msgTick])
+   338→
+   339→  const logout = async () => {
+   340→    await api('/api/auth/logout', { method: 'POST' })
+   341→    socketRef.current?.disconnect()
+   342→    socketRef.current = null
+   343→    setSocket(null)
+   344→    setUser(null)
+   345→    navigate('dashboard')
+   346→  }
+   347→
+   348→  const ctx: AppCtx = useMemo(
+   349→    () => ({ user, navigate, view: nav.view, param: nav.param, refreshNotifications, socket, socketReady: !!socket }),
+   350→    [user, navigate, nav, refreshNotifications, socket]
+   351→  )
+   352→
+   353→  if (loading) {
+   354→    return (
+   355→      <div className="pattern-girih flex min-h-screen items-center justify-center">
+   356→        <div className="flex flex-col items-center gap-4">
+   357→          <div className="h-14 w-14 animate-spin rounded-full border-4 border-[#c9a227]/30 border-t-[#c9a227]" />
+   358→          <p className="text-sm font-bold text-[#e9f0e4]">در حال بارگذاری سامانه…</p>
+   359→        </div>
+   360→      </div>
+   361→    )
+   362→  }
+   363→
+   364→  if (!user) return <LoginView onLogin={(u) => { setUser(u); toast.success(`خوش آمدید ${u.name} 🌿`) }} />
+   365→
+   366→  // role-filtered nav
+   367→  const groups = NAV.map((g) => ({
+   368→    ...g,
+   369→    items: g.items.filter((i) => canAccess(i.key, user.role, user.secondaryRoles || [])),
+   370→  })).filter((g) => g.items.length > 0)
+   371→
+   372→  const canQuickOrder = ['GM', 'PM', 'OM'].includes(user.role)
+   373→
+   374→  const currentTitle =
+   375→    nav.param && nav.view === 'orders'
+   376→      ? 'جزئیات سفارش'
+   377→      : nav.param && nav.view === 'receiving'
+   378→        ? 'دریافت مرسوله'
+   379→        : VIEW_TITLES[nav.view] || 'داشبورد'
+   380→
+   381→  const renderView = () => {
+   382→    switch (nav.view) {
+   383→      case 'dashboard': return <DashboardView ctx={ctx} />
+   384→      case 'orders': return <OrdersView ctx={ctx} />
+   385→      case 'receiving': return <ReceivingView ctx={ctx} />
+   386→      case 'verify': return <VerifyView ctx={ctx} />
+   387→      case 'accounting': return <AccountingView ctx={ctx} />
+   388→      case 'products': return <ProductsView ctx={ctx} />
+   389→      case 'providers': return <ProvidersView ctx={ctx} />
+   390→      case 'cheques': return <ChequesView ctx={ctx} />
+   391→      case 'messages': return <MessagesView ctx={ctx} />
+   392→      case 'tasks': return <TasksView ctx={ctx} />
+   393→      case 'sop': return <SopView ctx={ctx} />
+   394→      case 'wall': return <WallView ctx={ctx} />
+   395→      case 'notes': return <NotesView ctx={ctx} />
+   396→      case 'feedback': return <FeedbackView ctx={ctx} />
+   397→      case 'planogram': return <PlanogramView ctx={ctx} />
+   398→      case 'sales': return <SalesView ctx={ctx} />
+   399→      case 'perf': return <PerfView ctx={ctx} />
+   400→      case 'admin': return <AdminView ctx={ctx} />
+   401→      case 'help': return <HelpView ctx={ctx} />
+   402→      case 'notifs': return <NotifsView ctx={ctx} />
+   403→      case 'briefing': return <BriefingView ctx={ctx} />
+   404→      case 'reports': return <ReportsView ctx={ctx} />
+   405→      case 'pricecheck': return <PriceCheckView ctx={ctx} />
+   406→      default: return <DashboardView ctx={ctx} />
+   407→    }
+   408→  }
+   409→
+   410→  const sidebar = (
+   411→    <div className="pattern-girih flex h-full flex-col">
+   412→      <div className="flex items-center gap-3 border-b border-[#1d5238] px-4 py-4">
+   413→        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#c9a227] to-[#14532d] shadow-lg">
+   414→          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fffdf6" strokeWidth="1.8">
+   415→            <path d="M12 22c4-2 8-5.5 8-11V5l-8-3-8 3v6c0 5.5 4 9 8 11Z" />
+   416→            <path d="M12 8c-2 1.5-3 3.5-3 6 2-1 3.5-2 4.5-4" />
+   417→          </svg>
+   418→        </div>
+   419→        <div>
+   420→          <p className="brand-shine text-lg font-black leading-6">هایپر زیتون</p>
+   421→          <p className="text-[10px] text-[#93c572]">سامانه مدیریت عملیات</p>
+   422→        </div>
+   423→        <button className="mr-auto text-[#93c572] lg:hidden" onClick={() => setSidebarOpen(false)}>
+   424→          <X size={20} />
+   425→        </button>
+   426→      </div>
+   427→
+   428→      <nav className="scroll-gold flex-1 overflow-y-auto px-3 py-3">
+   429→        {groups.map((g, gi) => (
+   430→          <div key={g.title} className="mb-3">
+   431→            <p className="mb-1.5 px-2 text-[10px] font-bold tracking-wide text-[#93c572]/70">{g.title}</p>
+   432→            {g.items.map((i) => {
+   433→              const Icon = i.icon
+   434→              const active = nav.view === i.key
+   435→              return (
+   436→                <button
+   437→                  key={i.key}
+   438→                  onClick={() => navigate(i.key)}
+   439→                  className={cn(
+   440→                    'group mb-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition-all',
+   441→                    active
+   442→                      ? 'bg-gradient-to-l from-[#c9a227]/25 to-[#c9a227]/5 text-[#f3ead0] shadow-[inset_0_0_0_1px_rgba(201,162,39,0.35)]'
+   443→                      : 'text-[#b9cfc0] hover:bg-[#143d2b] hover:text-white'
+   444→                  )}
+   445→                >
+   446→                  <Icon size={18} className={cn('shrink-0', active ? 'text-[#c9a227]' : 'text-[#6f9179] group-hover:text-[#c9a227]')} />
+   447→                  <span>{i.label}</span>
+   448→                  {active && <span className="mr-auto h-1.5 w-1.5 rounded-full bg-[#c9a227] pulse-dot" />}
+   449→                </button>
+   450→              )
+   451→            })}
+   452→            {gi < groups.length - 1 && <div className="sidebar-divider mx-2 mt-2" />}
+   453→          </div>
+   454→        ))}
+   455→      </nav>
+   456→
+   457→      <div className="border-t border-[#1d5238] p-3">
+   458→        <div className="flex items-center gap-3 rounded-xl bg-[#143d2b] p-3">
+   459→          <Avatar name={user.name} color={user.color} size={38} />
+   460→          <div className="min-w-0 flex-1">
+   461→            <p className="truncate text-sm font-extrabold text-white">{user.name}</p>
+   462→            <p className="text-[10px] text-[#93c572]">{ROLE_LABELS[user.role]} • {faNum(user.points)} امتیاز</p>
+   463→          </div>
+   464→          <button onClick={logout} title="خروج" className="rounded-lg p-2 text-[#93c572] transition hover:bg-[#b3372f]/20 hover:text-[#ff8a7a]">
+   465→            <LogOut size={17} />
+   466→          </button>
+   467→        </div>
+   468→      </div>
+   469→    </div>
+   470→  )
+   471→
+   472→  return (
+   473→    <div className="min-h-screen bg-background">
+   474→      {/* Desktop sidebar */}
+   475→      <aside className="fixed inset-y-0 right-0 z-30 hidden w-64 lg:block">{sidebar}</aside>
+   476→
+   477→      {/* Mobile drawer */}
+   478→      {sidebarOpen && (
+   479→        <div className="fixed inset-0 z-50 lg:hidden">
+   480→          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
+   481→          <aside className="absolute inset-y-0 right-0 w-72 shadow-2xl">{sidebar}</aside>
+   482→        </div>
+   483→      )}
+   484→
+   485→      <BarcodeScannerHost />
+   486→      {paletteOpen && <CommandPalette ctx={ctx} onClose={() => setPaletteOpen(false)} onLogout={logout} />}
+   487→
+   488→      <div className="flex min-h-screen flex-col lg:mr-64">
+   489→        {/* Topbar */}
+   490→        <header className="sticky top-0 z-20 border-b border-[#e4dcc4]/80 bg-[#faf7ee]/90 backdrop-blur">
+   491→          <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+   492→            <button className="rounded-xl border border-border bg-card p-2 lg:hidden" onClick={() => setSidebarOpen(true)}>
+   493→              <Menu size={18} />
+   494→            </button>
+   495→            <h1 className="text-lg font-black text-foreground">{currentTitle}</h1>
+   496→            <TopbarDateChip />
+   497→
+   498→            {/* فرمان‌یاب */}
+   499→            <button
+   500→              onClick={() => setPaletteOpen(true)}
+   501→              className="hidden items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-[10px] font-bold text-muted-foreground transition hover:border-[#c9a227]/60 hover:text-[#8a6d10] md:flex"
+   502→              title="جست‌وجوی سریع (Ctrl+K)"
+   503→            >
+   504→              <Search size={14} />
+   505→              کجا برویم؟
+   506→              <kbd className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[9px] font-black">Ctrl K</kbd>
+   507→            </button>
+   508→
+   509→            {canQuickOrder && (
+   510→              <button
+   511→                onClick={() => navigate('orders', 'new')}
+   512→                className="hidden items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-4 py-2 text-xs font-extrabold text-white shadow-lg shadow-[#0e7a4a]/25 transition hover:shadow-xl hover:shadow-[#0e7a4a]/35 sm:flex"
+   513→              >
+   514→                <Plus size={15} />
+   515→                سفارش جدید
+   516→              </button>
+   517→            )}
+   518→
+   519→            <div className="mr-auto flex items-center gap-2">
+   520→              {/* فرمان‌یاب موبایل */}
+   521→              <button
+   522→                onClick={() => setPaletteOpen(true)}
+   523→                className="rounded-xl border border-border bg-card p-2.5 transition hover:border-[#c9a227]/60 md:hidden"
+   524→                title="جست‌وجوی سریع"
+   525→                aria-label="جست‌وجوی سریع"
+   526→              >
+   527→                <Search size={17} className="text-[#8a6d10]" />
+   528→              </button>
+   529→              {/* notifications */}
+   530→              <div className="relative">
+   531→                <button
+   532→                  onClick={() => setNotifOpen((v) => !v)}
+   533→                  className="relative rounded-xl border border-border bg-card p-2.5 transition hover:border-[#c9a227]/60"
+   534→                  title="اعلان‌ها"
+   535→                >
+   536→                  <Bell size={17} className={cn('text-[#8a6d10]', snoozedUntil && 'opacity-45')} />
+   537→                  {snoozedUntil && (
+   538→                    <span className="bell-muted absolute -left-1 -top-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-[#8a6d10] text-[9px] text-white" title="سکوت موقت فعال">🔕</span>
+   539→                  )}
+   540→                  {!snoozedUntil && notifs.length > 0 && (
+   541→                    <span className="absolute -left-1 -top-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#b3372f] px-1 text-[9px] font-black text-white">
+   542→                      {faNum(notifs.length)}
+   543→                    </span>
+   544→                  )}
+   545→                </button>
+   546→                {notifOpen && (
+   547→                  <>
+   548→                    {/* click-outside backdrop */}
+   549→                    <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} aria-hidden="true" />
+   550→                    <div className="scroll-gold absolute left-0 top-12 z-40 max-h-[70vh] w-80 overflow-y-auto rounded-2xl border border-border bg-card p-2 shadow-2xl">
+   551→                    <p className="px-2 py-1.5 text-xs font-black text-muted-foreground">مرور لحظه‌ای کارها — مرتب‌شده بر اساس اهمیت</p>
+   552→                    {notifs.length === 0 && <p className="px-2 py-4 text-center text-xs text-muted-foreground">همه‌چیز مرتب است ✅</p>}
+   553→                    {notifs.slice(0, 7).map((n, i) => (
+   554→                      <button
+   555→                        key={n.id}
+   556→                        onClick={() => navigate(n.go)}
+   557→                        className={cn(
+   558→                          'notif-item mb-1 flex w-full items-start gap-3 rounded-xl border p-2.5 text-right transition hover:bg-secondary',
+   559→                          n.severity === 'critical' ? 'border-[#b3372f]/30 bg-[#fee2e2]/40' : n.severity === 'warning' ? 'border-[#a16207]/25 bg-[#fef9c3]/40' : 'border-transparent'
+   560→                        )}
+   561→                      >
+   562→                        <span className="text-xl">{n.icon}</span>
+   563→                        <span>
+   564→                          <span className="block text-xs font-extrabold">{n.title}</span>
+   565→                          <span className="block text-[10px] leading-4 text-muted-foreground">{n.detail}</span>
+   566→                        </span>
+   567→                      </button>
+   568→                    ))}
+   569→                    {notifs.length > 7 && <p className="px-2 pb-1 pt-0.5 text-center text-[10px] text-muted-foreground">و {faNum(notifs.length - 7)} اعلان دیگر…</p>}
+   570→                    {/* اعلان دسکتاپ */}
+   571→                    {deskPerm !== 'unsupported' && (
+   572→                      <div className="mt-1 flex items-center justify-between gap-2 border-t border-dashed border-[#c9a227]/30 px-1 pt-2">
+   573→                        <span className="text-[10px] font-bold text-muted-foreground">🖥️ اعلان دسکتاپ (وقتی تب بسته/پشت است)</span>
+   574→                        {deskPerm === 'denied' ? (
+   575→                          <span className="rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[9px] font-bold text-[#b3372f]" title="از نوار آدرس مرورگر اجازه اعلان بدهید">اجازه داده نشد</span>
+   576→                        ) : (
+   577→                          <button
+   578→                            onClick={toggleDeskNotif}
+   579→                            role="switch"
+   580→                            aria-checked={deskNotif}
+   581→                            aria-label="اعلان دسکتاپ"
+   582→                            className={cn('desk-switch relative h-5 w-9 shrink-0 rounded-full transition', deskNotif ? 'bg-[#c9a227]' : 'bg-border')}
+   583→                            title={deskNotif ? 'روشن — برای خاموش‌کردن بزنید' : 'خاموش — برای روشن‌کردن بزنید'}
+   584→                          >
+   585→                            <span className={cn('desk-knob absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all', deskNotif ? 'right-0.5' : 'right-4.5')} />
+   586→                          </button>
+   587→                        )}
+   588→                      </div>
+   589→                    )}
+   590→                    {/* سکوت موقت / بیدارکردن */}
+   591→                    <div className="mt-1 border-t border-dashed border-[#c9a227]/30 pt-1.5">
+   592→                      {snoozedUntil ? (
+   593→                        <button
+   594→                          onClick={wakeNotifs}
+   595→                          className="w-full rounded-xl bg-[#0e7a4a] py-2 text-[11px] font-extrabold text-white shadow transition hover:shadow-lg"
+   596→                        >
+   597→                          🔕 سکوت فعال — بیدارکردن اعلان‌ها
+   598→                        </button>
+   599→                      ) : (
+   600→                        <div className="flex items-center gap-1.5">
+   601→                          <span className="shrink-0 text-[10px] font-bold text-muted-foreground">سکوت:</span>
+   602→                          <button onClick={() => bellSnooze(1)} className="flex-1 rounded-xl border border-border bg-card py-1.5 text-[10px] font-extrabold transition hover:border-[#c9a227] hover:bg-[#fdf6dd]">۱ ساعت</button>
+   603→                          <button onClick={() => bellSnooze(3)} className="flex-1 rounded-xl border border-border bg-card py-1.5 text-[10px] font-extrabold transition hover:border-[#c9a227] hover:bg-[#fdf6dd]">۳ ساعت</button>
+   604→                          <button onClick={() => navigate('notifs')} className="rounded-xl px-1.5 py-1.5 text-[10px] font-black text-[#8a6d10]" title="تنظیمات کامل اعلان‌ها">⋯</button>
+   605→                        </div>
+   606→                      )}
+   607→                    </div>
+   608→                    <button
+   609→                      onClick={() => navigate('notifs')}
+   610→                      className="mt-1.5 w-full rounded-xl border border-[#c9a227]/40 bg-[#fdf6dd]/60 py-2 text-[11px] font-extrabold text-[#8a6d10] transition hover:bg-[#fdf6dd]"
+   611→                    >
+   612→                      🔔 مشاهده همه در مرکز اعلان‌ها ←
+   613→                    </button>
+   614→                    </div>
+   615→                  </>
+   616→                )}
+   617→              </div>
+   618→              {canQuickOrder && (
+   619→                <button
+   620→                  onClick={() => navigate('orders', 'new')}
+   621→                  className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-extrabold text-white sm:hidden"
+   622→                >
+   623→                  <Plus size={14} /> سفارش
+   624→                </button>
+   625→              )}
+   626→              <button onClick={() => navigate('perf')} className="hidden items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 sm:flex">
+   627→                <Avatar name={user.name} color={user.color} size={28} />
+   628→                <span className="text-xs font-extrabold">{user.name}</span>
+   629→              </button>
+   630→            </div>
+   631→          </div>
+   632→          <div className="shimmer-line h-px w-full" />
+   633→        </header>
+   634→
+   635→        <main className="pattern-sand mx-auto w-full max-w-7xl flex-1 p-4 pb-24 sm:p-6 lg:pb-10">{renderView()}</main>
+   636→
+   637→        {/* Sticky footer */}
+   638→        <footer className="mt-auto border-t border-[#e4dcc4]/70 bg-[#0b2e20] px-6 py-4 text-center">
+   639→          <p className="text-[11px] text-[#93c572]">
+   640→            هایپر زیتون کرمان • سامانه مدیریت یکپارچه عملیات — نسخه {faNum('1.5')}
+   641→          </p>
+   642→          <p className="mt-1 text-[10px] text-[#93c572]/60">تقویم شمسی • پشتیبانی از هلو • طراحی برای تیم شما</p>
+   643→        </footer>
+   644→      </div>
+   645→    </div>
+   646→  )
+   647→}
+   648→

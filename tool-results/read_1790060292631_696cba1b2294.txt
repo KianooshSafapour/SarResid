@@ -1,0 +1,1668 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→/**
+     4→     4→ * نقشهٔ فروشگاه (round-16 / task 16-B) — ویرایشگر کامل پلان دوبعدی فروشگاه
+     5→     5→ *
+     6→     6→ * امکانات:
+     7→     7→ *  ۱) مدیریت طبقه‌ها: تب طبقه‌ها (مرتب بر اساس floorIndex)، «طبقهٔ جدید»، تغییر نام/ابعاد (PATCH)، حذف با تأیید
+     8→     8→ *  ۲) کتابخانهٔ بلوک‌های پیش‌ساخته (سرور) + حالت جای‌گذاری با کلیک روی نقشه (ESC لغو)
+     9→     9→ *  ۳) بوم ویرایش: درگ جابه‌جایی (اسنپ ۱۰px)، تغییر اندازه از گوشه (حداقل ۲۰)، چرخش ۹۰ درجه‌ای، تکثیر، حذف،
+    10→    10→ *     زوم ۵۰–۱۵۰٪ + دکمهٔ اندازه‌گذاری (Fit)، پن با درگ روی پس‌زمینه، انتخاب با حلقهٔ طلایی،
+    11→    11→ *     کیبورد (جهت‌نما = حرکت ۱۰ / با Shift = ۱، Delete = حذف) — همهٔ تعامل‌ها با Pointer Events (موبایل‌پسند)
+    12→    12→ *  ۴) ذخیره: وضعیت تغییرات (dirty) + «ذخیرهٔ نقشه» → POST save-blocks (جایگزینی کامل؛ meta به‌صورت JSON)
+    13→    13→ *  ۵) زون‌بندی: datalist زون‌ها از /api/zones + «گروه‌بندی زون» با Shift+کلیک (چندانتخابی) —
+    14→    14→ *     رنگ زون به‌صورت قطعی از پالت بر اساس hash نام زون
+    15→    15→ *  ۶) پلانوگرام روی لمس: پاپ‌آپ کناری برای بلوک‌های قفسه‌ای/یخچالی یا متصل‌شده به پلانوگرام —
+    16→    16→ *     مینی‌گرید چیدمان + آمار + «درخواست پُرکردن قفسه 📦» (تسک HIGH به اولین کاربر فعال SK) +
+    17→    17→ *     «انتخاب پلانوگرام» برای دارای مجوز planogram.manage (GM/OM/OWNER/ADMIN)
+    18→    18→ *  ۷) رد تأمین: هر تسکِ ساخته‌شده از نقشه پیشوند توضیح «[پلان]» دارد
+    19→    19→ *  ۸) ریسپانسیو: کتابخانه به چیپ اسکرول افقی، بازرس به Bottom Sheet، دکمه‌های زوم همیشه فعال
+    20→    20→ *
+    21→    21→ * API: GET/POST/PATCH/DELETE /api/floorplans — GET /api/zones — GET /api/planograms — GET /api/users — POST /api/tasks
+    22→    22→ */
+    23→    23→import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+    24→    24→import { AppCtx, EmptyState, Labeled } from '@/components/app/ui-bits'
+    25→    25→import { Modal } from '@/components/views/Orders'
+    26→    26→import { api } from '@/lib/client'
+    27→    27→import { toast } from 'sonner'
+    28→    28→import { faNum } from '@/lib/jalali'
+    29→    29→import { cn } from '@/lib/utils'
+    30→    30→import { Check, Copy, Loader2, MapPin, Maximize, Package, Pencil, Plus, RotateCw, Save, Search, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react'
+    31→    31→
+    32→    32→/* ───────────────────────────── types ───────────────────────────── */
+    33→    33→
+    34→    34→type BlockMeta = { planogramId?: string; note?: string }
+    35→    35→type Block = { id: string; kind: string; x: number; y: number; w: number; h: number; rotation: number; label: string; zoneName: string; meta: BlockMeta }
+    36→    36→type ServerBlock = { id: string; kind: string; x: number; y: number; w: number; h: number; rotation: number; label: string; zoneName: string; meta: string }
+    37→    37→type PlanRow = { id: string; name: string; floorIndex: number; width: number; height: number; archived?: boolean; blocks: ServerBlock[] }
+    38→    38→type Prefab = { kind: string; label: string; w: number; h: number; color: string; icon: string }
+    39→    39→type ZoneLite = { name: string; color: string }
+    40→    40→type PlanogramRow = { id: string; name: string; section: string; rows: number; cols: number; status: string; layout: (string | null)[][]; cells: number }
+    41→    41→type ProductLite = { id: string; name: string; stock: number; reorderLevel: number }
+    42→    42→type ProductMap = Record<string, ProductLite>
+    43→    43→
+    44→    44→/* ─────────────────────────── constants ─────────────────────────── */
+    45→    45→
+    46→    46→const GOLD = '#c9a227'
+    47→    47→/** پالت زون — رنگ قطعی بر اساس hash نام زون (بدون آبی/بنفش) */
+    48→    48→const ZONE_PALETTE = ['#0e7a4a', '#c9a227', '#c96f4a', '#77934a', '#b3372f', '#2e6f6a', '#8a6d10', '#6b5b3e', '#a5573a', '#4d9a90', '#5a8f3c', '#9c8b6a']
+    49→    49→/** انواع قفسه‌ای که پاپ‌آپ پلانوگرام/تأمین دارند */
+    50→    50→const SHELF_KINDS = new Set(['SHELF', 'GONDOLA', 'FRIDGE_CLOSED', 'FRIDGE_OPEN', 'FRIDGE_SHOWCASE', 'FREEZER_ICECREAM'])
+    51→    51→const ZOOM_MIN = 0.5
+    52→    52→const ZOOM_MAX = 1.5
+    53→    53→const ZOOM_STEP = 0.1
+    54→    54→const INPUT_CLS = 'w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-bold outline-none focus:border-[#0e7a4a] focus:ring-2 focus:ring-[#0e7a4a]/15'
+    55→    55→
+    56→    56→/* ──────────────────────────── helpers ──────────────────────────── */
+    57→    57→
+    58→    58→function snap10(v: number) {
+    59→    59→  return Math.round(v / 10) * 10
+    60→    60→}
+    61→    61→function clamp(v: number, min: number, max: number) {
+    62→    62→  return Math.max(min, Math.min(max, v))
+    63→    63→}
+    64→    64→function hashZoneColor(name: string): string {
+    65→    65→  let h = 0
+    66→    66→  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+    67→    67→  return ZONE_PALETTE[h % ZONE_PALETTE.length]
+    68→    68→}
+    69→    69→function genId() {
+    70→    70→  return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+    71→    71→}
+    72→    72→function parseMeta(m: unknown): BlockMeta {
+    73→    73→  let o: unknown = m
+    74→    74→  if (typeof m === 'string') {
+    75→    75→    try {
+    76→    76→      o = JSON.parse(m)
+    77→    77→    } catch {
+    78→    78→      o = {}
+    79→    79→    }
+    80→    80→  }
+    81→    81→  return o && typeof o === 'object' && !Array.isArray(o) ? (o as BlockMeta) : {}
+    82→    82→}
+    83→    83→function toEditorBlock(b: ServerBlock): Block {
+    84→    84→  return { id: b.id || genId(), kind: b.kind, x: b.x, y: b.y, w: b.w, h: b.h, rotation: b.rotation, label: b.label, zoneName: b.zoneName, meta: parseMeta(b.meta) }
+    85→    85→}
+    86→    86→function errMsg(e: unknown) {
+    87→    87→  return e instanceof Error ? e.message : 'خطای نامشخص'
+    88→    88→}
+    89→    89→function stockColor(stock: number, reorder: number) {
+    90→    90→  if (stock <= 0) return '#b3372f'
+    91→    91→  if (stock < Math.max(1, reorder)) return '#c9a227'
+    92→    92→  return '#0e7a4a'
+    93→    93→}
+    94→    94→
+    95→    95→/* ═══════════════════ sub-components (module-level — stable identity) ═══════════════════ */
+    96→    96→
+    97→    97→/* ── مینی‌گرید پلانوگرام + آمار سریع ── */
+    98→    98→function PlanogramMini({ planogram, productMap }: { planogram: PlanogramRow; productMap: ProductMap }) {
+    99→    99→  const rows = Array.isArray(planogram.layout) ? planogram.layout : []
+   100→   100→  let filled = 0
+   101→   101→  let oos = 0
+   102→   102→  let low = 0
+   103→   103→  for (const row of rows)
+   104→   104→    for (const pid of row || []) {
+   105→   105→      if (!pid) continue
+   106→   106→      filled++
+   107→   107→      const pr = productMap[pid]
+   108→   108→      if (!pr) continue
+   109→   109→      if (pr.stock <= 0) oos++
+   110→   110→      else if (pr.stock < Math.max(1, pr.reorderLevel)) low++
+   111→   111→    }
+   112→   112→  return (
+   113→   113→    <div className="space-y-2">
+   114→   114→      <div className="overflow-x-auto scroll-gold rounded-lg border border-border bg-[#faf7ee] p-1.5">
+   115→   115→        <div className="inline-grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${Math.max(1, planogram.cols)}, 13px)` }}>
+   116→   116→          {rows.flatMap((row, ri) =>
+   117→   117→            (row || []).map((pid, ci) => {
+   118→   118→              const pr = pid ? productMap[pid] : undefined
+   119→   119→              return (
+   120→   120→                <div
+   121→   121→                  key={`${ri}-${ci}`}
+   122→   122→                  title={pr ? `${pr.name} — موجودی: ${faNum(pr.stock)}` : pid ? 'کالای ناشناس' : 'خالی'}
+   123→   123→                  className="h-[13px] w-[13px] rounded-[2px] border border-black/5"
+   124→   124→                  style={{ background: pr ? stockColor(pr.stock, pr.reorderLevel) : 'transparent' }}
+   125→   125→                />
+   126→   126→              )
+   127→   127→            }),
+   128→   128→          )}
+   129→   129→        </div>
+   130→   130→      </div>
+   131→   131→      <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+   132→   132→        <span className="rounded-full bg-muted px-2 py-0.5">📦 {faNum(filled)} خانهٔ پر</span>
+   133→   133→        <span className="rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[#b3372f]">🔴 {faNum(oos)} تمام‌شده</span>
+   134→   134→        <span className="rounded-full bg-[#c9a227]/15 px-2 py-0.5 text-[#8a6d10]">🟡 {faNum(low)} رو به اتمام</span>
+   135→   135→      </div>
+   136→   136→    </div>
+   137→   137→  )
+   138→   138→}
+   139→   139→
+   140→   140→/* ── محتوای پاپ‌آپ پلانوگرام بلوک ── */
+   141→   141→function BlockPopup({
+   142→   142→  block,
+   143→   143→  kindLabel,
+   144→   144→  planogram,
+   145→   145→  productMap,
+   146→   146→  canManage,
+   147→   147→  busy,
+   148→   148→  onRestock,
+   149→   149→  onPick,
+   150→   150→  onUnlink,
+   151→   151→  onClose,
+   152→   152→}: {
+   153→   153→  block: Block
+   154→   154→  kindLabel: string
+   155→   155→  planogram: PlanogramRow | null
+   156→   156→  productMap: ProductMap
+   157→   157→  canManage: boolean
+   158→   158→  busy: boolean
+   159→   159→  onRestock: () => void
+   160→   160→  onPick: () => void
+   161→   161→  onUnlink: () => void
+   162→   162→  onClose: () => void
+   163→   163→}) {
+   164→   164→  return (
+   165→   165→    <div className="w-72 space-y-2.5 rounded-2xl border border-border bg-white/97 p-3 shadow-2xl backdrop-blur" onPointerDown={(e) => e.stopPropagation()}>
+   166→   166→      <div className="flex items-start justify-between gap-2">
+   167→   167→        <div>
+   168→   168→          <p className="text-xs font-black">🏷️ {block.label || kindLabel}</p>
+   169→   169→          <p className="mt-0.5 text-[10px] font-bold text-muted-foreground">
+   170→   170→            {kindLabel}
+   171→   171→            {block.zoneName ? ` • زون ${block.zoneName}` : ''}
+   172→   172→          </p>
+   173→   173→        </div>
+   174→   174→        <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted" title="بستن">
+   175→   175→          <X size={14} />
+   176→   176→        </button>
+   177→   177→      </div>
+   178→   178→
+   179→   179→      {planogram ? (
+   180→   180→        <div className="space-y-1.5">
+   181→   181→          <div className="flex items-center justify-between gap-1">
+   182→   182→            <p className="text-[11px] font-black text-[#0e7a4a]">📋 {planogram.name}</p>
+   183→   183→            {canManage && (
+   184→   184→              <button onClick={onUnlink} disabled={busy} className="rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-[#b3372f] hover:bg-[#b3372f]/10 disabled:opacity-50">
+   185→   185→                قطع اتصال
+   186→   186→              </button>
+   187→   187→            )}
+   188→   188→          </div>
+   189→   189→          <PlanogramMini planogram={planogram} productMap={productMap} />
+   190→   190→        </div>
+   191→   191→      ) : (
+   192→   192→        <div className="rounded-xl border border-dashed border-border bg-muted/40 p-2.5 text-center">
+   193→   193→          <p className="text-[11px] font-bold text-muted-foreground">این بلوک به پلانوگرامی متصل نیست</p>
+   194→   194→          {canManage && (
+   195→   195→            <button onClick={onPick} className="mt-1.5 rounded-lg bg-[#0e7a4a] px-2.5 py-1 text-[10px] font-black text-white hover:opacity-90">
+   196→   196→              انتخاب پلانوگرام
+   197→   197→            </button>
+   198→   198→          )}
+   199→   199→        </div>
+   200→   200→      )}
+   201→   201→
+   202→   202→      <button
+   203→   203→        onClick={onRestock}
+   204→   204→        className="w-full rounded-xl bg-gradient-to-l from-[#c9a227] to-[#c96f4a] px-3 py-2 text-[11px] font-black text-white shadow transition hover:brightness-105 active:scale-[0.98]"
+   205→   205→      >
+   206→   206→        درخواست پُرکردن قفسه 📦
+   207→   207→      </button>
+   208→   208→    </div>
+   209→   209→  )
+   210→   210→}
+   211→   211→
+   212→   212→/* ── بازرس بلوک (تک‌انتخاب) ── */
+   213→   213→function InspectorSingle({
+   214→   214→  block,
+   215→   215→  planWidth,
+   216→   216→  planHeight,
+   217→   217→  zoneOptions,
+   218→   218→  kindLabel,
+   219→   219→  kindIcon,
+   220→   220→  kindColor,
+   221→   221→  planogramName,
+   222→   222→  canManage,
+   223→   223→  busy,
+   224→   224→  onPatch,
+   225→   225→  onRotate,
+   226→   226→  onDuplicate,
+   227→   227→  onDelete,
+   228→   228→  onRestock,
+   229→   229→  onPickPlanogram,
+   230→   230→  onUnlinkPlanogram,
+   231→   231→}: {
+   232→   232→  block: Block
+   233→   233→  planWidth: number
+   234→   234→  planHeight: number
+   235→   235→  zoneOptions: string[]
+   236→   236→  kindLabel: string
+   237→   237→  kindIcon: string
+   238→   238→  kindColor: string
+   239→   239→  planogramName: string | null
+   240→   240→  canManage: boolean
+   241→   241→  busy: boolean
+   242→   242→  onPatch: (patch: Partial<Block>) => void
+   243→   243→  onRotate: () => void
+   244→   244→  onDuplicate: () => void
+   245→   245→  onDelete: () => void
+   246→   246→  onRestock: () => void
+   247→   247→  onPickPlanogram: () => void
+   248→   248→  onUnlinkPlanogram: () => void
+   249→   249→}) {
+   250→   250→  const isShelf = SHELF_KINDS.has(block.kind) || !!block.meta.planogramId
+   251→   251→  return (
+   252→   252→    <div className="space-y-2.5">
+   253→   253→      <div className="flex items-center gap-2 rounded-xl bg-muted/60 p-2">
+   254→   254→        <span className="grid size-8 shrink-0 place-items-center rounded-lg text-sm" style={{ background: kindColor + '22', border: `1px solid ${kindColor}66` }}>
+   255→   255→          {kindIcon}
+   256→   256→        </span>
+   257→   257→        <div className="min-w-0">
+   258→   258→          <p className="truncate text-[11px] font-black">{kindLabel}</p>
+   259→   259→          <p className="text-[10px] text-muted-foreground" dir="ltr">
+   260→   260→            {faNum(Math.round(block.w))}×{faNum(Math.round(block.h))} • {faNum(block.rotation)}°
+   261→   261→          </p>
+   262→   262→        </div>
+   263→   263→      </div>
+   264→   264→
+   265→   265→      <Labeled label="برچسب بلوک">
+   266→   266→        <input className={INPUT_CLS} value={block.label} onChange={(e) => onPatch({ label: e.target.value.slice(0, 80) })} placeholder="مثلاً: قفسهٔ لبنیات ۳" />
+   267→   267→      </Labeled>
+   268→   268→
+   269→   269→      <Labeled label="زون (نام زون را بنویسید یا انتخاب کنید)" hint="بلوک‌های هم‌زون رنگ یکسان می‌گیرند">
+   270→   270→        <input className={INPUT_CLS} list="fp-zone-options" value={block.zoneName} onChange={(e) => onPatch({ zoneName: e.target.value.slice(0, 80) })} placeholder="مثلاً: زون لبنیات" />
+   271→   271→      </Labeled>
+   272→   272→      {zoneOptions.length > 0 && (
+   273→   273→        <div className="flex flex-wrap gap-1">
+   274→   274→          {zoneOptions.slice(0, 10).map((z) => (
+   275→   275→            <button
+   276→   276→              key={z}
+   277→   277→              onClick={() => onPatch({ zoneName: block.zoneName === z ? '' : z })}
+   278→   278→              className={cn('flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition', block.zoneName === z ? 'border-transparent text-white' : 'border-border bg-white hover:bg-muted')}
+   279→   279→              style={block.zoneName === z ? { background: hashZoneColor(z) } : undefined}
+   280→   280→            >
+   281→   281→              <span className="size-2 rounded-full" style={{ background: hashZoneColor(z) }} />
+   282→   282→              {z}
+   283→   283→            </button>
+   284→   284→          ))}
+   285→   285→        </div>
+   286→   286→      )}
+   287→   287→
+   288→   288→      <div className="grid grid-cols-3 gap-2">
+   289→   289→        <Labeled label="عرض">
+   290→   290→          <input
+   291→   291→            type="number"
+   292→   292→            dir="ltr"
+   293→   293→            min={20}
+   294→   294→            max={2000}
+   295→   295→            step={10}
+   296→   296→            className={cn(INPUT_CLS, 'text-center')}
+   297→   297→            value={block.w}
+   298→   298→            onChange={(e) => onPatch({ w: clamp(Math.round(Number(e.target.value) || block.w), 20, 2000) })}
+   299→   299→          />
+   300→   300→        </Labeled>
+   301→   301→        <Labeled label="ارتفاع">
+   302→   302→          <input
+   303→   303→            type="number"
+   304→   304→            dir="ltr"
+   305→   305→            min={20}
+   306→   306→            max={2000}
+   307→   307→            step={10}
+   308→   308→            className={cn(INPUT_CLS, 'text-center')}
+   309→   309→            value={block.h}
+   310→   310→            onChange={(e) => onPatch({ h: clamp(Math.round(Number(e.target.value) || block.h), 20, 2000) })}
+   311→   311→          />
+   312→   312→        </Labeled>
+   313→   313→        <Labeled label="چرخش">
+   314→   314→          <button onClick={onRotate} className={cn(INPUT_CLS, 'flex items-center justify-center gap-1 hover:bg-muted')}>
+   315→   315→            <RotateCw size={13} /> {faNum(block.rotation)}°
+   316→   316→          </button>
+   317→   317→        </Labeled>
+   318→   318→      </div>
+   319→   319→
+   320→   320→      <Labeled label="یادداشت داخلی">
+   321→   321→        <input className={INPUT_CLS} value={block.meta.note || ''} onChange={(e) => onPatch({ meta: { ...block.meta, note: e.target.value.slice(0, 200) } })} placeholder="اختیاری…" />
+   322→   322→      </Labeled>
+   323→   323→
+   324→   324→      {isShelf && (
+   325→   325→        <div className="rounded-xl border border-[#c9a227]/40 bg-[#c9a227]/8 p-2">
+   326→   326→          <p className="mb-1.5 text-[11px] font-black">پلانوگرام {planogramName ? `: ${planogramName}` : 'متصل نیست'}</p>
+   327→   327→          <div className="flex flex-wrap gap-1.5">
+   328→   328→            {!canManage && !planogramName && <p className="text-[10px] text-muted-foreground">برای اتصال پلانوگرام دسترسی مدیریت لازم است.</p>}
+   329→   329→            {canManage && (
+   330→   330→              <button onClick={onPickPlanogram} disabled={busy} className="rounded-lg bg-[#0e7a4a] px-2.5 py-1 text-[10px] font-black text-white hover:opacity-90 disabled:opacity-50">
+   331→   331→                انتخاب پلانوگرام
+   332→   332→              </button>
+   333→   333→            )}
+   334→   334→            {canManage && planogramName && (
+   335→   335→              <button onClick={onUnlinkPlanogram} disabled={busy} className="rounded-lg border border-[#b3372f]/40 px-2.5 py-1 text-[10px] font-black text-[#b3372f] hover:bg-[#b3372f]/10 disabled:opacity-50">
+   336→   336→                قطع اتصال
+   337→   337→              </button>
+   338→   338→            )}
+   339→   339→            <button onClick={onRestock} className="rounded-lg bg-gradient-to-l from-[#c9a227] to-[#c96f4a] px-2.5 py-1 text-[10px] font-black text-white hover:brightness-105">
+   340→   340→              درخواست پُرکردن قفسه 📦
+   341→   341→            </button>
+   342→   342→          </div>
+   343→   343→        </div>
+   344→   344→      )}
+   345→   345→
+   346→   346→      <div className="flex gap-2 pt-1">
+   347→   347→        <button onClick={onDuplicate} className="flex-1 rounded-xl border border-border bg-white py-2 text-[11px] font-black hover:bg-muted">
+   348→   348→          <Copy size={13} className="me-1 inline" /> تکثیر
+   349→   349→        </button>
+   350→   350→        <button onClick={onDelete} className="flex-1 rounded-xl bg-[#b3372f] py-2 text-[11px] font-black text-white hover:opacity-90">
+   351→   351→          <Trash2 size={13} className="me-1 inline" /> حذف
+   352→   352→        </button>
+   353→   353→      </div>
+   354→   354→      <p className="text-center text-[10px] text-muted-foreground">
+   355→   355→        محدودهٔ نقشه: {faNum(planWidth)}×{faNum(planHeight)} — اسنپ ۱۰ سانتی‌متری
+   356→   356→      </p>
+   357→   357→    </div>
+   358→   358→  )
+   359→   359→}
+   360→   360→
+   361→   361→/* ── بازرس گروه (چندانتخابی — گروه‌بندی زون) ── */
+   362→   362→function InspectorMulti({ count, zoneOptions, onAssignZone, onClearZone, onDeleteAll }: { count: number; zoneOptions: string[]; onAssignZone: (z: string) => void; onClearZone: () => void; onDeleteAll: () => void }) {
+   363→   363→  const [z, setZ] = useState('')
+   364→   364→  return (
+   365→   365→    <div className="space-y-2.5">
+   366→   366→      <div className="rounded-xl bg-[#c9a227]/10 p-2 text-center">
+   367→   367→        <p className="text-xs font-black">🔗 {faNum(count)} بلوک انتخاب شده</p>
+   368→   368→        <p className="mt-0.5 text-[10px] text-muted-foreground">Shift+کلیک برای افزودن/کم‌کردن اعضای گروه</p>
+   369→   369→      </div>
+   370→   370→      <Labeled label="گروه‌بندی زون — تخصیص گروهی">
+   371→   371→        <input className={INPUT_CLS} list="fp-zone-options" value={z} onChange={(e) => setZ(e.target.value.slice(0, 80))} placeholder="نام زون برای کل گروه…" />
+   372→   372→      </Labeled>
+   373→   373→      <div className="flex gap-2">
+   374→   374→        <button
+   375→   375→          onClick={() => {
+   376→   376→            if (!z.trim()) return toast.error('نام زون را وارد کنید')
+   377→   377→            onAssignZone(z.trim())
+   378→   378→            setZ('')
+   379→   379→          }}
+   380→   380→          className="flex-1 rounded-xl bg-[#0e7a4a] py-2 text-[11px] font-black text-white hover:opacity-90"
+   381→   381→        >
+   382→   382→          <MapPin size={13} className="me-1 inline" /> تخصیص زون به گروه
+   383→   383→        </button>
+   384→   384→        <button onClick={onClearZone} className="rounded-xl border border-border bg-white px-3 py-2 text-[11px] font-black hover:bg-muted">
+   385→   385→          بدون زون
+   386→   386→        </button>
+   387→   387→      </div>
+   388→   388→      {zoneOptions.length > 0 && (
+   389→   389→        <div className="flex flex-wrap gap-1">
+   390→   390→          {zoneOptions.slice(0, 8).map((zn) => (
+   391→   391→            <button key={zn} onClick={() => onAssignZone(zn)} className="flex items-center gap-1 rounded-full border border-border bg-white px-2 py-0.5 text-[10px] font-bold hover:bg-muted">
+   392→   392→              <span className="size-2 rounded-full" style={{ background: hashZoneColor(zn) }} />
+   393→   393→              {zn}
+   394→   394→            </button>
+   395→   395→          ))}
+   396→   396→        </div>
+   397→   397→      )}
+   398→   398→      <button onClick={onDeleteAll} className="w-full rounded-xl bg-[#b3372f] py-2 text-[11px] font-black text-white hover:opacity-90">
+   399→   399→        <Trash2 size={13} className="me-1 inline" /> حذف کل گروه
+   400→   400→      </button>
+   401→   401→    </div>
+   402→   402→  )
+   403→   403→}
+   404→   404→
+   405→   405→/* ── بازرس خالی: راهنما + راهنمای زون‌ها ── */
+   406→   406→function InspectorEmpty({ plan, blockCount, zoneLegend }: { plan: PlanRow | null; blockCount: number; zoneLegend: Array<{ name: string; count: number }> }) {
+   407→   407→  return (
+   408→   408→    <div className="space-y-3">
+   409→   409→      <div className="rounded-xl border border-border bg-muted/40 p-2.5">
+   410→   410→        <p className="mb-1 text-[11px] font-black">راهنمای سریع</p>
+   411→   411→        <ul className="space-y-1 text-[10px] leading-relaxed text-muted-foreground">
+   412→   412→          <li>• بلوکی از کتابخانه را انتخاب و با کلیک روی نقشه قرار دهید (ESC = لغو)</li>
+   413→   413→          <li>• درگ = جابه‌جایی (اسنپ ۱۰) — گوشهٔ بلوک = تغییر اندازه</li>
+   414→   414→          <li>• Shift+کلیک = انتخاب گروهی برای زون‌بندی</li>
+   415→   415→          <li>• جهت‌نمای کیبورد = حرکت ۱۰ (با Shift = ۱) — Delete = حذف</li>
+   416→   416→          <li>• درگ روی پس‌زمینه = جابه‌جایی نما (Pan)</li>
+   417→   417→        </ul>
+   418→   418→      </div>
+   419→   419→      {plan && (
+   420→   420→        <div className="rounded-xl border border-border bg-white p-2.5">
+   421→   421→          <p className="mb-1.5 text-[11px] font-black">آمار طبقهٔ فعال</p>
+   422→   422→          <div className="grid grid-cols-2 gap-1.5 text-[10px] font-bold">
+   423→   423→            <span className="rounded-lg bg-muted/60 px-2 py-1.5">بلوک‌ها: {faNum(blockCount)}</span>
+   424→   424→            <span className="rounded-lg bg-muted/60 px-2 py-1.5">ابعاد: {faNum(plan.width)}×{faNum(plan.height)}</span>
+   425→   425→            <span className="rounded-lg bg-muted/60 px-2 py-1.5">طبقه: {faNum(plan.floorIndex)}</span>
+   426→   426→            <span className="rounded-lg bg-muted/60 px-2 py-1.5">زون‌ها: {faNum(zoneLegend.length)}</span>
+   427→   427→          </div>
+   428→   428→        </div>
+   429→   429→      )}
+   430→   430→      {zoneLegend.length > 0 && (
+   431→   431→        <div className="rounded-xl border border-border bg-white p-2.5">
+   432→   432→          <p className="mb-1.5 text-[11px] font-black">راهنمای زون‌ها</p>
+   433→   433→          <div className="space-y-1">
+   434→   434→            {zoneLegend.map((zl) => (
+   435→   435→              <div key={zl.name} className="flex items-center gap-2 text-[10px] font-bold">
+   436→   436→                <span className="size-3 rounded" style={{ background: hashZoneColor(zl.name) }} />
+   437→   437→                <span className="flex-1 truncate">{zl.name}</span>
+   438→   438→                <span className="text-muted-foreground">{faNum(zl.count)} بلوک</span>
+   439→   439→              </div>
+   440→   440→            ))}
+   441→   441→          </div>
+   442→   442→        </div>
+   443→   443→      )}
+   444→   444→    </div>
+   445→   445→  )
+   446→   446→}
+   447→   447→
+   448→   448→/* ── مودال ساخت/ویرایش طبقه ── */
+   449→   449→function FloorFormModal({
+   450→   450→  mode,
+   451→   451→  plan,
+   452→   452→  defaultIndex,
+   453→   453→  busy,
+   454→   454→  onClose,
+   455→   455→  onSubmit,
+   456→   456→}: {
+   457→   457→  mode: 'create' | 'edit'
+   458→   458→  plan: PlanRow | null
+   459→   459→  defaultIndex: number
+   460→   460→  busy: boolean
+   461→   461→  onClose: () => void
+   462→   462→  onSubmit: (v: { name: string; floorIndex: number; width: number; height: number }) => void
+   463→   463→}) {
+   464→   464→  const [name, setName] = useState(plan?.name || '')
+   465→   465→  const [fi, setFi] = useState(String(plan?.floorIndex ?? defaultIndex))
+   466→   466→  const [w, setW] = useState(String(plan?.width ?? 1600))
+   467→   467→  const [h, setH] = useState(String(plan?.height ?? 1000))
+   468→   468→
+   469→   469→  const submit = () => {
+   470→   470→    const n = name.trim()
+   471→   471→    if (!n) return toast.error('نام طبقه الزامی است')
+   472→   472→    const floorIndex = Math.round(Number(fi))
+   473→   473→    const width = Math.round(Number(w))
+   474→   474→    const height = Math.round(Number(h))
+   475→   475→    if (!isFinite(floorIndex) || floorIndex < 0 || floorIndex > 20) return toast.error('شمارهٔ طبقه بین ۰ تا ۲۰ باشد')
+   476→   476→    if (!isFinite(width) || width < 400 || width > 4000) return toast.error('عرض بین ۴۰۰ تا ۴۰۰۰ سانتی‌متر باشد')
+   477→   477→    if (!isFinite(height) || height < 300 || height > 4000) return toast.error('ارتفاع بین ۳۰۰ تا ۴۰۰۰ سانتی‌متر باشد')
+   478→   478→    onSubmit({ name: n, floorIndex, width, height })
+   479→   479→  }
+   480→   480→
+   481→   481→  return (
+   482→   482→    <Modal title={mode === 'create' ? 'طبقهٔ جدید' : `ویرایش طبقهٔ «${plan?.name}»`} onClose={onClose}>
+   483→   483→      <Labeled label="نام طبقه">
+   484→   484→        <input className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: همکف — فروشگاه اصلی" autoFocus />
+   485→   485→      </Labeled>
+   486→   486→      <div className="grid grid-cols-3 gap-2">
+   487→   487→        <Labeled label="شمارهٔ طبقه" hint="۰ تا ۲۰">
+   488→   488→          <input type="number" dir="ltr" min={0} max={20} className={cn(INPUT_CLS, 'text-center')} value={fi} onChange={(e) => setFi(e.target.value)} />
+   489→   489→        </Labeled>
+   490→   490→        <Labeled label="عرض (سانتی‌متر)" hint="۴۰۰ تا ۴۰۰۰">
+   491→   491→          <input type="number" dir="ltr" min={400} max={4000} step={50} className={cn(INPUT_CLS, 'text-center')} value={w} onChange={(e) => setW(e.target.value)} />
+   492→   492→        </Labeled>
+   493→   493→        <Labeled label="ارتفاع (سانتی‌متر)" hint="۳۰۰ تا ۴۰۰۰">
+   494→   494→          <input type="number" dir="ltr" min={300} max={4000} step={50} className={cn(INPUT_CLS, 'text-center')} value={h} onChange={(e) => setH(e.target.value)} />
+   495→   495→        </Labeled>
+   496→   496→      </div>
+   497→   497→      <div className="flex gap-2 pt-1">
+   498→   498→        <button onClick={submit} disabled={busy} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0e7a4a] py-2.5 text-xs font-black text-white hover:opacity-90 disabled:opacity-60">
+   499→   499→          {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+   500→   500→          {mode === 'create' ? 'ساخت طبقه' : 'ذخیرهٔ تغییرات'}
+   501→   501→        </button>
+   502→   502→        <button onClick={onClose} className="rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-black hover:bg-muted">
+   503→   503→          انصراف
+   504→   504→        </button>
+   505→   505→      </div>
+   506→   506→    </Modal>
+   507→   507→  )
+   508→   508→}
+   509→   509→
+   510→   510→/* ── مودال درخواست تأمین (پُرکردن قفسه) ── */
+   511→   511→function RestockModal({ block, planName, onClose }: { block: Block; planName: string; onClose: () => void }) {
+   512→   512→  const [product, setProduct] = useState('')
+   513→   513→  const [qty, setQty] = useState('10')
+   514→   514→  const [busy, setBusy] = useState(false)
+   515→   515→  const [skName, setSkName] = useState<string | null>(null)
+   516→   516→  const [noSk, setNoSk] = useState(false)
+   517→   517→
+   518→   518→  useEffect(() => {
+   519→   519→    let live = true
+   520→   520→    api<{ users: Array<{ id: string; name: string; role: string; active: boolean; hidden?: boolean }> }>('/api/users')
+   521→   521→      .then((d) => {
+   522→   522→        if (!live) return
+   523→   523→        const sk = (d.users || []).find((u) => u.role === 'SK' && u.active && !u.hidden)
+   524→   524→        if (sk) setSkName(sk.name)
+   525→   525→        else setNoSk(true)
+   526→   526→      })
+   527→   527→      .catch(() => live && setNoSk(true))
+   528→   528→    return () => {
+   529→   529→      live = false
+   530→   530→    }
+   531→   531→  }, [])
+   532→   532→
+   533→   533→  const submit = async () => {
+   534→   534→    const p = product.trim()
+   535→   535→    const q = Math.round(Number(qty))
+   536→   536→    if (!p) return toast.error('نام محصول را بنویسید')
+   537→   537→    if (!isFinite(q) || q < 1 || q > 999) return toast.error('تعداد بین ۱ تا ۹۹۹ باشد')
+   538→   538→    setBusy(true)
+   539→   539→    try {
+   540→   540→      const sk = await api<{ users: Array<{ id: string; name: string; role: string; active: boolean; hidden?: boolean }> }>('/api/users').then(
+   541→   541→        (d) => (d.users || []).find((u) => u.role === 'SK' && u.active && !u.hidden),
+   542→   542→      )
+   543→   543→      if (!sk) {
+   544→   544→        toast.error('کاربر انبار (SK) فعالی یافت نشد — ابتدا در «نیروی انسانی» تعریف کنید')
+   545→   545→        return
+   546→   546→      }
+   547→   547→      await api('/api/tasks', {
+   548→   548→        method: 'POST',
+   549→   549→        body: {
+   550→   550→          title: `تأمین ${block.label || 'قفسه'}: ${faNum(q)} از ${p}`,
+   551→   551→          description: `[پلان] درخواست پرکردن قفسه از نقشهٔ فروشگاه — طبقه: ${planName} — بلوک: ${block.label}${block.zoneName ? ` — زون: ${block.zoneName}` : ''} — محصول: ${p} — تعداد: ${q}`,
+   552→   552→          type: 'TASK',
+   553→   553→          priority: 'HIGH',
+   554→   554→          assignedToId: sk.id,
+   555→   555→          points: 20,
+   556→   556→          dueDate: '',
+   557→   557→        },
+   558→   558→      })
+   559→   559→      toast.success('ثبت شد — انبار تأیید می‌کند')
+   560→   560→      onClose()
+   561→   561→    } catch (e) {
+   562→   562→      toast.error(errMsg(e))
+   563→   563→    } finally {
+   564→   564→      setBusy(false)
+   565→   565→    }
+   566→   566→  }
+   567→   567→
+   568→   568→  return (
+   569→   569→    <Modal title="درخواست پُرکردن قفسه 📦" onClose={onClose}>
+   570→   570→      <div className="rounded-xl bg-muted/60 p-2.5 text-[11px] font-bold">
+   571→   571→        بلوک: <span className="text-[#0e7a4a]">{block.label}</span>
+   572→   572→        {block.zoneName ? ` • زون ${block.zoneName}` : ''} — تسک HIGH برای {skName ? `انبار (${skName})` : 'انبار'}
+   573→   573→      </div>
+   574→   574→      <Labeled label="محصول موردنیاز (راهنما)">
+   575→   575→        <input className={INPUT_CLS} value={product} onChange={(e) => setProduct(e.target.value)} placeholder="مثلاً: شیر پرچرب ۱ لیتری" autoFocus />
+   576→   576→      </Labeled>
+   577→   577→      <Labeled label="تعداد">
+   578→   578→        <input type="number" dir="ltr" min={1} max={999} className={cn(INPUT_CLS, 'text-center')} value={qty} onChange={(e) => setQty(e.target.value)} />
+   579→   579→      </Labeled>
+   580→   580→      {noSk && <p className="rounded-xl bg-[#b3372f]/10 p-2 text-[11px] font-bold text-[#b3372f]">کاربر انبار (SK) فعالی یافت نشد — ثبت ممکن نیست.</p>}
+   581→   581→      <div className="flex gap-2 pt-1">
+   582→   582→        <button onClick={submit} disabled={busy || noSk} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-l from-[#c9a227] to-[#c96f4a] py-2.5 text-xs font-black text-white hover:brightness-105 disabled:opacity-60">
+   583→   583→          {busy ? <Loader2 size={14} className="animate-spin" /> : '📦'} ثبت درخواست تأمین
+   584→   584→        </button>
+   585→   585→        <button onClick={onClose} className="rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-black hover:bg-muted">
+   586→   586→          انصراف
+   587→   587→        </button>
+   588→   588→      </div>
+   589→   589→      <p className="text-center text-[10px] text-muted-foreground">این درخواست با پیشوند «[پلان]» در فهرست وظایف انبار ثبت می‌شود.</p>
+   590→   590→    </Modal>
+   591→   591→  )
+   592→   592→}
+   593→   593→
+   594→   594→/* ── مودال انتخاب پلانوگرام ── */
+   595→   595→function PlanogramPickerModal({
+   596→   596→  planograms,
+   597→   597→  loading,
+   598→   598→  currentId,
+   599→   599→  busy,
+   600→   600→  onPick,
+   601→   601→  onClose,
+   602→   602→}: {
+   603→   603→  planograms: PlanogramRow[]
+   604→   604→  loading: boolean
+   605→   605→  currentId?: string
+   606→   606→  busy: boolean
+   607→   607→  onPick: (id: string) => void
+   608→   608→  onClose: () => void
+   609→   609→}) {
+   610→   610→  const [q, setQ] = useState('')
+   611→   611→  const list = planograms.filter((p) => !q.trim() || p.name.includes(q.trim()) || (p.section || '').includes(q.trim()))
+   612→   612→  return (
+   613→   613→    <Modal title="انتخاب پلانوگرام" onClose={onClose}>
+   614→   614→      <div className="relative">
+   615→   615→        <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+   616→   616→        <input className={cn(INPUT_CLS, 'ps-8')} value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو در پلانوگرام‌ها…" autoFocus />
+   617→   617→      </div>
+   618→   618→      <div className="scroll-gold max-h-72 space-y-1.5 overflow-y-auto">
+   619→   619→        {loading && (
+   620→   620→          <p className="flex items-center justify-center gap-2 py-6 text-xs font-bold text-muted-foreground">
+   621→   621→            <Loader2 size={14} className="animate-spin" /> در حال دریافت پلانوگرام‌ها…
+   622→   622→          </p>
+   623→   623→        )}
+   624→   624→        {!loading && list.length === 0 && <p className="py-6 text-center text-xs font-bold text-muted-foreground">پلانوگرامی یافت نشد</p>}
+   625→   625→        {!loading &&
+   626→   626→          list.map((p) => (
+   627→   627→            <button
+   628→   628→              key={p.id}
+   629→   629→              onClick={() => onPick(p.id)}
+   630→   630→              disabled={busy}
+   631→   631→              className={cn(
+   632→   632→                'flex w-full items-center justify-between gap-2 rounded-xl border-2 p-2.5 text-start transition hover:bg-muted disabled:opacity-60',
+   633→   633→                p.id === currentId ? 'border-[#c9a227] bg-[#c9a227]/10' : 'border-border bg-white',
+   634→   634→              )}
+   635→   635→            >
+   636→   636→              <span className="min-w-0">
+   637→   637→                <span className="block truncate text-xs font-black">{p.name}</span>
+   638→   638→                <span className="block text-[10px] text-muted-foreground">
+   639→   639→                  {p.section || 'بدون بخش'} • {faNum(p.rows)}×{faNum(p.cols)} • {faNum(p.cells)} خانه
+   640→   640→                </span>
+   641→   641→              </span>
+   642→   642→              {p.id === currentId ? (
+   643→   643→                <span className="shrink-0 rounded-full bg-[#c9a227] px-2 py-0.5 text-[10px] font-black text-white">متصل</span>
+   644→   644→              ) : (
+   645→   645→                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{p.status === 'ACTIVE' ? 'فعال' : p.status === 'PUBLISHED' ? 'منتشرشده' : 'پیش‌نویس'}</span>
+   646→   646→              )}
+   647→   647→            </button>
+   648→   648→          ))}
+   649→   649→      </div>
+   650→   650→    </Modal>
+   651→   651→  )
+   652→   652→}
+   653→   653→
+   654→   654→/* ── مودال تأیید عمومی ── */
+   655→   655→function ConfirmModal({ title, message, confirmLabel = 'حذف', busy, onConfirm, onClose }: { title: string; message: string; confirmLabel?: string; busy?: boolean; onConfirm: () => void; onClose: () => void }) {
+   656→   656→  return (
+   657→   657→    <Modal title={title} onClose={onClose}>
+   658→   658→      <p className="rounded-xl bg-[#b3372f]/8 p-3 text-xs font-bold leading-relaxed text-[#8a2a23]">{message}</p>
+   659→   659→      <div className="flex gap-2">
+   660→   660→        <button onClick={onConfirm} disabled={busy} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#b3372f] py-2.5 text-xs font-black text-white hover:opacity-90 disabled:opacity-60">
+   661→   661→          {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} {confirmLabel}
+   662→   662→        </button>
+   663→   663→        <button onClick={onClose} className="rounded-xl border border-border bg-white px-4 py-2.5 text-xs font-black hover:bg-muted">
+   664→   664→          انصراف
+   665→   665→        </button>
+   666→   666→      </div>
+   667→   667→    </Modal>
+   668→   668→  )
+   669→   669→}
+   670→   670→
+   671→   671→/* ═══════════════════════════ view اصلی ═══════════════════════════ */
+   672→   672→
+   673→   673→type DragState = {
+   674→   674→  mode: 'move' | 'resize' | 'pan'
+   675→   675→  id?: string
+   676→   676→  rot?: number
+   677→   677→  startX: number
+   678→   678→  startY: number
+   679→   679→  panX: number
+   680→   680→  panY: number
+   681→   681→  orig: Record<string, { x: number; y: number; w: number; h: number }>
+   682→   682→  moved: boolean
+   683→   683→  shift?: boolean
+   684→   684→  wasMulti?: boolean
+   685→   685→  clickedId?: string
+   686→   686→  downWorld?: { x: number; y: number }
+   687→   687→}
+   688→   688→
+   689→   689→export default function FloorPlanView({ ctx }: { ctx: AppCtx }) {
+   690→   690→  /* ── data ── */
+   691→   691→  const [plans, setPlans] = useState<PlanRow[]>([])
+   692→   692→  const [prefabs, setPrefabs] = useState<Prefab[]>([])
+   693→   693→  const [zones, setZones] = useState<ZoneLite[]>([])
+   694→   694→  const [loading, setLoading] = useState(true)
+   695→   695→  const [activeId, setActiveId] = useState('')
+   696→   696→  const [blocks, setBlocks] = useState<Block[]>([])
+   697→   697→  const [dirty, setDirty] = useState(false)
+   698→   698→  const [saving, setSaving] = useState(false)
+   699→   699→  const [busy, setBusy] = useState(false) // عملیات مودال‌ها
+   700→   700→
+   701→   701→  /* ── editor ui ── */
+   702→   702→  const [selection, setSelection] = useState<string[]>([])
+   703→   703→  const [placeKind, setPlaceKind] = useState<string | null>(null)
+   704→   704→  const [zoom, setZoom] = useState(1)
+   705→   705→  const [pan, setPan] = useState({ x: 24, y: 24 })
+   706→   706→
+   707→   707→  /* ── modals ── */
+   708→   708→  const [newFloorOpen, setNewFloorOpen] = useState(false)
+   709→   709→  const [editFloorOpen, setEditFloorOpen] = useState(false)
+   710→   710→  const [deleteFloorOpen, setDeleteFloorOpen] = useState(false)
+   711→   711→  const [pendingTab, setPendingTab] = useState<string | null>(null)
+   712→   712→  const [restockId, setRestockId] = useState<string | null>(null)
+   713→   713→  const [pickerOpen, setPickerOpen] = useState(false)
+   714→   714→
+   715→   715→  /* ── planograms (lazy) ── */
+   716→   716→  const [planoData, setPlanoData] = useState<{ planograms: PlanogramRow[]; productMap: ProductMap } | null>(null)
+   717→   717→  const [planoLoading, setPlanoLoading] = useState(false)
+   718→   718→
+   719→   719→  const viewportRef = useRef<HTMLDivElement | null>(null)
+   720→   720→  const dragRef = useRef<DragState | null>(null)
+   721→   721→  const planRef = useRef<PlanRow | null>(null)
+   722→   722→
+   723→   723→  const activePlan = useMemo(() => plans.find((p) => p.id === activeId) || null, [plans, activeId])
+   724→   724→  planRef.current = activePlan
+   725→   725→
+   726→   726→  const prefabMap = useMemo(() => new Map(prefabs.map((p) => [p.kind, p])), [prefabs])
+   727→   727→  const selectionSet = useMemo(() => new Set(selection), [selection])
+   728→   728→  const selectedBlock = selection.length === 1 ? blocks.find((b) => b.id === selection[0]) || null : null
+   729→   729→  const restockBlock = restockId ? blocks.find((b) => b.id === restockId) || null : null
+   730→   730→  const popupBlock = selectedBlock && (SHELF_KINDS.has(selectedBlock.kind) || !!selectedBlock.meta.planogramId) ? selectedBlock : null
+   731→   731→  const popupPlanogram = popupBlock && planoData ? planoData.planograms.find((p) => p.id === popupBlock.meta.planogramId) || null : null
+   732→   732→  const canManage = useMemo(() => {
+   733→   733→    const r = ctx.user?.role || ''
+   734→   734→    const all = [r, ...(ctx.user?.secondaryRoles || [])]
+   735→   735→    return all.includes('GM') || all.includes('OM') || all.includes('OWNER') || all.includes('ADMIN')
+   736→   736→  }, [ctx.user])
+   737→   737→  const zoneLegend = useMemo(() => {
+   738→   738→    const m = new Map<string, number>()
+   739→   739→    for (const b of blocks) if (b.zoneName) m.set(b.zoneName, (m.get(b.zoneName) || 0) + 1)
+   740→   740→    return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }))
+   741→   741→  }, [blocks])
+   742→   742→  const zoneOptions = useMemo(() => {
+   743→   743→    const s = new Set<string>(zones.map((z) => z.name))
+   744→   744→    for (const b of blocks) if (b.zoneName) s.add(b.zoneName)
+   745→   745→    return [...s].sort((a, b) => a.localeCompare(b, 'fa'))
+   746→   746→  }, [zones, blocks])
+   747→   747→
+   748→   748→  const kindLabel = useCallback((kind: string) => prefabMap.get(kind)?.label || 'فضای سفارشی', [prefabMap])
+   749→   749→  const kindIcon = useCallback((kind: string) => prefabMap.get(kind)?.icon || '⬚', [prefabMap])
+   750→   750→  const kindColor = useCallback((kind: string) => prefabMap.get(kind)?.color || '#9c8b6a', [prefabMap])
+   751→   751→  const blockColor = useCallback((b: Block) => (b.zoneName ? hashZoneColor(b.zoneName) : kindColor(b.kind)), [kindColor])
+   752→   752→
+   753→   753→  /* ── بارگذاری اولیه ── */
+   754→   754→  useEffect(() => {
+   755→   755→    let live = true
+   756→   756→    api<{ plans: PlanRow[]; prefabs: Prefab[] }>('/api/floorplans')
+   757→   757→      .then((d) => {
+   758→   758→        if (!live) return
+   759→   759→        const ps = (d.plans || []).slice().sort((a, b) => a.floorIndex - b.floorIndex || a.name.localeCompare(b.name, 'fa'))
+   760→   760→        setPlans(ps)
+   761→   761→        setPrefabs(d.prefabs || [])
+   762→   762→        if (ps[0]) {
+   763→   763→          setActiveId(ps[0].id)
+   764→   764→          setBlocks(ps[0].blocks.map(toEditorBlock))
+   765→   765→        }
+   766→   766→      })
+   767→   767→      .catch((e) => live && toast.error(errMsg(e)))
+   768→   768→      .finally(() => live && setLoading(false))
+   769→   769→    api<{ zones: Array<{ name: string; color: string }> }>('/api/zones')
+   770→   770→      .then((d) => live && setZones((d.zones || []).map((z) => ({ name: z.name, color: z.color }))))
+   771→   771→      .catch(() => {})
+   772→   772→    return () => {
+   773→   773→      live = false
+   774→   774→    }
+   775→   775→  }, [])
+   776→   776→
+   777→   777→  /* ── fit view (بعد از تغییر طبقهٔ فعال) ── */
+   778→   778→  const fitView = useCallback(() => {
+   779→   779→    const vp = viewportRef.current
+   780→   780→    const plan = planRef.current
+   781→   781→    if (!vp || !plan) return
+   782→   782→    const r = vp.getBoundingClientRect()
+   783→   783→    const z = clamp(Math.min((r.width - 48) / plan.width, (r.height - 48) / plan.height), 0.12, 1.5)
+   784→   784→    setZoom(z)
+   785→   785→    setPan({ x: (r.width - plan.width * z) / 2, y: (r.height - plan.height * z) / 2 })
+   786→   786→  }, [])
+   787→   787→
+   788→   788→  useEffect(() => {
+   789→   789→    const t = setTimeout(fitView, 80)
+   790→   790→    return () => clearTimeout(t)
+   791→   791→  }, [activeId, fitView])
+   792→   792→
+   793→   793→  /* ── هشدار خروج هنگام تغییرات ذخیره‌نشده (best-effort) ── */
+   794→   794→  useEffect(() => {
+   795→   795→    if (!dirty) return
+   796→   796→    const h = (e: BeforeUnloadEvent) => {
+   797→   797→      e.preventDefault()
+   798→   798→      e.returnValue = ''
+   799→   799→    }
+   800→   800→    window.addEventListener('beforeunload', h)
+   801→   801→    return () => window.removeEventListener('beforeunload', h)
+   802→   802→  }, [dirty])
+   803→   803→
+   804→   804→  /* ── دریافت پلانوگرام‌ها به‌صورت تنبل ── */
+   805→   805→  const ensurePlanograms = useCallback(() => {
+   806→   806→    if (planoData || planoLoading) return
+   807→   807→    setPlanoLoading(true)
+   808→   808→    api<{ planograms: PlanogramRow[]; productMap: ProductMap }>('/api/planograms')
+   809→   809→      .then((d) => setPlanoData({ planograms: d.planograms || [], productMap: d.productMap || {} }))
+   810→   810→      .catch((e) => toast.error(errMsg(e)))
+   811→   811→      .finally(() => setPlanoLoading(false))
+   812→   812→  }, [planoData, planoLoading])
+   813→   813→  useEffect(() => {
+   814→   814→    if ((popupBlock || pickerOpen) && !planoData) ensurePlanograms()
+   815→   815→  }, [popupBlock, pickerOpen, planoData, ensurePlanograms])
+   816→   816→
+   817→   817→  /* ── mutations ── */
+   818→   818→  const markDirty = useCallback(() => setDirty(true), [])
+   819→   819→  const updateBlock = useCallback(
+   820→   820→    (id: string, patch: Partial<Block>) => {
+   821→   821→      setBlocks((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b)))
+   822→   822→      markDirty()
+   823→   823→    },
+   824→   824→    [markDirty],
+   825→   825→  )
+   826→   826→  const updateBlocks = useCallback(
+   827→   827→    (ids: string[], fn: (b: Block) => Block) => {
+   828→   828→      const s = new Set(ids)
+   829→   829→      setBlocks((bs) => bs.map((b) => (s.has(b.id) ? fn(b) : b)))
+   830→   830→      markDirty()
+   831→   831→    },
+   832→   832→    [markDirty],
+   833→   833→  )
+   834→   834→  const addBlock = useCallback(
+   835→   835→    (b: Block) => {
+   836→   836→      setBlocks((bs) => [...bs, b])
+   837→   837→      setSelection([b.id])
+   838→   838→      markDirty()
+   839→   839→    },
+   840→   840→    [markDirty],
+   841→   841→  )
+   842→   842→  const removeBlocks = useCallback(
+   843→   843→    (ids: string[]) => {
+   844→   844→      const s = new Set(ids)
+   845→   845→      setBlocks((bs) => bs.filter((b) => !s.has(b.id)))
+   846→   846→      setSelection((sel) => sel.filter((i) => !s.has(i)))
+   847→   847→      markDirty()
+   848→   848→    },
+   849→   849→    [markDirty],
+   850→   850→  )
+   851→   851→  const duplicateBlock = useCallback(
+   852→   852→    (b: Block) => {
+   853→   853→      const plan = planRef.current
+   854→   854→      if (!plan) return
+   855→   855→      const w = clamp(Math.round(b.w), 20, 2000)
+   856→   856→      const h = clamp(Math.round(b.h), 20, 2000)
+   857→   857→      const nb: Block = { ...b, id: genId(), w, h, x: clamp(snap10(b.x + 20), 0, Math.max(0, plan.width - w)), y: clamp(snap10(b.y + 20), 0, Math.max(0, plan.height - h)), meta: { ...b.meta } }
+   858→   858→      addBlock(nb)
+   859→   859→      toast.success(`«${b.label || kindLabel(b.kind)}» تکثیر شد`)
+   860→   860→    },
+   861→   861→    [addBlock, kindLabel],
+   862→   862→  )
+   863→   863→
+   864→   864→  /* ── drop block (place mode) ── */
+   865→   865→  const dropBlock = useCallback(
+   866→   866→    (world: { x: number; y: number }) => {
+   867→   867→      const plan = planRef.current
+   868→   868→      const pf = placeKind ? prefabMap.get(placeKind) : null
+   869→   869→      if (!plan || !pf) return
+   870→   870→      const w = clamp(pf.w, 20, 2000)
+   871→   871→      const h = clamp(pf.h, 20, 2000)
+   872→   872→      const x = clamp(snap10(world.x - w / 2), 0, Math.max(0, plan.width - w))
+   873→   873→      const y = clamp(snap10(world.y - h / 2), 0, Math.max(0, plan.height - h))
+   874→   874→      addBlock({ id: genId(), kind: pf.kind, x, y, w, h, rotation: 0, label: pf.label, zoneName: '', meta: {} })
+   875→   875→    },
+   876→   876→    [placeKind, prefabMap, addBlock],
+   877→   877→  )
+   878→   878→
+   879→   879→  /* ── pointer helpers ── */
+   880→   880→  const screenToWorld = useCallback(
+   881→   881→    (clientX: number, clientY: number) => {
+   882→   882→      const r = viewportRef.current!.getBoundingClientRect()
+   883→   883→      return { x: (clientX - r.left - pan.x) / zoom, y: (clientY - r.top - pan.y) / zoom }
+   884→   884→    },
+   885→   885→    [pan, zoom],
+   886→   886→  )
+   887→   887→  const clampPan = useCallback((p: { x: number; y: number }) => {
+   888→   888→    const vp = viewportRef.current
+   889→   889→    const plan = planRef.current
+   890→   890→    if (!vp || !plan) return p
+   891→   891→    const r = vp.getBoundingClientRect()
+   892→   892→    const margin = 140
+   893→   893→    return { x: clamp(p.x, r.width - plan.width * zoom - margin, margin), y: clamp(p.y, r.height - plan.height * zoom - margin, margin) }
+   894→   894→  }, [zoom])
+   895→   895→
+   896→   896→  const onBgPointerDown = (e: React.PointerEvent) => {
+   897→   897→    if (dragRef.current) return
+   898→   898→    const el = viewportRef.current!
+   899→   899→    el.setPointerCapture(e.pointerId)
+   900→   900→    dragRef.current = {
+   901→   901→      mode: 'pan',
+   902→   902→      startX: e.clientX,
+   903→   903→      startY: e.clientY,
+   904→   904→      panX: pan.x,
+   905→   905→      panY: pan.y,
+   906→   906→      orig: {},
+   907→   907→      moved: false,
+   908→   908→      downWorld: screenToWorld(e.clientX, e.clientY),
+   909→   909→    }
+   910→   910→  }
+   911→   911→
+   912→   912→  const onBlockPointerDown = (e: React.PointerEvent, b: Block) => {
+   913→   913→    if (placeKind) return // حباب به پس‌زمینه → جای‌گذاری بلوک
+   914→   914→    e.stopPropagation()
+   915→   915→    if (e.button !== 0 && e.pointerType === 'mouse') return
+   916→   916→    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+   917→   917→    let ids: string[]
+   918→   918→    let shift = false
+   919→   919→    let wasMulti = selection.length > 1
+   920→   920→    if (e.shiftKey) {
+   921→   921→      shift = true
+   922→   922→      const next = selection.includes(b.id) ? selection.filter((i) => i !== b.id) : [...selection, b.id]
+   923→   923→      setSelection(next)
+   924→   924→      if (!next.includes(b.id)) {
+   925→   925→        dragRef.current = null
+   926→   926→        return
+   927→   927→      }
+   928→   928→      ids = next
+   929→   929→    } else if (selection.includes(b.id)) {
+   930→   930→      ids = selection
+   931→   931→    } else {
+   932→   932→      ids = [b.id]
+   933→   933→      setSelection([b.id])
+   934→   934→    }
+   935→   935→    const orig: DragState['orig'] = {}
+   936→   936→    for (const bb of blocks) if (ids.includes(bb.id)) orig[bb.id] = { x: bb.x, y: bb.y, w: bb.w, h: bb.h }
+   937→   937→    dragRef.current = { mode: 'move', startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y, orig, moved: false, shift, wasMulti, clickedId: b.id }
+   938→   938→  }
+   939→   939→
+   940→   940→  const onResizePointerDown = (e: React.PointerEvent, b: Block) => {
+   941→   941→    e.stopPropagation()
+   942→   942→    e.preventDefault()
+   943→   943→    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+   944→   944→    dragRef.current = {
+   945→   945→      mode: 'resize',
+   946→   946→      id: b.id,
+   947→   947→      rot: b.rotation,
+   948→   948→      startX: e.clientX,
+   949→   949→      startY: e.clientY,
+   950→   950→      panX: pan.x,
+   951→   951→      panY: pan.y,
+   952→   952→      orig: { [b.id]: { x: b.x, y: b.y, w: b.w, h: b.h } },
+   953→   953→      moved: false,
+   954→   954→    }
+   955→   955→  }
+   956→   956→
+   957→   957→  const onViewportPointerMove = (e: React.PointerEvent) => {
+   958→   958→    const d = dragRef.current
+   959→   959→    if (!d) return
+   960→   960→    const dx = e.clientX - d.startX
+   961→   961→    const dy = e.clientY - d.startY
+   962→   962→    if (d.mode === 'pan') {
+   963→   963→      if (!d.moved && Math.hypot(dx, dy) > 3) d.moved = true
+   964→   964→      if (d.moved) setPan(clampPan({ x: d.panX + dx, y: d.panY + dy }))
+   965→   965→      return
+   966→   966→    }
+   967→   967→    if (!d.moved && Math.hypot(dx, dy) > 4) d.moved = true
+   968→   968→    if (!d.moved) return
+   969→   969→    if (d.mode === 'move') {
+   970→   970→      const wx = dx / zoom
+   971→   971→      const wy = dy / zoom
+   972→   972→      setBlocks((bs) => bs.map((b) => (d.orig[b.id] ? { ...b, x: snap10(d.orig[b.id].x + wx), y: snap10(d.orig[b.id].y + wy) } : b)))
+   973→   973→      setDirty(true)
+   974→   974→    } else if (d.mode === 'resize' && d.id) {
+   975→   975→      const o = d.orig[d.id]
+   976→   976→      const rot = ((d.rot || 0) * Math.PI) / 180
+   977→   977→      const ux = { x: Math.cos(rot), y: Math.sin(rot) }
+   978→   978→      const uy = { x: -Math.sin(rot), y: Math.cos(rot) }
+   979→   979→      const Dx = dx / zoom
+   980→   980→      const Dy = dy / zoom
+   981→   981→      const dl = Dx * ux.x + Dy * ux.y
+   982→   982→      const dh = Dx * uy.x + Dy * uy.y
+   983→   983→      const nw = clamp(Math.round((o.w + dl) / 10) * 10, 20, 2000)
+   984→   984→      const nh = clamp(Math.round((o.h + dh) / 10) * 10, 20, 2000)
+   985→   985→      // گوشهٔ مقابل ثابت می‌ماند (چرخش حول مرکز)
+   986→   986→      const cx = o.x + o.w / 2
+   987→   987→      const cy = o.y + o.h / 2
+   988→   988→      const ox = cx - (o.w / 2) * ux.x - (o.h / 2) * uy.x
+   989→   989→      const oy = cy - (o.w / 2) * ux.y - (o.h / 2) * uy.y
+   990→   990→      const ncx = ox + (nw / 2) * ux.x + (nh / 2) * uy.x
+   991→   991→      const ncy = oy + (nw / 2) * ux.y + (nh / 2) * uy.y
+   992→   992→      const nx = Math.round(ncx - nw / 2)
+   993→   993→      const ny = Math.round(ncy - nh / 2)
+   994→   994→      setBlocks((bs) => bs.map((b) => (b.id === d.id ? { ...b, x: nx, y: ny, w: nw, h: nh } : b)))
+   995→   995→      setDirty(true)
+   996→   996→    }
+   997→   997→  }
+   998→   998→
+   999→   999→  const onViewportPointerUp = () => {
+  1000→  1000→    const d = dragRef.current
+  1001→  1001→    dragRef.current = null
+  1002→  1002→    if (!d) return
+  1003→  1003→    if (d.mode === 'pan' && !d.moved) {
+  1004→  1004→      if (placeKind && d.downWorld) dropBlock(d.downWorld)
+  1005→  1005→      else setSelection([])
+  1006→  1006→    }
+  1007→  1007→    if (d.mode === 'move' && !d.moved && !d.shift && d.wasMulti && d.clickedId) setSelection([d.clickedId])
+  1008→  1008→  }
+  1009→  1009→
+  1010→  1010→  /* ── zoom controls ── */
+  1011→  1011→  const zoomBy = useCallback(
+  1012→  1012→    (delta: number) => {
+  1013→  1013→      const vp = viewportRef.current
+  1014→  1014→      if (!vp) return
+  1015→  1015→      const nz = clamp(Math.round((zoom + delta) * 10) / 10, ZOOM_MIN, ZOOM_MAX)
+  1016→  1016→      if (nz === zoom) return
+  1017→  1017→      const r = vp.getBoundingClientRect()
+  1018→  1018→      const wx = (r.width / 2 - pan.x) / zoom
+  1019→  1019→      const wy = (r.height / 2 - pan.y) / zoom
+  1020→  1020→      setZoom(nz)
+  1021→  1021→      setPan(clampPan({ x: r.width / 2 - wx * nz, y: r.height / 2 - wy * nz }))
+  1022→  1022→    },
+  1023→  1023→    [zoom, pan, clampPan],
+  1024→  1024→  )
+  1025→  1025→
+  1026→  1026→  /* ── keyboard ── */
+  1027→  1027→  useEffect(() => {
+  1028→  1028→    const h = (e: KeyboardEvent) => {
+  1029→  1029→      const t = e.target as HTMLElement | null
+  1030→  1030→      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+  1031→  1031→      if (e.key === 'Escape') {
+  1032→  1032→        if (placeKind) setPlaceKind(null)
+  1033→  1033→        else if (selection.length) setSelection([])
+  1034→  1034→        return
+  1035→  1035→      }
+  1036→  1036→      if ((e.key === 'Delete' || e.key === 'Backspace') && selection.length) {
+  1037→  1037→        e.preventDefault()
+  1038→  1038→        removeBlocks(selection)
+  1039→  1039→        return
+  1040→  1040→      }
+  1041→  1041→      const step = e.shiftKey ? 1 : 10
+  1042→  1042→      const moves: Record<string, [number, number]> = { ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0] }
+  1043→  1043→      const mv = moves[e.key]
+  1044→  1044→      if (mv && selection.length) {
+  1045→  1045→        e.preventDefault()
+  1046→  1046→        updateBlocks(selection, (b) => ({ ...b, x: e.shiftKey ? b.x + mv[0] : snap10(b.x + mv[0]), y: e.shiftKey ? b.y + mv[1] : snap10(b.y + mv[1]) }))
+  1047→  1047→      }
+  1048→  1048→    }
+  1049→  1049→    window.addEventListener('keydown', h)
+  1050→  1050→    return () => window.removeEventListener('keydown', h)
+  1051→  1051→  }, [selection, placeKind, removeBlocks, updateBlocks])
+  1052→  1052→
+  1053→  1053→  /* ── floor ops ── */
+  1054→  1054→  const switchTab = (id: string) => {
+  1055→  1055→    if (id === activeId) return
+  1056→  1056→    if (dirty) {
+  1057→  1057→      setPendingTab(id)
+  1058→  1058→      return
+  1059→  1059→    }
+  1060→  1060→    doSwitch(id)
+  1061→  1061→  }
+  1062→  1062→  const doSwitch = (id: string) => {
+  1063→  1063→    const p = plans.find((x) => x.id === id)
+  1064→  1064→    if (!p) return
+  1065→  1065→    setActiveId(id)
+  1066→  1066→    setBlocks(p.blocks.map(toEditorBlock))
+  1067→  1067→    setSelection([])
+  1068→  1068→    setPlaceKind(null)
+  1069→  1069→    setDirty(false)
+  1070→  1070→  }
+  1071→  1071→
+  1072→  1072→  const saveBlocks = async () => {
+  1073→  1073→    const plan = planRef.current
+  1074→  1074→    if (!plan || saving) return
+  1075→  1075→    setSaving(true)
+  1076→  1076→    try {
+  1077→  1077→      const payload = blocks.map((b) => ({
+  1078→  1078→        kind: b.kind,
+  1079→  1079→        x: Math.round(b.x),
+  1080→  1080→        y: Math.round(b.y),
+  1081→  1081→        w: Math.round(b.w),
+  1082→  1082→        h: Math.round(b.h),
+  1083→  1083→        rotation: b.rotation,
+  1084→  1084→        label: b.label,
+  1085→  1085→        zoneName: b.zoneName,
+  1086→  1086→        meta: JSON.stringify({ planogramId: b.meta.planogramId || undefined, note: b.meta.note || undefined }),
+  1087→  1087→      }))
+  1088→  1088→      const res = await api<{ ok: boolean; count: number }>('/api/floorplans', { method: 'POST', body: { action: 'save-blocks', planId: plan.id, blocks: payload } })
+  1089→  1089→      setDirty(false)
+  1090→  1090→      toast.success(`نقشه ذخیره شد — ${faNum(res.count)} بلوک روی «${plan.name}»`)
+  1091→  1091→    } catch (e) {
+  1092→  1092→      toast.error(errMsg(e))
+  1093→  1093→    } finally {
+  1094→  1094→      setSaving(false)
+  1095→  1095→    }
+  1096→  1096→  }
+  1097→  1097→
+  1098→  1098→  const createFloor = async (v: { name: string; floorIndex: number; width: number; height: number }) => {
+  1099→  1099→    setBusy(true)
+  1100→  1100→    try {
+  1101→  1101→      const res = await api<{ ok: boolean; plan: PlanRow }>('/api/floorplans', { method: 'POST', body: { action: 'create-plan', ...v } })
+  1102→  1102→      const plan = { ...res.plan, blocks: [] as ServerBlock[] }
+  1103→  1103→      setPlans((ps) => [...ps, plan].sort((a, b) => a.floorIndex - b.floorIndex || a.name.localeCompare(b.name, 'fa')))
+  1104→  1104→      setActiveId(plan.id)
+  1105→  1105→      setBlocks([])
+  1106→  1106→      setSelection([])
+  1107→  1107→      setDirty(false)
+  1108→  1108→      setNewFloorOpen(false)
+  1109→  1109→      toast.success(`طبقهٔ «${plan.name}» ساخته شد`)
+  1110→  1110→    } catch (e) {
+  1111→  1111→      toast.error(errMsg(e))
+  1112→  1112→    } finally {
+  1113→  1113→      setBusy(false)
+  1114→  1114→    }
+  1115→  1115→  }
+  1116→  1116→
+  1117→  1117→  const patchFloor = async (v: { name: string; floorIndex: number; width: number; height: number }) => {
+  1118→  1118→    const plan = planRef.current
+  1119→  1119→    if (!plan) return
+  1120→  1120→    setBusy(true)
+  1121→  1121→    try {
+  1122→  1122→      const res = await api<{ ok: boolean; plan: PlanRow }>('/api/floorplans', { method: 'PATCH', body: { id: plan.id, ...v } })
+  1123→  1123→      setPlans((ps) => ps.map((p) => (p.id === plan.id ? { ...p, ...res.plan, blocks: p.blocks } : p)).sort((a, b) => a.floorIndex - b.floorIndex || a.name.localeCompare(b.name, 'fa')))
+  1124→  1124→      setEditFloorOpen(false)
+  1125→  1125→      toast.success('طبقه به‌روزرسانی شد')
+  1126→  1126→    } catch (e) {
+  1127→  1127→      toast.error(errMsg(e))
+  1128→  1128→    } finally {
+  1129→  1129→      setBusy(false)
+  1130→  1130→    }
+  1131→  1131→  }
+  1132→  1132→
+  1133→  1133→  const deleteFloor = async () => {
+  1134→  1134→    const plan = planRef.current
+  1135→  1135→    if (!plan) return
+  1136→  1136→    setBusy(true)
+  1137→  1137→    try {
+  1138→  1138→      await api(`/api/floorplans?id=${plan.id}`, { method: 'DELETE' })
+  1139→  1139→      const rest = plans.filter((p) => p.id !== plan.id)
+  1140→  1140→      setPlans(rest)
+  1141→  1141→      setDeleteFloorOpen(false)
+  1142→  1142→      if (rest[0]) {
+  1143→  1143→        setActiveId(rest[0].id)
+  1144→  1144→        setBlocks(rest[0].blocks.map(toEditorBlock))
+  1145→  1145→      } else {
+  1146→  1146→        setActiveId('')
+  1147→  1147→        setBlocks([])
+  1148→  1148→      }
+  1149→  1149→      setDirty(false)
+  1150→  1150→      setSelection([])
+  1151→  1151→      toast.success(`طبقهٔ «${plan.name}» حذف شد`)
+  1152→  1152→    } catch (e) {
+  1153→  1153→      toast.error(errMsg(e))
+  1154→  1154→    } finally {
+  1155→  1155→      setBusy(false)
+  1156→  1156→    }
+  1157→  1157→  }
+  1158→  1158→
+  1159→  1159→  /* ── planogram ops ── */
+  1160→  1160→  const pickPlanogram = (id: string) => {
+  1161→  1161→    if (!selectedBlock) return
+  1162→  1162→    updateBlock(selectedBlock.id, { meta: { ...selectedBlock.meta, planogramId: id } })
+  1163→  1163→    const name = planoData?.planograms.find((p) => p.id === id)?.name || ''
+  1164→  1164→    setPickerOpen(false)
+  1165→  1165→    toast.success(`پلانوگرام «${name}» به بلوک متصل شد`)
+  1166→  1166→  }
+  1167→  1167→  const unlinkPlanogram = () => {
+  1168→  1168→    if (!selectedBlock) return
+  1169→  1169→    updateBlock(selectedBlock.id, { meta: { ...selectedBlock.meta, planogramId: undefined } })
+  1170→  1170→    toast.success('اتصال پلانوگرام قطع شد')
+  1171→  1171→  }
+  1172→  1172→
+  1173→  1173→  /* ═══════════ render ═══════════ */
+  1174→  1174→
+  1175→  1175→  if (loading)
+  1176→  1176→    return (
+  1177→  1177→      <div className="flex flex-col items-center gap-3 py-20 text-sm font-bold text-muted-foreground">
+  1178→  1178→        <Loader2 className="animate-spin text-[#0e7a4a]" size={28} />
+  1179→  1179→        در حال بارگذاری نقشهٔ فروشگاه…
+  1180→  1180→      </div>
+  1181→  1181→    )
+  1182→  1182→
+  1183→  1183→  if (plans.length === 0)
+  1184→  1184→    return (
+  1185→  1185→      <div className="space-y-4">
+  1186→  1186→        <SectionHeader onNew={() => setNewFloorOpen(true)} />
+  1187→  1187→        <EmptyState
+  1188→  1188→          emoji="🗺️"
+  1189→  1189→          title="هنوز طبقه‌ای ثبت نشده"
+  1190→  1190→          hint="اولین طبقهٔ فروشگاه را بسازید: نام، شمارهٔ طبقه و ابعاد (سانتی‌متر). بعد بلوک‌های قفسه، یخچال و صندوق U را از کتابخانه روی نقشه بچینید."
+  1191→  1191→        />
+  1192→  1192→        {newFloorOpen && <FloorFormModal mode="create" plan={null} defaultIndex={0} busy={busy} onClose={() => setNewFloorOpen(false)} onSubmit={createFloor} />}
+  1193→  1193→        <datalist id="fp-zone-options">{zoneOptions.map((z) => <option key={z} value={z} />)}</datalist>
+  1194→  1194→      </div>
+  1195→  1195→    )
+  1196→  1196→
+  1197→  1197→  const plan = activePlan!
+  1198→  1198→  const handleSize = clamp(16 / zoom, 10, 26)
+  1199→  1199→  const selB = selectedBlock
+  1200→  1200→  const toolbarPos = (() => {
+  1201→  1201→    if (!selB) return null
+  1202→  1202→    const bw = selB.rotation % 180 === 0 ? selB.w : selB.h
+  1203→  1203→    const bh = selB.rotation % 180 === 0 ? selB.h : selB.w
+  1204→  1204→    const cx = selB.x + selB.w / 2
+  1205→  1205→    const cy = selB.y + selB.h / 2
+  1206→  1206→    return { x: pan.x + (cx - bw / 2) * zoom, y: Math.max(6, pan.y + (cy - bh / 2) * zoom - 40) }
+  1207→  1207→  })()
+  1208→  1208→
+  1209→  1209→  const inspector = (
+  1210→  1210→    <InspectorBody
+  1211→  1211→      plan={plan}
+  1212→  1212→      blocks={blocks}
+  1213→  1213→      selection={selection}
+  1214→  1214→      selectedBlock={selB}
+  1215→  1215→      zoneOptions={zoneOptions}
+  1216→  1216→      zoneLegend={zoneLegend}
+  1217→  1217→      canManage={canManage}
+  1218→  1218→      busy={busy}
+  1219→  1219→      kindLabel={kindLabel(selB?.kind || '')}
+  1220→  1220→      kindIcon={kindIcon(selB?.kind || '')}
+  1221→  1221→      kindColor={selB ? kindColor(selB.kind) : '#9c8b6a'}
+  1222→  1222→      planogramName={selB?.meta.planogramId ? planoData?.planograms.find((p) => p.id === selB.meta.planogramId)?.name || '؟' : null}
+  1223→  1223→      onPatch={(patch) => selB && updateBlock(selB.id, patch)}
+  1224→  1224→      onRotate={() => selB && updateBlock(selB.id, { rotation: (selB.rotation + 90) % 360 })}
+  1225→  1225→      onDuplicate={() => selB && duplicateBlock(selB)}
+  1226→  1226→      onDelete={() => selection.length > 0 && removeBlocks(selection)}
+  1227→  1227→      onRestock={() => selB && setRestockId(selB.id)}
+  1228→  1228→      onPickPlanogram={() => {
+  1229→  1229→        ensurePlanograms()
+  1230→  1230→        setPickerOpen(true)
+  1231→  1231→      }}
+  1232→  1232→      onUnlinkPlanogram={unlinkPlanogram}
+  1233→  1233→      onAssignZone={(z) => updateBlocks(selection, (b) => ({ ...b, zoneName: z }))}
+  1234→  1234→      onClearZone={() => updateBlocks(selection, (b) => ({ ...b, zoneName: '' }))}
+  1235→  1235→    />
+  1236→  1236→  )
+  1237→  1237→
+  1238→  1238→  return (
+  1239→  1239→    <div className="space-y-3 pb-24 lg:pb-0">
+  1240→  1240→      <datalist id="fp-zone-options">{zoneOptions.map((z) => <option key={z} value={z} />)}</datalist>
+  1241→  1241→
+  1242→  1242→      {/* ── سربرگ: تب طبقه‌ها + عملیات ── */}
+  1243→  1243→      <div className="glow-card gold-glow-border rounded-2xl bg-card p-3 fade-in-up">
+  1244→  1244→        <div className="flex flex-wrap items-center justify-between gap-2">
+  1245→  1245→          <div className="flex items-center gap-2.5">
+  1246→  1246→            <span className="grid size-9 place-items-center rounded-xl bg-[#0e7a4a]/10 text-lg">🗺️</span>
+  1247→  1247→            <div>
+  1248→  1248→              <h2 className="text-sm font-black">نقشهٔ فروشگاه</h2>
+  1249→  1249→              <p className="text-[11px] text-muted-foreground">ویرایشگر پلان دوبعدی — چیدمان، زون‌بندی و اتصال پلانوگرام</p>
+  1250→  1250→            </div>
+  1251→  1251→          </div>
+  1252→  1252→          <div className="flex flex-wrap items-center gap-2">
+  1253→  1253→            {dirty && (
+  1254→  1254→              <span className="flex items-center gap-1.5 rounded-full bg-[#c9a227]/15 px-2.5 py-1 text-[10px] font-black text-[#8a6d10]">
+  1255→  1255→                <span className="size-1.5 animate-pulse rounded-full bg-[#c9a227]" /> تغییرات ذخیره‌نشده
+  1256→  1256→              </span>
+  1257→  1257→            )}
+  1258→  1258→            <button
+  1259→  1259→              onClick={saveBlocks}
+  1260→  1260→              disabled={!dirty || saving}
+  1261→  1261→              className={cn(
+  1262→  1262→                'flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black text-white shadow transition',
+  1263→  1263→                dirty && !saving ? 'bg-gradient-to-l from-[#0e7a4a] to-[#0b5c38] hover:brightness-110 active:scale-[0.98]' : 'cursor-not-allowed bg-muted text-muted-foreground',
+  1264→  1264→              )}
+  1265→  1265→            >
+  1266→  1266→              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} ذخیرهٔ نقشه
+  1267→  1267→            </button>
+  1268→  1268→          </div>
+  1269→  1269→        </div>
+  1270→  1270→
+  1271→  1271→        <div className="mt-3 flex items-center gap-1.5 overflow-x-auto scroll-gold pb-1">
+  1272→  1272→          {plans.map((p) => (
+  1273→  1273→            <button
+  1274→  1274→              key={p.id}
+  1275→  1275→              onClick={() => switchTab(p.id)}
+  1276→  1276→              className={cn(
+  1277→  1277→                'flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black transition',
+  1278→  1278→                p.id === activeId ? 'border-transparent bg-[#0b2e20] text-[#faf7ee] shadow' : 'border-border bg-white text-foreground hover:border-[#0e7a4a]/40 hover:bg-muted/60',
+  1279→  1279→              )}
+  1280→  1280→            >
+  1281→  1281→              {p.name}
+  1282→  1282→              <span className={cn('text-[9px]', p.id === activeId ? 'text-[#c9a227]' : 'text-muted-foreground')}>طبقهٔ {faNum(p.floorIndex)}</span>
+  1283→  1283→              {p.id === activeId && dirty && <span className="size-1.5 rounded-full bg-[#c9a227]" />}
+  1284→  1284→            </button>
+  1285→  1285→          ))}
+  1286→  1286→          <button onClick={() => setNewFloorOpen(true)} className="flex shrink-0 items-center gap-1 rounded-xl border-2 border-dashed border-[#0e7a4a]/40 px-3 py-2 text-xs font-black text-[#0e7a4a] hover:bg-[#0e7a4a]/8">
+  1287→  1287→            <Plus size={13} /> طبقهٔ جدید
+  1288→  1288→          </button>
+  1289→  1289→          <span className="mx-1 h-6 w-px shrink-0 bg-border" />
+  1290→  1290→          <button onClick={() => setEditFloorOpen(true)} title="تغییر نام/ابعاد طبقه" className="shrink-0 rounded-xl border border-border bg-white p-2 hover:bg-muted">
+  1291→  1291→            <Pencil size={13} />
+  1292→  1292→          </button>
+  1293→  1293→          <button onClick={() => setDeleteFloorOpen(true)} title="حذف طبقه" className="shrink-0 rounded-xl border border-[#b3372f]/40 bg-white p-2 text-[#b3372f] hover:bg-[#b3372f]/10">
+  1294→  1294→            <Trash2 size={13} />
+  1295→  1295→          </button>
+  1296→  1296→        </div>
+  1297→  1297→      </div>
+  1298→  1298→
+  1299→  1299→      {/* ── ادیتور ── */}
+  1300→  1300→      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+  1301→  1301→        {/* کتابخانه — موبایل: چیپ افقی / دسکتاپ: پنل کناری */}
+  1302→  1302→        <aside className="glow-card shrink-0 rounded-2xl bg-card p-2.5 lg:w-56">
+  1303→  1303→          <p className="mb-2 hidden text-xs font-black lg:block">🧱 کتابخانهٔ بلوک‌ها</p>
+  1304→  1304→          <div className="flex gap-2 overflow-x-auto scroll-gold pb-1 lg:flex-col lg:gap-1.5 lg:overflow-visible lg:pb-0">
+  1305→  1305→            {prefabs.map((pf) => (
+  1306→  1306→              <button
+  1307→  1307→                key={pf.kind}
+  1308→  1308→                onClick={() => setPlaceKind(placeKind === pf.kind ? null : pf.kind)}
+  1309→  1309→                className={cn(
+  1310→  1310→                  'flex shrink-0 items-center gap-2 rounded-xl border-2 px-2.5 py-2 text-start transition lg:w-full',
+  1311→  1311→                  placeKind === pf.kind ? 'border-[#c9a227] bg-[#c9a227]/10 ring-2 ring-[#c9a227]/25' : 'border-border bg-white hover:border-foreground/25 hover:bg-muted/50',
+  1312→  1312→                )}
+  1313→  1313→              >
+  1314→  1314→                <span className="grid size-7 shrink-0 place-items-center rounded-lg text-sm" style={{ background: pf.color + '20', color: pf.color, border: `1px solid ${pf.color}55` }}>
+  1315→  1315→                  {pf.icon}
+  1316→  1316→                </span>
+  1317→  1317→                <span className="whitespace-nowrap text-[11px] font-bold lg:whitespace-normal">{pf.label}</span>
+  1318→  1318→                <span className="ms-auto hidden shrink-0 text-[9px] text-muted-foreground lg:inline" dir="ltr">
+  1319→  1319→                  {faNum(pf.w)}×{faNum(pf.h)}
+  1320→  1320→                </span>
+  1321→  1321→              </button>
+  1322→  1322→            ))}
+  1323→  1323→          </div>
+  1324→  1324→        </aside>
+  1325→  1325→
+  1326→  1326→        {/* بوم */}
+  1327→  1327→        <div className="relative min-w-0 flex-1">
+  1328→  1328→          <div
+  1329→  1329→            ref={viewportRef}
+  1330→  1330→            className="relative h-[56vh] min-h-[400px] touch-none select-none overflow-hidden rounded-2xl border-2 border-[#0b2e20]/25 bg-[#efe9d8] shadow-inner lg:h-[calc(100vh-262px)]"
+  1331→  1331→            style={{ cursor: placeKind ? 'copy' : 'grab' }}
+  1332→  1332→            onPointerDown={onBgPointerDown}
+  1333→  1333→            onPointerMove={onViewportPointerMove}
+  1334→  1334→            onPointerUp={onViewportPointerUp}
+  1335→  1335→            onPointerCancel={onViewportPointerUp}
+  1336→  1336→          >
+  1337→  1337→            {/* لایهٔ تبدیل‌شده (پلان) */}
+  1338→  1338→            <div
+  1339→  1339→              className="absolute start-0 top-0"
+  1340→  1340→              style={{
+  1341→  1341→                width: plan.width,
+  1342→  1342→                height: plan.height,
+  1343→  1343→                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+  1344→  1344→                transformOrigin: '0 0',
+  1345→  1345→                backgroundColor: '#faf7ee',
+  1346→  1346→                backgroundImage:
+  1347→  1347→                  'linear-gradient(to left, rgba(11,46,32,0.10) 1.2px, transparent 1.2px), linear-gradient(to bottom, rgba(11,46,32,0.10) 1.2px, transparent 1.2px), linear-gradient(to left, rgba(11,46,32,0.045) 1px, transparent 1px), linear-gradient(to bottom, rgba(11,46,32,0.045) 1px, transparent 1px)',
+  1348→  1348→                backgroundSize: '100px 100px, 100px 100px, 10px 10px, 10px 10px',
+  1349→  1349→                boxShadow: '0 10px 44px rgba(11,46,32,0.22)',
+  1350→  1350→                outline: '2px solid rgba(11,46,32,0.45)',
+  1351→  1351→              }}
+  1352→  1352→            >
+  1353→  1353→              {/* بلوک‌ها */}
+  1354→  1354→              {blocks.map((b) => {
+  1355→  1355→                const c = blockColor(b)
+  1356→  1356→                const sel = selectionSet.has(b.id)
+  1357→  1357→                return (
+  1358→  1358→                  <div
+  1359→  1359→                    key={b.id}
+  1360→  1360→                    onPointerDown={(e) => onBlockPointerDown(e, b)}
+  1361→  1361→                    className={cn('absolute flex flex-col items-center justify-center overflow-hidden rounded-[5px] text-center leading-tight', placeKind ? 'cursor-copy' : 'cursor-move')}
+  1362→  1362→                    style={{
+  1363→  1363→                      left: b.x,
+  1364→  1364→                      top: b.y,
+  1365→  1365→                      width: b.w,
+  1366→  1366→                      height: b.h,
+  1367→  1367→                      transform: `rotate(${b.rotation}deg)`,
+  1368→  1368→                      transformOrigin: '50% 50%',
+  1369→  1369→                      background: c + (sel ? '45' : '2b'),
+  1370→  1370→                      border: `${sel ? 0 : clamp(1.4 / zoom, 1, 3)}px solid ${c}`,
+  1371→  1371→                      outline: sel ? `${clamp(2.2 / zoom, 1.5, 5)}px solid ${GOLD}` : undefined,
+  1372→  1372→                      outlineOffset: clamp(1.5 / zoom, 1, 4),
+  1373→  1373→                      boxShadow: sel ? '0 6px 22px rgba(201,162,39,0.4)' : undefined,
+  1374→  1374→                    }}
+  1375→  1375→                  >
+  1376→  1376→                    {b.kind === 'CASHIER_U' && (
+  1377→  1377→                      <div
+  1378→  1378→                        className="pointer-events-none absolute rounded-[4px]"
+  1379→  1379→                        style={{ inset: Math.max(4, b.h * 0.15), border: `${clamp(b.h * 0.09, 2, 6)}px solid ${c}`, borderLeftColor: 'transparent' }}
+  1380→  1380→                      />
+  1381→  1381→                    )}
+  1382→  1382→                    <span className="pointer-events-none w-full truncate px-1 text-[10px] font-black text-[#22301f]">{b.label || kindLabel(b.kind)}</span>
+  1383→  1383→                    {b.zoneName && <span className="pointer-events-none w-full truncate px-1 text-[8px] font-bold text-[#22301f]/60">{b.zoneName}</span>}
+  1384→  1384→                    {sel && blocks.length > 0 && (
+  1385→  1385→                      <div
+  1386→  1386→                        onPointerDown={(e) => onResizePointerDown(e, b)}
+  1387→  1387→                        title="تغییر اندازه"
+  1388→  1388→                        className="absolute bottom-0 right-0 z-10 cursor-nwse-resize rounded-tl-md border-2 border-white bg-[#c9a227] shadow"
+  1389→  1389→                        style={{ width: handleSize, height: handleSize, transform: 'translate(30%, 30%)' }}
+  1390→  1390→                      />
+  1391→  1391→                    )}
+  1392→  1392→                  </div>
+  1393→  1393→                )
+  1394→  1394→              })}
+  1395→  1395→              {blocks.length === 0 && (
+  1396→  1396→                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+  1397→  1397→                  <span className="rounded-full bg-[#0b2e20]/80 px-4 py-2 text-[11px] font-bold text-[#faf7ee]">بلوکی از کتابخانه انتخاب کنید و اینجا کلیک کنید 📍</span>
+  1398→  1398→                </div>
+  1399→  1399→              )}
+  1400→  1400→            </div>
+  1401→  1401→
+  1402→  1402→            {/* نوار ابزار بلوک انتخاب‌شده (مختصات نما — مقیاس ثابت) */}
+  1403→  1403→            {selB && toolbarPos && (
+  1404→  1404→              <div
+  1405→  1405→                className="absolute z-20 flex items-center gap-0.5 rounded-xl border border-border bg-white p-1 shadow-xl"
+  1406→  1406→                style={{ left: toolbarPos.x, top: toolbarPos.y }}
+  1407→  1407→                onPointerDown={(e) => e.stopPropagation()}
+  1408→  1408→              >
+  1409→  1409→                <button
+  1410→  1410→                  onClick={() => updateBlock(selB.id, { rotation: (selB.rotation + 90) % 360 })}
+  1411→  1411→                  title="چرخش ۹۰ درجه"
+  1412→  1412→                  className="rounded-lg p-1.5 hover:bg-muted"
+  1413→  1413→                >
+  1414→  1414→                  <RotateCw size={13} />
+  1415→  1415→                </button>
+  1416→  1416→                <button onClick={() => duplicateBlock(selB)} title="تکثیر" className="rounded-lg p-1.5 hover:bg-muted">
+  1417→  1417→                  <Copy size={13} />
+  1418→  1418→                </button>
+  1419→  1419→                <button onClick={() => removeBlocks([selB.id])} title="حذف" className="rounded-lg p-1.5 text-[#b3372f] hover:bg-[#b3372f]/10">
+  1420→  1420→                  <Trash2 size={13} />
+  1421→  1421→                </button>
+  1422→  1422→              </div>
+  1423→  1423→            )}
+  1424→  1424→
+  1425→  1425→            {/* کنترل زوم */}
+  1426→  1426→            <div className="absolute bottom-3 start-3 z-20 flex items-center gap-0.5 rounded-full border border-border bg-white/95 p-1 shadow-lg backdrop-blur" onPointerDown={(e) => e.stopPropagation()}>
+  1427→  1427→              <button onClick={() => zoomBy(-ZOOM_STEP)} disabled={zoom <= ZOOM_MIN} title="کوچک‌نمایی" className="rounded-full p-1.5 hover:bg-muted disabled:opacity-40">
+  1428→  1428→                <ZoomOut size={14} />
+  1429→  1429→              </button>
+  1430→  1430→              <span className="min-w-11 text-center text-[11px] font-black">{faNum(Math.round(zoom * 100))}٪</span>
+  1431→  1431→              <button onClick={() => zoomBy(ZOOM_STEP)} disabled={zoom >= ZOOM_MAX} title="بزرگ‌نمایی" className="rounded-full p-1.5 hover:bg-muted disabled:opacity-40">
+  1432→  1432→                <ZoomIn size={14} />
+  1433→  1433→              </button>
+  1434→  1434→              <span className="h-4 w-px bg-border" />
+  1435→  1435→              <button onClick={fitView} title="اندازه‌گذاری در کادر" className="rounded-full p-1.5 hover:bg-muted">
+  1436→  1436→                <Maximize size={14} />
+  1437→  1437→              </button>
+  1438→  1438→            </div>
+  1439→  1439→
+  1440→  1440→            {/* آمار بوم */}
+  1441→  1441→            <div className="pointer-events-none absolute bottom-3 end-3 z-10 flex items-center gap-1.5">
+  1442→  1442→              <span className="rounded-full bg-[#0b2e20]/85 px-2.5 py-1 text-[10px] font-bold text-[#faf7ee]">🧱 {faNum(blocks.length)} بلوک</span>
+  1443→  1443→              {zoneLegend.length > 0 && <span className="rounded-full bg-[#0b2e20]/85 px-2.5 py-1 text-[10px] font-bold text-[#faf7ee]">🏷️ {faNum(zoneLegend.length)} زون</span>}
+  1444→  1444→            </div>
+  1445→  1445→
+  1446→  1446→            {/* نوار حالت جای‌گذاری */}
+  1447→  1447→            {placeKind && (
+  1448→  1448→              <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-2">
+  1449→  1449→                <div className="flex items-center gap-2 rounded-full bg-[#0b2e20] px-4 py-1.5 text-[11px] font-black text-[#faf7ee] shadow-xl">
+  1450→  1450→                  📍 جای‌گذاری «{kindLabel(placeKind)}» — روی نقشه کلیک کنید
+  1451→  1451→                  <button onClick={() => setPlaceKind(null)} className="pointer-events-auto rounded-full bg-[#c9a227] px-2 py-0.5 text-[10px] font-black text-white">
+  1452→  1452→                    ESC لغو
+  1453→  1453→                  </button>
+  1454→  1454→                </div>
+  1455→  1455→              </div>
+  1456→  1456→            )}
+  1457→  1457→
+  1458→  1458→            {/* پاپ‌آپ پلانوگرام (دسکتاپ) */}
+  1459→  1459→            {popupBlock && (
+  1460→  1460→              <div className="absolute end-3 top-3 z-30 hidden lg:block">
+  1461→  1461→                <BlockPopup
+  1462→  1462→                  block={popupBlock}
+  1463→  1463→                  kindLabel={kindLabel(popupBlock.kind)}
+  1464→  1464→                  planogram={popupPlanogram}
+  1465→  1465→                  productMap={planoData?.productMap || {}}
+  1466→  1466→                  canManage={canManage}
+  1467→  1467→                  busy={busy}
+  1468→  1468→                  onRestock={() => setRestockId(popupBlock.id)}
+  1469→  1469→                  onPick={() => {
+  1470→  1470→                    ensurePlanograms()
+  1471→  1471→                    setPickerOpen(true)
+  1472→  1472→                  }}
+  1473→  1473→                  onUnlink={unlinkPlanogram}
+  1474→  1474→                  onClose={() => setSelection([])}
+  1475→  1475→                />
+  1476→  1476→              </div>
+  1477→  1477→            )}
+  1478→  1478→          </div>
+  1479→  1479→        </div>
+  1480→  1480→
+  1481→  1481→        {/* بازرس — دسکتاپ */}
+  1482→  1482→        <aside className="glow-card hidden w-72 shrink-0 self-stretch overflow-y-auto scroll-gold rounded-2xl bg-card p-3 lg:block" style={{ maxHeight: 'calc(100vh - 262px)' }}>
+  1483→  1483→          {inspector}
+  1484→  1484→        </aside>
+  1485→  1485→      </div>
+  1486→  1486→
+  1487→  1487→      {/* بازرس — موبایل: Bottom Sheet */}
+  1488→  1488→      {selection.length > 0 && (
+  1489→  1489→        <div className="fixed inset-x-2 bottom-2 z-40 max-h-[52vh] overflow-y-auto scroll-gold rounded-2xl border border-border bg-card p-3 shadow-2xl lg:hidden">
+  1490→  1490→          <div className="mb-2 flex items-center justify-between">
+  1491→  1491→            <span className="mx-auto h-1 w-10 rounded-full bg-border" />
+  1492→  1492→            <button onClick={() => setSelection([])} className="absolute end-4 top-2 rounded-lg p-1 text-muted-foreground hover:bg-muted">
+  1493→  1493→              <X size={15} />
+  1494→  1494→            </button>
+  1495→  1495→          </div>
+  1496→  1496→          {inspector}
+  1497→  1497→          {popupBlock && (
+  1498→  1498→            <div className="mt-3 border-t border-border pt-3">
+  1499→  1499→              <BlockPopup
+  1500→  1500→                block={popupBlock}
+  1501→  1501→                kindLabel={kindLabel(popupBlock.kind)}
+  1502→  1502→                planogram={popupPlanogram}
+  1503→  1503→                productMap={planoData?.productMap || {}}
+  1504→  1504→                canManage={canManage}
+  1505→  1505→                busy={busy}
+  1506→  1506→                onRestock={() => setRestockId(popupBlock.id)}
+  1507→  1507→                onPick={() => {
+  1508→  1508→                  ensurePlanograms()
+  1509→  1509→                  setPickerOpen(true)
+  1510→  1510→                }}
+  1511→  1511→                onUnlink={unlinkPlanogram}
+  1512→  1512→                onClose={() => setSelection([])}
+  1513→  1513→              />
+  1514→  1514→            </div>
+  1515→  1515→          )}
+  1516→  1516→        </div>
+  1517→  1517→      )}
+  1518→  1518→
+  1519→  1519→      {/* ── مودال‌ها ── */}
+  1520→  1520→      {newFloorOpen && (
+  1521→  1521→        <FloorFormModal mode="create" plan={null} defaultIndex={Math.max(0, ...plans.map((p) => p.floorIndex + 1))} busy={busy} onClose={() => setNewFloorOpen(false)} onSubmit={createFloor} />
+  1522→  1522→      )}
+  1523→  1523→      {editFloorOpen && <FloorFormModal mode="edit" plan={plan} defaultIndex={plan.floorIndex} busy={busy} onClose={() => setEditFloorOpen(false)} onSubmit={patchFloor} />}
+  1524→  1524→      {deleteFloorOpen && (
+  1525→  1525→        <ConfirmModal
+  1526→  1526→          title={`حذف طبقهٔ «${plan.name}»`}
+  1527→  1527→          message={`کل نقشهٔ این طبقه به‌همراه ${faNum(blocks.length)} بلوک برای همیشه حذف می‌شود. این عمل قابل بازگشت نیست — مطمئنید؟`}
+  1528→  1528→          busy={busy}
+  1529→  1529→          onConfirm={deleteFloor}
+  1530→  1530→          onClose={() => setDeleteFloorOpen(false)}
+  1531→  1531→        />
+  1532→  1532→      )}
+  1533→  1533→      {pendingTab && (
+  1534→  1534→        <Modal title="تغییرات ذخیره‌نشده" onClose={() => setPendingTab(null)}>
+  1535→  1535→          <p className="rounded-xl bg-[#c9a227]/10 p-3 text-xs font-bold leading-relaxed text-[#8a6d10]">روی طبقهٔ فعلی تغییرات ذخیره‌نشده دارید. قبل از رفتن به طبقهٔ دیگر چه کنید؟</p>
+  1536→  1536→          <div className="grid gap-2">
+  1537→  1537→            <button
+  1538→  1538→              onClick={async () => {
+  1539→  1539→                const target = pendingTab
+  1540→  1540→                setPendingTab(null)
+  1541→  1541→                await saveBlocks()
+  1542→  1542→                doSwitch(target)
+  1543→  1543→              }}
+  1544→  1544→              className="rounded-xl bg-[#0e7a4a] py-2.5 text-xs font-black text-white hover:opacity-90"
+  1545→  1545→            >
+  1546→  1546→              <Save size={13} className="me-1 inline" /> ذخیره و رفتن
+  1547→  1547→            </button>
+  1548→  1548→            <button
+  1549→  1549→              onClick={() => {
+  1550→  1550→                doSwitch(pendingTab)
+  1551→  1551→                setPendingTab(null)
+  1552→  1552→              }}
+  1553→  1553→              className="rounded-xl border border-[#b3372f]/40 py-2.5 text-xs font-black text-[#b3372f] hover:bg-[#b3372f]/10"
+  1554→  1554→            >
+  1555→  1555→              رفتن بدون ذخیره
+  1556→  1556→            </button>
+  1557→  1557→            <button onClick={() => setPendingTab(null)} className="rounded-xl border border-border bg-white py-2.5 text-xs font-black hover:bg-muted">
+  1558→  1558→              انصراف
+  1559→  1559→            </button>
+  1560→  1560→          </div>
+  1561→  1561→        </Modal>
+  1562→  1562→      )}
+  1563→  1563→      {restockBlock && <RestockModal block={restockBlock} planName={plan.name} onClose={() => setRestockId(null)} />}
+  1564→  1564→      {pickerOpen && (
+  1565→  1565→        <PlanogramPickerModal
+  1566→  1566→          planograms={planoData?.planograms || []}
+  1567→  1567→          loading={planoLoading}
+  1568→  1568→          currentId={selB?.meta.planogramId}
+  1569→  1569→          busy={busy}
+  1570→  1570→          onPick={pickPlanogram}
+  1571→  1571→          onClose={() => setPickerOpen(false)}
+  1572→  1572→        />
+  1573→  1573→      )}
+  1574→  1574→    </div>
+  1575→  1575→  )
+  1576→  1576→}
+  1577→  1577→
+  1578→  1578→/* ── بدنهٔ بازرس (تک/گروه/خالی) ── */
+  1579→  1579→function InspectorBody({
+  1580→  1580→  plan,
+  1581→  1581→  blocks,
+  1582→  1582→  selection,
+  1583→  1583→  selectedBlock,
+  1584→  1584→  zoneOptions,
+  1585→  1585→  zoneLegend,
+  1586→  1586→  canManage,
+  1587→  1587→  busy,
+  1588→  1588→  kindLabel,
+  1589→  1589→  kindIcon,
+  1590→  1590→  kindColor,
+  1591→  1591→  planogramName,
+  1592→  1592→  onPatch,
+  1593→  1593→  onRotate,
+  1594→  1594→  onDuplicate,
+  1595→  1595→  onDelete,
+  1596→  1596→  onRestock,
+  1597→  1597→  onPickPlanogram,
+  1598→  1598→  onUnlinkPlanogram,
+  1599→  1599→  onAssignZone,
+  1600→  1600→  onClearZone,
+  1601→  1601→}: {
+  1602→  1602→  plan: PlanRow
+  1603→  1603→  blocks: Block[]
+  1604→  1604→  selection: string[]
+  1605→  1605→  selectedBlock: Block | null
+  1606→  1606→  zoneOptions: string[]
+  1607→  1607→  zoneLegend: Array<{ name: string; count: number }>
+  1608→  1608→  canManage: boolean
+  1609→  1609→  busy: boolean
+  1610→  1610→  kindLabel: string
+  1611→  1611→  kindIcon: string
+  1612→  1612→  kindColor: string
+  1613→  1613→  planogramName: string | null
+  1614→  1614→  onPatch: (patch: Partial<Block>) => void
+  1615→  1615→  onRotate: () => void
+  1616→  1616→  onDuplicate: () => void
+  1617→  1617→  onDelete: () => void
+  1618→  1618→  onRestock: () => void
+  1619→  1619→  onPickPlanogram: () => void
+  1620→  1620→  onUnlinkPlanogram: () => void
+  1621→  1621→  onAssignZone: (z: string) => void
+  1622→  1622→  onClearZone: () => void
+  1623→  1623→}) {
+  1624→  1624→  if (selectedBlock)
+  1625→  1625→    return (
+  1626→  1626→      <InspectorSingle
+  1627→  1627→        block={selectedBlock}
+  1628→  1628→        planWidth={plan.width}
+  1629→  1629→        planHeight={plan.height}
+  1630→  1630→        zoneOptions={zoneOptions}
+  1631→  1631→        kindLabel={kindLabel}
+  1632→  1632→        kindIcon={kindIcon}
+  1633→  1633→        kindColor={kindColor}
+  1634→  1634→        planogramName={planogramName}
+  1635→  1635→        canManage={canManage}
+  1636→  1636→        busy={busy}
+  1637→  1637→        onPatch={onPatch}
+  1638→  1638→        onRotate={onRotate}
+  1639→  1639→        onDuplicate={onDuplicate}
+  1640→  1640→        onDelete={onDelete}
+  1641→  1641→        onRestock={onRestock}
+  1642→  1642→        onPickPlanogram={onPickPlanogram}
+  1643→  1643→        onUnlinkPlanogram={onUnlinkPlanogram}
+  1644→  1644→      />
+  1645→  1645→    )
+  1646→  1646→  if (selection.length > 1)
+  1647→  1647→    return <InspectorMulti count={selection.length} zoneOptions={zoneOptions} onAssignZone={onAssignZone} onClearZone={onClearZone} onDeleteAll={onDelete} />
+  1648→  1648→  return <InspectorEmpty plan={plan} blockCount={blocks.length} zoneLegend={zoneLegend} />
+  1649→  1649→}
+  1650→  1650→
+  1651→  1651→/* ── سربرگ حالت خالی (بدون طبقه) ── */
+  1652→  1652→function SectionHeader({ onNew }: { onNew: () => void }) {
+  1653→  1653→  return (
+  1654→  1654→    <div className="glow-card gold-glow-border flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-card p-4 fade-in-up">
+  1655→  1655→      <div className="flex items-center gap-2.5">
+  1656→  1656→        <span className="grid size-9 place-items-center rounded-xl bg-[#0e7a4a]/10 text-lg">🗺️</span>
+  1657→  1657→        <div>
+  1658→  1658→          <h2 className="text-sm font-black">نقشهٔ فروشگاه</h2>
+  1659→  1659→          <p className="text-[11px] text-muted-foreground">ویرایشگر پلان دوبعدی — چیدمان، زون‌بندی و اتصال پلانوگرام</p>
+  1660→  1660→        </div>
+  1661→  1661→      </div>
+  1662→  1662→      <button onClick={onNew} className="flex items-center gap-1.5 rounded-xl bg-[#0e7a4a] px-3.5 py-2 text-xs font-black text-white shadow hover:opacity-90">
+  1663→  1663→        <Plus size={14} /> طبقهٔ جدید
+  1664→  1664→      </button>
+  1665→  1665→    </div>
+  1666→  1666→  )
+  1667→  1667→}
+  1668→  1668→

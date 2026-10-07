@@ -1,0 +1,223 @@
+     1→# Hyper Zeytoon — Samaneh (سامانه مدیریت هوشمند هایپر زیتون)
+     2→
+     3→Platform: Next.js 16 (App Router, single `/` route, client-side hash router) + TypeScript + Prisma/SQLite + Tailwind 4 + shadcn/ui + sonner + socket.io mini-service.
+     4→
+     5→## Conventions established (KEEP THESE)
+     6→- **UI is 100% Persian RTL**, formal but friendly, touch-first (big buttons, steppers, PIN pad login).
+     7→- All dates are Jalali. Use `src/lib/jalali.ts` (faNum, faMoney, formatJalaliShort/Long/Full/DateTime, toJalaliParts, jalaliToIso, addDaysIso, daysBetween, jMonthLength, jMonthStartWeekday, todayIso).
+     8→- Shared UI in `src/components/app/ui-bits.tsx`: `AppCtx` type, SectionCard, StatCard, Pill, EmptyState, Avatar, stockStatus, SearchInput, Labeled, KeyValue, CATEGORY_EMOJI.
+     9→- Charts: `src/components/app/charts.tsx` (BarChart, LineChart, Donut, RankBars).
+    10→- Jalali widgets: `src/components/app/jalali-widgets.tsx` (JalaliCalendar, JalaliDatePicker, useHolidays hook).
+    11→- Client fetch: `api<T>(path, {method, body})` from `src/lib/client.ts`. Toasts: `toast` from sonner.
+    12→- Modal component is exported from `src/components/views/Orders.tsx` (`import { Modal } from '@/components/views/Orders'`).
+    13→- View props signature: `export default function XView({ ctx }: { ctx: AppCtx })`.
+    14→- Colors: emerald #0e7a4a primary, gold #c9a227, terracotta #c96f4a, olive #77934a, rose #b3372f, bg cream #faf7ee, sidebar deep emerald #0b2e20 with `.pattern-girih`, cards use `.glow-card .gold-glow-border`. NO blue/indigo as primary. Use class `scroll-gold` on scrollable lists, `fade-in-up` on sections.
+    15→- API helpers: `src/lib/api-helpers.ts` (getSessionUser(req), json, fail, logActivity, appendHistory, safeParse).
+    16→- Constants/labels: `src/lib/constants.ts` (ROLE_LABELS, ORDER_STATUSES, CHEQUE_STATUSES, TASK_STATUSES, PRIORITIES, VIEW_ACCESS, canAccess).
+    17→- DB: `import { db } from '@/lib/db'`. No list primitives in Prisma — JSON strings + safeParse.
+    18→- Every mutation should call `logActivity(me, 'action', entity, entityId, detail)`.
+    19→
+    20→## Done
+    21→- Task 1: scaffold inspected; deps added: jalaali-js, xlsx, socket.io-client (main app).
+    22→- Task 2: full Prisma schema (User, Provider, Product, Order+OrderItem, Cheque, Holiday, Task, SOP, WallPost, Message, Note, Feedback, Award, ActivityLog, Planogram, RefillRequest, CustomerRequest, Customer, PreOrder, Setting); `bun run db:push` OK; `prisma/seed.ts` seeded 16 staff (PIN 1234), 6 providers, 30 products, holidays 1404, 6 orders in all workflow stages, 3 cheques, SOPs, tasks, wall, awards.
+    23→- Task 3: libs (jalali, api-helpers, constants, client).
+    24→- Task 4: ALL APIs written under src/app/api/: auth (login/me/logout), users(+[id]), products(+[id], import with Holoo xls duplicate detection, merge, image-search via z-ai CLI), providers(+[id]), orders(+[id] with action-based workflow: submit/approve/edit/correct/receive/verify/account/cancel), cheques(+[id] sign/reject/split/deliver/clear/bounce), holidays(+sync), tasks(+[id]), sops(+[id]), wall, messages, notes, feedback, gamification(+award), planograms(+[id]), customer-requests, customers, preorders(+[id]), dashboard, activity.
+    25→- Task 6 (frontend foundation): globals.css theme (Kerman paisley/girih patterns, gold-glow cards, shimmer, print CSS), layout.tsx (RTL, Vazirmatn, sonner), page.tsx → AppShell (login gate, role-filtered sidebar nav, hash router #/view/param, notification bell with computed alerts, quick «سفارش جدید» button, socket wiring), Login view (avatar grid + PIN pad), ui-bits, charts, jalali-widgets.
+    26→- Task 7 (my views): Dashboard, Orders (list+4-step create wizard+detail with pipeline/history/corrections), Receiving (scanner bar, +/- steppers, printed-price fix, reject/short, quick product add «F5 هلو»), Verify (storekeeper), Accounting (Holoo diff banner, XLS export via SheetJS, print/PDF), Products (grid, edit, internet image search/upload, Holoo xls import wizard with duplicate detection, merge wizard), Providers (companies→products), Cheques (Jalali calendar with cheque dots + holiday guard + owner sign/split/reject + GM deliver), Messages (private chat, socket + polling).
+    27→- Task 8: mini-services/chat-service (socket.io :3003) started in background (bun --hot).
+    28→
+    29→## In progress
+    30→- Task 4-a (subagent): Tasks, Sop, Wall, Notes, Feedback, Help views.
+    31→- Task 4-b (subagent): Planogram, Sales, Perf, Admin views.
+    32→- Task 11: lint + agent-browser verification.
+    33→- Task 12: deployment docs + cron.
+    34→
+    35→## API contract cheat-sheet for view builders
+    36→- Tasks: GET /api/tasks?scope=mine|all → {tasks}; POST {title,description,type,priority,assignedToId,dueDate,points}; PATCH /api/tasks/[id] {action:'start'|'pause'|'done'|'reopen', pauseNote} → {task, awarded} (done auto-awards points); DELETE /api/tasks/[id].
+    37→- SOPs: GET /api/sops → {sops:[{steps:[{title,detail}]}]}; POST {title,category,steps:[{title,detail}]} (managers); PATCH {id,title,category,steps}; DELETE ?id=.
+    38→- Wall: GET /api/wall → {posts}; POST {title,content}; DELETE ?id=.
+    39→- Notes: GET /api/notes → {notes} (private); POST {content,color}; PATCH {id,content,color,pinned}; DELETE ?id=.
+    40→- Feedback: GET /api/feedback → {feedback, canManage}; POST {type:'ANON'|'IDEA', content, anonymous}; PATCH {id,status,response,points} (managers; points>0 awards idea owner).
+    41→- Planograms: GET /api/planograms → {planograms:[{layout:[[productId|null]]}], productMap:{id:{name,stock,reorderLevel,category}}}; POST {name,section,rows,cols}; PATCH [id] {layout,status:'PUBLISHED'}; DELETE [id].
+    42→- Refill (merchandiser → storekeeper): create Task via POST /api/tasks with type 'TASK' assigned to SK user, or use customer-requests? No — RefillRequest model exists but no dedicated route yet; use tasks instead.
+    43→- Sales: customers GET/POST/PATCH /api/customers; preorders GET ?scope=all|mine|cashier, POST {customerId,customerName,items:[{productId,name,qty,price}],note}, PATCH [id] {action:'cashier_edit'|'done'|'cancel', items}.
+    44→- Customer requests: GET /api/customer-requests; POST {productName,productId,notes} (increments count if same name); DELETE ?id=.
+    45→- Gamification: GET /api/gamification → {leaderboard, awards, recentAwards, stats, badges}; POST /api/gamification/award {userId,points,reason} (managers).
+    46→- Admin: users GET/POST /api/users, PATCH/DELETE /api/users/[id]; activity GET /api/activity?entity=&q=; holidays GET/POST/DELETE /api/holidays, POST /api/holidays/sync.
+    47→- Dashboard: GET /api/dashboard → {kpi, series, chequeSeries, overdueOrders, todayDeliveriesList, lowStockList, leaderboard, wall, activities, customerReqs, myTasks, toAccount, pendingChequesList}.
+    48→
+    49→## Environment notes
+    50→- Dev server auto-runs on :3000 (do NOT start another). Logs: /home/z/my-project/dev.log.
+    51→- Chat service on :3003 (mini-services/chat-service, `bun run dev` there).
+    52→- Socket client connect: `io('/?XTransformPort=3003')`; emit 'hz-msg' {toId,fromId,fromName,body}; listen 'hz-msg'.
+    53→- z-ai CLI image-search can take ~90s — keep UI in loading state with spinner.
+    54→- Login: click avatar → PIN 1234 (demo). Staff: جواد نوروزی(OWNER), مینا لطفی(GM), کیانوش صفاپور(OM), مریم درویشی(ACC), زهرا محمدی(HC), فاطمه شریفی(CASHIER), سارا عرب‌نژاد(CASHIER), حسن محمدی(SK), هستی ایران‌نژاد(SALES+RECEIVER), نگار یادگاری(SALES), الهام سعدی(MERCH+SALES), مینا غلامحسینی(MERCH), سمیرا میرزایی(MERCH), نگین تقی‌زاده(MERCH), امیرعلی علیخانی(MERCH), سارا نوروزی(PM).
+    55→
+    56→---
+    57→Task ID: 4-a
+    58→Agent: GLM (subagent 4-a, staff cluster views)
+    59→Task: Staff cluster views (Tasks, Sop, Wall, Notes, Feedback, Help)
+    60→
+    61→Work Log:
+    62→- Read worklog conventions + ui-bits/Providers/jalali-widgets/Orders Modal + constants/jalali/client libs + all 6 target APIs (tasks, sops+​[id], wall, notes, feedback, users) to lock the contracts before coding.
+    63→- Tasks.tsx: «وظایف من»/«همه وظایف تیم» tabs (all-tab only GM/OM/PM, scope=all), StatCard summary row (open/wip/done/overdue), status filter chips, task cards with type icon (📋✅🧹📌), priority/status Pills, formatJalaliFull due date (red «دیرکرد!» + gold «امروز!»), pauseNote display. Owner big buttons: شروع / توقف با ثبت مشکل (modal with required pauseNote) / انجام شد! ✅ (fun toast `آفرین! X امتیاز گرفتی 🎉` + emoji celebration overlay when awarded>0, ctx.refreshNotifications() called) / دوباره بازکردن. Manager «تعریف وظیفه جدید» modal: title*, description, type/priority button-selects, active-users select (GET /api/users), JalaliDatePicker+useHolidays with holiday guard, points default 10. Empty state «وظیفه‌ای نداری — وقت آزاد برای ایده‌های تازه ✨».
+    64→- Sop.tsx: category chips + title/step search, expandable cards with numbered steps in gold circles (generous spacing for mid-shift reading), GM/OM/PM create+edit via shared modal with dynamic {title,detail} steps editor (add/remove, «عنوان مرحله»/«توضیح»), DELETE ?id= with confirm (GM/OM).
+    65→- Wall.tsx: decorative «حیاط تیم هایپر زیتون 🌿» header, sticky-note cards (alternating #fffdf6/#fdf6dd/#f0f7ee, subtle tilt), pinned-first sort, Avatar with deterministic color from authorId, Persian relative time (چند دقیقه/ساعت/روز پیش → formatJalaliDateTime fallback with title attr), «یادداشت جدید» modal {title*,content*} + pin checkbox for GM/OM/OWNER, 🗑 on own posts or GM/OM/OWNER.
+    66→- Notes.tsx: privacy banner (only-you-can-see), inline composer with 6-color swatch picker (no blue), masonry columns-1/2/3 + break-inside-avoid, pin toggle, inline edit (textarea + color change + PATCH), delete with confirm, friendly empty state.
+    67→- Feedback.tsx: tab 1 anonymous (reassuring copy, POST type:ANON anonymous:true), tab 2 named ideas composer + list; managers get صندوق بازخورد with type filter chips, 5 status chips (NEW/REVIEWING/ACCEPTED/IMPLEMENTED/REJECTED with Persian labels), response textarea, and +۱۵/+۳۰/+۵۰ quick award buttons; non-managers see own ideas with status + manager response.
+    68→- Fixed src/app/api/feedback PATCH: award condition was `points && userId && (status===ACCEPTED||IMPLEMENTED)` but the documented contract is "points>0 awards idea owner" — now awards whenever points>0 and owner exists (Award reason «ایده ارزشمند: …»); verified live via curl that +15 creates Award.
+    69→- Fixed lucide icon: `Dove` does not exist in installed lucide-react → replaced with `Bird`.
+    70→- Lint (react-hooks/set-state-in-effect): removed synchronous setLoading(true) from load() in Tasks/Sop/Wall/Feedback; Tasks shows skeleton via setLoading(true) in tab click handlers instead. My 6 files now lint-clean.
+    71→- Verified: page GET / → 200, login via /api/auth (userId+pin) works, GET tasks?scope=all / notes / feedback / sops / wall shapes match views.
+    72→
+    73→Stage Summary:
+    74→- Files written: src/components/views/{Tasks,Sop,Wall,Notes,Feedback,Help}.tsx (full replacements, ~2600 lines total), small fix in src/app/api/feedback/route.ts (award condition per documented contract).
+    75→- Key decisions: celebration overlay for task completion (awarded>0); deterministic avatar colors for wall authors (WallPost has no color field); relative time helper local to Wall; SOP steps also searched (not only title); notes editable inline incl. color; feedback manager cards are self-contained components (local response state initialized from fb.response); Help uses shadcn Accordion with 7 sections (quick start, order pipeline 6 steps + «no more paper invoices between floors» note, holiday guard, Holoo import, points, 6-item FAQ, contact کیانوش صفاپور); no blue/indigo anywhere in my styling (TASK_STATUSES blue comes from shared constants); buttons ≥ py-2.5; scroll-gold on long lists; remaining repo lint errors are in other agents' files (charts, Orders, Accounting, Admin, Perf, Products TS) — untouched per instructions.
+    76→
+    77→---
+    78→Task ID: 4-b
+    79→Agent: Z.ai Code (management cluster)
+    80→Task: Management cluster views (Planogram, Sales, Perf, Admin)
+    81→
+    82→Work Log:
+    83→- Read worklog conventions + ui-bits/Cheques/charts/jalali-widgets/Orders sources to match style; verified API routes (planograms, preorders, customers, customer-requests, gamification, users, holidays, activity, tasks) before coding.
+    84→- Planogram.tsx: card list (name/section/status Pill/rows×cols/cell count + mini stock-colored preview dots), in-page editor: rows×cols grid (RTL, horizontal-scroll for 12 cols), filled cells show CATEGORY_EMOJI + truncated name + stockStatus bottom bar + tooltip, manager click → «خالی‌کردن خانه» modal, empty-cell click → product picker modal (SearchInput + lazy 24-at-a-time «نمایش بیشتر»), PATCH layout save with dirty indicator, «انتشار برای چیدمان‌دارها» (PUBLISHED), «پلانوگرام جدید» POST (rows 1..8, cols 2..12 clamped), DELETE with confirm; merchandiser (non-manager) sees per-cell «درخواست از انبار» → finds SK user via /api/users → POST /api/tasks (title `تأمین {کالا} برای قفسه {پلانوگرام}`, priority HIGH, desc «درخواست از پلانوگرام») → toast «درخواست برای انبار ارسال شد 📦»; red/yellow/green summary strip.
+    85→- Sales.tsx: 4 tabs with role gating (tab1 SALES/HC/CASHIER/GM/PM/OM or secondary SALES; tab2 HC/CASHIER/GM/OM; tabs3-4 all). Tab1: favorite-first customer chips + «بدون مشتری (حضوری)» + inline new-customer mini-form (POST /api/customers), product adder (client-side search over /api/products, per-row qty stepper + افزودن), cart with steppers/remove/total, note field, POST /api/preorders → toast with created code. Tab2: scope=cashier queue, expandable cards, editable qty per item, «ارسال به صندوق هلو و چاپ رسید 🖨️» (PATCH cashier_edit → READY + simulated receipt modal) and «لغو» (PATCH cancel). Tab3: scope=all, salesperson filter chips, BarChart count per salesperson, SPHL card (count ÷ 8h shift, 1 decimal), status Pill history list. Tab4: customer-requests list (count, lastByName), quick add POST (auto-increment on repeat), manager delete (GM/PM/OM), guidance banner. Tab1/4 stay mounted (hidden) so cart state survives tab switches.
+    86→- Perf.tsx: hero card (rank X از Y, big points, «مدیران تلاش شما را می‌بینند…», tasksDone/tasksOpen/ideasAccepted tiles), 8-badge grid (earned = gold-glow-border + glow, unearned = grayscale + hint), RankBars leaderboard with «(شما)» marker and per-user colors, «قدردانی‌های اخیر من» dashed timeline (reason + awardedByName + formatJalaliDateTime) + «قدردانی‌های اخیر تیم» from recentAwards, manager award form (GM/OM/PM/OWNER/HC): user select, chips ۵/۱۰/۱۵/۲۰/۲۵/۵۰ + custom input, required reason → POST /api/gamification/award → toast «امتیاز اهدا شد — همکارتان مطلع می‌شود 🎉» + reload.
+    87→- Admin.tsx: access guard OM/GM/OWNER (EmptyState «دسترسی محدود»), 4 sub-tabs. Users: list with Avatar/role Pill (color map)/secondary badges/points/active dot, create modal (name, ROLE_LABELS select, secondary checkboxes, pin default ۱۲۳۴, 8 color swatches), edit modal (PATCH role/secondaryRoles/pin/color/active), deactivate confirm modal «کاربر غیرفعال می‌شود و دیگر وارد نمی‌شود» (DELETE, hidden for self). Holidays: grouped by Jalali month (toJalaliParts + J_MONTHS), source Pills (manual/seed/keybit), «همگام‌سازی از اینترنت» POST sync with added-count/error toasts + spinner, add modal (JalaliDatePicker + useHolidays + title), GM/OM delete with confirm. Activity: /api/activity?take=120, SearchInput + entity chips (order/product/task/cheque/user/message/feedback/wall), transparency banner, scroll-gold rows with Avatar + entity label + formatJalaliDateTime. Settings: read-only cards (هایپر زیتون — کرمان, VAT ۹٪, margin warn <۱۰٪, good >۲۵٪).
+    88→- Fixed lint/type issues in my files: removed unused eslint-disable (Planogram), changed Perf initial load to promise-callback form to satisfy react-hooks/set-state-in-effect, typed normalize() matrix param, added pin?/userName? fields. Final: `bun run lint` reports zero issues in my 4 files (remaining 12 errors/1 warning are pre-existing in charts/Orders/Accounting/Products/Providers/AppShell from other tasks) and tsc is clean for my files. Live-tested all consumed endpoints with curl login → correct payloads.
+    89→
+    90→Stage Summary:
+    91→- Files written (full replacements of stubs): src/components/views/Planogram.tsx (~470 lines), src/components/views/Sales.tsx (~560 lines), src/components/views/Perf.tsx (~215 lines), src/components/views/Admin.tsx (~430 lines). All: 'use client', export default XView({ ctx: AppCtx }), self-contained, SectionCard/Pill/EmptyState/Avatar/SearchInput/Labeled/KeyValue, faNum/faMoney Persian digits, sonner toasts, scroll-gold + fade-in-up, Modal from Orders, no blue/indigo (emerald/gold/terracotta/olive/rose palette).
+    92→- Key decisions: planogram draft state normalized rows×cols with JSON-diff dirty check; refill task assigned to first active SK user (cached per session); Sales keeps cart-mounted tabs hidden to preserve state, cashier queue/history refetch on mount for freshness; SPHL computed client-side assuming 8h shift; Admin users API returns pin so edit modal pre-fills it (never displayed in list); holiday groups sorted ascending by Jalali year/month; activity entity chips limited to the 8 specified entities with «همه».
+    93→
+    94→---
+    95→Task ID: 5 (integration & verification)
+    96→Agent: main agent (Z.ai Code)
+    97→Task: lint/typefix all files, end-to-end agent-browser verification, bug fixes, deployment package
+    98→
+    99→Work Log:
+   100→- Fixed 22 TS errors: jalaali-js v4 named imports; Holiday.date made @unique (db:push); products/[id] history query rewritten without invalid include; wall delete non-null; Messages narrowing; Orders missing Warehouse icon + addDays leftover; Products missing KeyValue import.
+   101→- Fixed all ESLint/react-compiler errors: charts Donut arc precompute (no render-phase reassign), OrdersView derived mode state, Accounting derived openOrder, Providers lazy useState + key remount, AppShell socket state set inside 'connect' callback + msgTick pattern + rAF hash init + setTimeout tick for notifications.
+   102→- bun run lint → 0 problems; tsc --noEmit src/ → 0 errors.
+   103→- agent-browser E2E: login (avatar + PIN pad ۱۲۳۴) OK; dashboard KPIs/charts OK; orders list filters OK; create-order wizard (provider→company products→steppers→Jalali date→review→submit+approve) created HZ-1405-0007 OK; receiving screen (scanner bar, steppers, printed price, submit) OK → status RECEIVED; verify screen OK → VERIFIED; accounting detail (Holoo table, VAT, diff banner, XLS/print buttons) OK; products/providers/cheques(Jalali calendar with cheque dots)/planogram/sales/perf/admin/tasks/wall/sop/messages views all render OK.
+   104→- BUGFIX: Wall crashed with "Invalid Jalali year" on full ISO timestamps → toJalaliParts now parses 'T' dates and falls back to now.
+   105→- BUGFIX: stock did not increment on first verify → orders/[id] 'verify' now increments stock exactly on RECEIVED→VERIFIED transition for non-rejected items.
+   106→- Added Jalali 1405 holidays (2026-03 → 2027-03) to seed + live DB (seed covers 1404+1405).
+   107→- Mobile viewport (390×844) verified: KPI grid collapses, hamburger drawer, receiving cards readable, sticky footer correct.
+   108→- Messages: sent real message via UI → persisted to DB, socket service on :3003 healthy.
+   109→- Socket URL made configurable via NEXT_PUBLIC_SOCKET_URL for internal-server deployments.
+   110→- Deployment package: Dockerfile (standalone multi-stage), docker-compose.yml (web+chat+optional caddy), deploy/Caddyfile, mini-services/chat-service/Dockerfile, DEPLOYMENT.md (bare-metal + docker + systemd + backup cron + go-live checklist + Holoo integration points).
+   111→
+   112→Stage Summary:
+   113→- App fully verified E2E in browser: login → order lifecycle → receiving → verify → accounting export; 19 views render; zero console errors; lint/type clean.
+   114→- Remaining known limits (documented in DEPLOYMENT.md §7): Holoo link is via xls export + manual entry; direct API hook points marked in two route handlers. Holiday sync needs internet once; manual management always available.
+   115→
+   116→---
+   117→Task ID: cron-review-1 (round 2)
+   118→Agent: Z.ai Code (scheduled web dev review)
+   119→Task: QA assessment + expiry tracking + profit margin calculator + provider order sheet + styling polish
+   120→
+   121→Work Log:
+   122→- Reviewed worklog + service health (app 200, chat :3003 up, 0 recent errors). Stale "In progress" section superseded by appended completion records.
+   123→- agent-browser QA sweep: login session persisted; walked dashboard/orders/cheques/tasks/products/accounting/wall/messages/perf — no page errors.
+   124→- Found REAL BUG: server process was holding a STALE Prisma Client (generated before `Holiday.date @unique` and `OrderItem.expiryDate`), so `findUnique({where:{date}})` and expiry updates returned PrismaClientValidationError 500. Fix: single clean dev-server restart (old tree killed, restarted with the surviving subshell pattern `(bun run dev > /tmp/next-dev.log 2>&1 &)` — first restart attempt with setsid died; subshell pattern proven durable across rounds). Verified: receive+expiry API 200, holiday unique lookup works.
+   125→- FEATURE «ماشین‌حساب حاشیه سود» (MarginCalculator.tsx): faithful upgrade of Mrs. Darvishi's Excel — barcode scan → auto product resolve; columns تعداد/مبلغ کل خط (FP)/قیمت چاپ‌شده (P); computed قیمت تمام‌شده = FP÷تعداد and margin = (P−cost)÷cost with RED <10% / YELLOW <25% / GREEN ≥25% (same thresholds as the spreadsheet); desired-margin column → suggested sell price (rounded to 100) with one-click apply to product sellPrice (PATCH). Worst-margin summary pill. Integrated as gold tab in Accounting view.
+   126→- FEATURE expiry tracking: `OrderItem.expiryDate @default("")` (db:push OK); receive action persists expiryDate per item; Receiving screen gains collapsible «تاریخ انقضای اقلام» panel with per-item JalaliDatePicker + days-left indicator (red <14d); dashboard gains «نزدیک به انقضا ⏳» widget (≤14d window, red ≤3d / yellow ≤7d) for GM/OM/SK/ACC/HC; bell notification added.
+   127→- FEATURE «چاپ برگ سفارش»: printable provider order sheet (print-area) in OrderDetail — header, items table (qty/unit/total), expiry-request note for perishables, signature lines.
+   128→- Notification: «چک امضاشده بیش از هفته بدون تحویل» alert (staleSignedCheques computed in dashboard API).
+   129→- STYLING (mandatory): olive-branch SVG watermark in EmptyState; `.table-luxe` zebra+hover applied to accounting/orders/calculator tables; gold gradient `.sidebar-divider` between nav groups; `.pattern-sand` depth on main content; `:focus-visible` gold ring; `prefers-reduced-motion` guard disabling animations.
+   130→
+   131→Stage Summary:
+   132→- lint 0 problems; tsc src/ 0 errors; app 200; chat 3003 up; browser-verified: calculator (barcode→row, margin 2.6% red, suggested ۴۷٬۵۰۰), expiry panel (date picked, «۵ روز مانده» red, persisted ×3 items), dashboard expiring widget rendering, order sheet modal, all views error-free.
+   133→- NOTE for next rounds: if Prisma schema changes again, the Next dev server MUST be restarted afterwards (globalThis Prisma cache) — restart via subshell pattern only; verify with a POST /api/holidays probe.
+   134→- Next suggestions: daily morning-briefing printable for GM; notification center page; low-stock auto-draft order suggestions; barcode camera scanning (html5-qrcode) for phones; backup reminder widget.
+   135→
+   136→---
+   137→Task ID: cron-review-2 (round 3)
+   138→Agent: Z.ai Code (scheduled web dev review)
+   139→Task: QA assessment + notification center + morning briefing + smart reorder + major CSS cascade fix
+   140→
+   141→Work Log:
+   142→- QA sweep: app 200, chat :3003 up, lint 0, tsc src/ 0. agent-browser walk of all 19 views → 0 fresh console errors (earlier "Parsing ecmascript source code failed" entries were STALE from previous mid-save HMR — confirmed gone after console --clear + reload).
+   143→- FOUND & FIXED MAJOR PRE-EXISTING CSS BUG: Tailwind v4 layered utilities (`bg-gradient-to-l from-*`) LOSE to unlayered custom classes (`.pattern-paisley` transparent bg + `.gold-glow-border` cream background shorthand) → dashboard/perf/briefing heroes rendered CREAM with white unreadable text. Fix: new unlayered `.hero-emerald` class (paisley SVG + emerald gradient baked in, defined AFTER gold-glow-border) applied to Dashboard hero, Perf hero, Briefing header. Convention note added in globals.css comment: never combine .pattern-*/.gold-glow-border with bg-gradient-* utilities.
+   144→- FEATURE مرکز اعلان‌ها (Notification Center): new GET /api/notifications (role-filtered, severity-ranked critical/warning/info, 14 alert types incl. overdue orders, deliveries today, verify/account queues, approvals waiting, cheque due-3d/past-due/pending-owner/stale-signed, out-of-stock, reorder-point, expiring (3d urgency), overdue/today tasks, unread msgs, new ideas, cashier queue, daily-briefing reminder) + Notifs.tsx view (#/notifs, summary strip, category chips with counts, severity cards, 60s auto-refresh) + NAV item under سیستم for all roles + bell dropdown now consumes the API (severity-colored, top-7, click-outside backdrop to close, «مشاهده همه» link).
+   145→- FEATURE صبح‌نامه (Morning Briefing): new GET /api/briefing (GM/OM/OWNER/ACC only; yesterday orders+amount+accounted, today deliveries+providers, overdue list, cheques due ≤7d, out/low stock, expiring ≤14d, tasks due today, new ideas, top customer requests, holiday-of-day from Holiday table) + Briefing.tsx (#/briefing) printable one-pager: hero-emerald header w/ pistachio ornaments + holiday badge, 6 headline stats, 7 report sections, ornament-divider diamonds, signature lines (OM/GM). `print-area` class added AFTER verifying global print CSS requires it (initially missing → would print blank); verified via CDP printToPDF → 1-page A4 with exact colors + new `.print-area .scroll-gold` print expansion. NAV item (منagers+ACC) + gold «صبح‌نامه امروز» button in dashboard hero.
+   146→- FEATURE پیش‌نویس هوشمند سفارش (Smart reorder): SmartReorderModal in Products (button shows live low-stock count, GM/PM/OM only) — groups stock≤reorderLevel products by provider, suggested qty = max(2×reorderLevel − stock, 1), per-item/per-provider checkboxes + steppers, live cost estimate, POSTs one DRAFT order per provider (delivery +2d, note «بر اساس نقطه سفارش»). Orders view: added DRAFT filter chip + «ارسال پیش‌نویس برای تأیید» action in detail (server 'submit' action already supported DRAFT). E2E verified in browser: modal → 2 drafts (HZ-1405-0009/0010) → submit → در انتظار تأیید → approve button appears.
+   147→- FEATURE سلامت سامانه (Admin health): GET /api/admin/health (OM/GM/OWNER; counts of users/orders/products/cheques/tasks/activities/messages/holidays, future-holiday coverage, SQLite file size via fs, last activity, node/env/uptime) rendered as 10-tile card in Admin settings tab (uptime shows minutes <1h).
+   148→- STYLING (mandatory): sticky footer now truly sticks — content wrapper is `flex min-h-screen flex-col` + `flex-1` main (footer mt-auto finally effective); Persian copy fixes («بازي» Arabic-Yeh → «وظیفه‌ای بر عهده شما نیست», EmptyState «فعلاً وظیفه‌ای ندارید»); pistachio-branch corner SVG ornaments on hero; ornament-divider; briefing-sheet gold border; bell dropdown polish.
+   149→
+   150→Stage Summary:
+   151→- Files: new src/app/api/{notifications,briefing,admin/health}/route.ts, src/components/views/{Notifs,Briefing}.tsx; edited AppShell.tsx (nav/routes/bell/footer), Dashboard.tsx (hero+copy+briefing btn), Products.tsx (SmartReorderModal ~170 lines), Orders.tsx (DRAFT chip+submit), Perf.tsx (hero class), Admin.tsx (health widget, v1.1), constants.ts (VIEW_ACCESS notifs/briefing), globals.css (hero-emerald + ornaments + print fixes).
+   152→- Verified: lint 0 / tsc 0 / all-19-view browser walk 0 console+server errors / APIs curl-tested with OM session / print PDF 1-page exact-color / mobile 390×844 OK / click-outside closes dropdown.
+   153→- Risks/notes: heroes MUST keep .hero-emerald (do not re-add bg-gradient utilities next to custom classes); briefing is one-pager by design (fixed print-area positioning); Prisma schema unchanged this round (no dev-server restart needed).
+   154→- Next suggestions: barcode camera scanning (html5-qrcode) for receiving on phones; scheduled auto-briefing generation (cron snapshot table); low-stock subscription per merchandiser; Persian PDF export server-side (pdfkit) for Holoo-compatible docs; notification mute/snooze per user.
+   155→
+   156→---
+   157→Task ID: cron-review-3 (round 4)
+   158→Agent: Z.ai Code (scheduled web dev review)
+   159→Task: QA assessment + barcode camera scanning + shelf label printing + price-trend charts + DB backup + styling polish
+   160→
+   161→Work Log:
+   162→- QA sweep first: app 200, chat :3003 up, lint 0, tsc src/ 0; agent-browser walk of all 19 views → 0 console errors; confirmed the historical `/api/notifications 500` entries in dev.log were stale HMR artifacts (live endpoint returns 200, curl-verified with OM session).
+   163→- FEATURE اسکن بارکد با دوربین (BarcodeScanner.tsx): shared event-driven host component (window events 'hz-open-scanner'/'hz-scanner-result') mounted once in AppShell; html5-qrcode dynamically imported, EAN13/EAN8/UPC/CODE128/ITF/QR formats, rear camera (facingMode environment), gold viewfinder overlay, Persian error states (permission denied / no camera / unavailable) and ALWAYS-available manual entry fallback. Integrated via «دوربین» buttons in Receiving scanner bar (auto-matches order item, highlights card, toast) and MarginCalculator (feeds findByBarcode). BUGFIX: html5-qrcode stop() throws SYNCHRONOUSLY when scanner never started → cleanup now wrapped in try/catch (was a runtime crash when closing the modal in camera-less environments).
+   164→- FEATURE چاپ لیبل قفسه (Products): «چاپ لیبل قفسه» toggle → per-card checkbox selection mode with green ring + sticky selection bar → LabelPrintModal with per-product copies stepper (1..20), live 3-column label sheet preview (name + sellPrice + JsBarcode EAN13/EAN8 with CODE128 fallback for invalid checksums), print-area CSS → A4 24up (70×35mm) with cut lines, page-break-inside avoid. jsbarcode + @types/jsbarcode added.
+   165→- FEATURE روند قیمت (inflation tracking): GET /api/products/[id] now returns history.priceTrend (last 12 orders: code/at/unitBuyPrice/printedPrice); ProductDetailModal renders gold LineChart with new autoMin smart-scaling prop (flat price series render mid-chart instead of hugging the top edge; varying series get 25%/15% padding) + ▲/▼ percentage badge vs first order. Directly serves the daily printed-price verification pain.
+   166→- FEATURE پشتیبان‌گیری فوری: GET /api/admin/backup (OM/GM/OWNER, activity-logged) streams db/custom.db as hyper-zeytoon-backup-YYYY-MM-DD.db (x-sqlite3, no-store); green download card in Admin → تنظیمات → سلامت سامانه. curl-verified: 200, 245760 bytes, valid SQLite.
+   167→- BUGFIX data quality: 25 of 30 seeded EAN13 barcodes had INVALID check digits (JsBarcode rejected them) → wrote checksum-fixer script; fixed prisma/seed.ts AND live DB (both now pass EAN13 validation, e.g. 6261500000016 → 6261500000011).
+   168→- STYLING (mandatory): TopbarDateChip in AppShell header — Jalali weekday+date (formatJalaliFull(todayIso())), turns gold on weekends (پنجشنبه/جمعه), red + «تعطیل — name» badge on official holidays via useHolidays; global micro-interaction CSS (buttons scale 0.97 on active with eased transitions, prefers-reduced-motion safe); .glow-dot pulsing status dot helper; .label-sheet/.shelf-label print CSS. BUGFIX: initial chip passed Date object → «undefined» weekday; fixed with todayIso().
+   169→- HELP updated: 3 new FAQ entries (camera scanning how-to, shelf label printing steps, price trend/inflation where-to-look).
+   170→- NOTE learned: dev server served STALE globals.css after edits (new classes absent from document.styleSheets) — appending a trailing comment + reload forced recompile; if CSS changes don't apply again, touch the file (or restart via proven subshell pattern).
+   171→
+   172→Stage Summary:
+   173→- Files: new src/components/app/BarcodeScanner.tsx + src/app/api/admin/backup/route.ts; edited AppShell (scanner host + date chip), Receiving + MarginCalculator (camera buttons), Products (label mode/LabelPrintModal/BarcodeLabel/price trend, ~230 added lines), charts.tsx (autoMin), Admin (backup card), Help (FAQ×3), globals.css (label sheet + micro-interactions + glow-dot), prisma/seed.ts + live DB (EAN13 fixes); package.json + html5-qrcode, jsbarcode, @types/jsbarcode.
+   174→- Verified in browser: date chip (جمعه ۲۰ شهریور ۱۴۰۵), label selection→modal→124 barcode rects in 3-col grid, manual scanner E2E (typed 6260100000025 → تأیید → matched item highlighted + toast), scanner error-state fallback, trend chart with flat-line fix, backup download (valid SQLite), mobile 390×844 OK; lint 0 / tsc src/ 0 / console 0 across views.
+   175→- Next suggestions: barcode scan-logging into ActivityLog for traceability; label sheet as PDF server-side; per-user notification mute/snooze; auto-briefing cron snapshot; camera scanner in Products search too.
+   176→
+   177→---
+   178→Task ID: cron-review-4 (round 5)
+   179→Agent: Z.ai Code (scheduled web dev review)
+   180→Task: QA assessment + reports center (XLS) + sales-velocity coloring + briefing archive + styling polish
+   181→
+   182→Work Log:
+   183→- QA baseline: app 200, chat :3003 handshake OK, lint 0; full-project tsc had errors ONLY in prisma/seed.ts (untyped `prodRows`/`provRows` inferred never[], jalaali-js unused default import, barcode slice on union) → typed both row arrays + dropped unused import; project tsc now 0 outside skills//examples/ (pre-existing, not ours).
+   184→- agent-browser sweep of all 20 views → 0 console errors → phase judged STABLE → chose feature development over bug fixing.
+   185→- SCHEMA: new `BriefingSnapshot` model (forDate @unique, jalaliLabel, data JSON, createdByName); db:push OK; dev server restarted via proven subshell pattern (holidays probe 200 = fresh Prisma client, per round-2 note).
+   186→- FEATURE مرکز گزارش‌ها (#/reports, NAV مالی group, GM/OM/OWNER/ACC): new GET /api/reports?type=cheques|staff|orders|inventory returning {title, columns, rows, summary} with Jalali-formatted dates and role gate; Reports.tsx = hero-emerald header + 4 tinted picker cards (hover lift, gold ring on active) + sticky-header zebra preview (scroll-gold, table-luxe) + gold summary strip + «دانلود اکسل» via SheetJS aoa (client-side, same pattern as Accounting). Reports: چک‌های پرداختی (10 cols incl. days-until-due negative-red), عملکرد تیم (points/tasks/awards/last-activity per user), سفارش‌های ۳۰ روز, موجودی و ارزش انبار (incl. stock value + sales30).
+   187→- FEATURE سرعت فروش ۳۰ روزه (sales velocity): products + planograms APIs now aggregate preorder items from last 30d (non-cancelled) into sales30 per product. Products grid: velocity chip (🔥 naranj ≥8, ▫ gold ≥3, «فروش N در ماه»), «پرفروش‌ها 🔥» filter chip (≥5), legend dots row. Planogram: per-cell فروش chip, orange ring + fire-pulse 🔥 corner badge on ≥8 cells, «🔥 پرفروش: N» summary chip + legend hint.
+   188→- FEATURE آرشیو صبح‌نامه: briefing logic refactored to src/lib/briefing.ts (buildBriefing + briefingDigest); GET /api/briefing?archive=1 lists snapshots with digest chips; GET ?id= returns one; POST /api/briefing archives today (upsert per day, activity-logged). Briefing.tsx toolbar: «ذخیره نسخه امروز در آرشیو» + «آرشیو صبح‌نامه‌ها» toggle → gold dashed timeline panel (per-day cards with digest chips) → click opens archived sheet with «نسخه آرشیوی» banner + print + back-to-today.
+   189→- DATA: seed enriched — 4 preorders (PO-1404-001..004, statuses NEW/READY/DONE×2) so velocity shows real numbers (شیر کم‌چرب ۹🔥، شیر پرچرب ۸🔥، شیرکاکائو ۷، دوغ ۶، ماست موسیر ۵، پسته ۵); seed now wipes BriefingSnapshot too. FIXED seed blocker: duplicate holiday date 2026-03-20 (ملی شدن نفت vs عید فطر تقریبی) crashed Unique constraint → merged into one title; 'نان لواش بسته‌ای فروزن' replaced with real product ماست موسیر. Re-seeded DB (fresh demo state, 16 users PIN 1234).
+   190→- STYLING (mandatory): fire-pulse keyframe (reduced-motion safe) for shelf fire badge; table-luxe sticky-header border + warmer zebra/hover; archive timeline gold dashed spine + dot markers; reports hero + tinted cards; TopbarDateChip untouched.
+   191→- HELP: +3 FAQ (گزارش اکسل کجاست، علامت 🔥 یعنی چه، آرشیو صبح‌نامه‌ها).
+   192→- VERIFIED live: reports API ×4 types (rows/cols/summary correct), inventory XLS download via agent-browser → valid 18.6KB xlsx; velocity badges + hot filter (exactly the 6 products ≥5); planogram fire ring/badges/summary; briefing save → archive list → open snapshot → banner + back; full 21-view sweep 0 console errors; mobile 390×844 stacks correctly; dev.log clean; lint 0; tsc 0.
+   193→
+   194→Stage Summary:
+   195→- Files: new src/components/views/Reports.tsx, src/app/api/reports/route.ts, src/lib/briefing.ts; edited src/app/api/briefing/route.ts (save/archive/one), src/app/api/products/route.ts + planograms/route.ts (sales30), Products.tsx (badges/filter/legend), Planogram.tsx (fire ring/chips/summary), Briefing.tsx (archive UI ~90 lines), AppShell.tsx (reports nav/import/case), constants.ts (VIEW_ACCESS.reports), Help.tsx (FAQ×3), globals.css (fire-pulse + table-luxe polish), prisma/schema.prisma (BriefingSnapshot), prisma/seed.ts (types, preorder rows, holiday dupe fix).
+   196→- Conventions: never `db.preorder` — model accessor is `db.preOrder`; GET?save pattern avoided (POST /api/briefing directly); hot threshold ≥8 fire / ≥3 badge / ≥5 filter.
+   197→- Next suggestions: barcode scan-logging to ActivityLog; per-user notification mute/snooze; scheduled auto-archive of briefing (cron POST /api/briefing at 06:30 via system cron on internal server); camera scanner in Products search; Persian PDF export server-side.
+   198→
+   199→---
+   200→Task ID: cron-review-5 (round 6)
+   201→Agent: Z.ai Code (scheduled web dev review)
+   202→Task: QA assessment + daily printed-price-control board (تابلوی کنترل قیمت روزانه) + barcode scan audit logging + styling polish
+   203→
+   204→Work Log:
+   205→- QA baseline: app 200, chat :3003 OK, lint 0, tsc 0 (project src/), dev.log clean; agent-browser sweep of all 23 views → 0 console errors, all render content → phase STABLE → chose feature development (bug-fix not needed).
+   206→- FEATURE تابلوی کنترل قیمت روزانه (#/pricecheck, NAV مالی group, GM/OM/OWNER/ACC/PM) — answers THE core pain (daily inflation price verification) that had no dedicated workflow:
+   207→  - SCHEMA: Product.lastPriceCheck (ISO date) + Product.lastCheckedPrice; db:push OK; dev server restarted via proven subshell pattern ((bun run dev > /tmp/next-dev.log 2>&1 &)) — STALE-PRISMA-CLIENT 500 (Unknown argument lastPriceCheck) hit first, per round-2 note.
+   208→  - API GET /api/price-check: per active product → latest real cost (distinct unitBuyPrice history from last-120d non-cancelled orders, fallback Product.buyPrice) + deltaPct vs previous cost (inflation signal ▲▼) + margin% (red<10/yellow<25/green≥25) + daysSince last check + checkedToday; summary {total, checkedToday, remaining, red, yellow, green (tone counts cover ALL rows incl. repriced-at-loss items — deliberate), avgMargin}.
+   209→  - API POST: {productIds[], action:'verify'|'reprice', sellPrice?} → updates product + logActivity('کنترل قیمت چاپ‌شده'|'ثبت قیمت چاپ‌شده جدید'); reprice also sets sellPrice.
+   210→  - View PriceCheck.tsx: girih hero (Jalali date) + 5 tinted stat cards (hover lift) + toolbar (search name/barcode, category emoji chips, 6 filter chips: مانده/بحرانی/کم‌حاشیه/مناسب/کنترل‌شده/همه) + rows sorted weakest-margin-first with inline editable printed-price input (gold when edited), margin pill, «هرگز کنترل نشده/N روز پیش/امروز کنترل شد ✓» chip, verify/reprice buttons, optimistic updates, verify-pop keyframe + row-verified emerald gradient, bulk «تأیید یکجای سبزها», XLS export (SheetJS aoa, same pattern as Reports), legend strip.
+   211→  - Printable برگه کاغذی: sheet rendered via createPortal to body; body.printing-sheet class on print → @media print hides body > :not(.price-sheet) so the sheet is the ONLY flow content (single page for typical batches, flows to extra pages if list is long); paper = dark-green header table, ☐ checkbox cells, dashed write-in price cells, barcode column, signature line, Jalali header. CDP-printToPDF verified 1 page. (First attempts: :has() rule dropped by Lightning CSS → replaced with body-class approach; fixed positioning caused duplicate pages → portal + sibling-hiding fixed it.)
+   212→  - Dashboard: /api/dashboard now computes priceCheckRemaining + priceCheckRed (same cost aggregation, zero extra queries — orderItems already loaded) for allowed roles; Dashboard.tsx shows role-gated «کنترل قیمت امروز ⏳» SectionCard banner (rose gradient when red>0, gold otherwise) linking to the board; hidden when remaining=0 (assistant, not surveillance).
+   213→- FEATURE barcode scan audit logging: POST /api/activity (session user, action/entity/entityId/detail, length-capped); wired fire-and-forget into MarginCalculator scan (hit + unknown barcode), Receiving scanner Enter (hit + no-match), Receiving camera scan, Receiving new-barcode binding — all scans now traceable in Admin → گزارش فعالیت. E2E verified: scan 6261200000021 → activity entry «اسکن بارکد (ماشین‌حساب قیمت) | پسته شور ممتاز کرمان ۲۵۰ گرمی».
+   214→- HELP: +2 FAQ (تابلوی کنترل قیمت روزانه چیست؛ برگه کاغذی کنترل قیمت).
+   215→- DATA hygiene after E2E tests: restored پسته خام اکبری sellPrice 1,190,000 (node -e Prisma update; bun x prisma client broken in cache — use node for one-off scripts) and cleared lastPriceCheck/lastCheckedPrice for all 30 products so the board demos fresh; ActivityLog test entries intentionally KEPT (audit trail realism).
+   216→- STYLING (mandatory): verify-pop keyframe (reduced-motion safe), row-verified gradient, edited-price gold state, price-sheet print CSS (incl. body.printing-sheet sibling-hiding), stat-card tone rings, filter chip gold active state.
+   217→- VERIFIED live: board renders 30 rows sorted by weakest margin; verify → stats ۰→۱ + ActivityLog; reprice → price change + log; bulk verify ۲→۲۶; filters + category chips + search; XLS valid 18KB; print sheet 1-page PDF perfect; dashboard banner (gold variant, 30 remaining); mobile 390×844 rows stack (rowH 197); full 24-view sweep 0 console errors; lint 0; tsc 0; dev.log clean.
+   218→
+   219→Stage Summary:
+   220→- Files: new src/app/api/price-check/route.ts + src/components/views/PriceCheck.tsx; edited prisma/schema.prisma (2 Product fields), src/app/api/activity/route.ts (POST), src/app/api/dashboard/route.ts (priceCheckRemaining/Red), src/components/views/Dashboard.tsx (banner + canAccess/cn/BadgePercent imports), src/components/app/AppShell.tsx (nav pricecheck + import + case + BadgePercent icon), src/lib/constants.ts (VIEW_ACCESS.pricecheck), src/components/views/MarginCalculator.tsx + Receiving.tsx (scan audit), src/components/views/Help.tsx (FAQ×2), globals.css (round-6 block).
+   221→- Learned/re-learned: (1) after ANY prisma schema change restart dev server via subshell pattern; (2) after globals.css edits, served CSS can be stale — append trailing comment + reload, VERIFY rule presence in served chunk; (3) Lightning CSS drops :has() selectors — use JS-toggled body classes for conditional print layouts; (4) bun cannot require @prisma/client for one-off scripts (cache issue) — use node.
+   222→- Next suggestions: per-user notification mute/snooze; scheduled auto-archive of briefing (06:30 cron POST /api/briefing on internal server); Persian-labelled PDF report exports server-side; price-check reminder in صبح‌نامه (remaining count chip); Holoo xls export of repriced items for accounting reconciliation.
+   223→

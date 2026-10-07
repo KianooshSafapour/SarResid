@@ -1,0 +1,874 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faMoney, faNum, formatJalaliShort, todayIso } from '@/lib/jalali'
+     7→import { ORDER_STATUSES } from '@/lib/constants'
+     8→import { SectionCard, Pill, EmptyState, Labeled, KeyValue, SearchInput, FaPriceInput } from '@/components/app/ui-bits'
+     9→import { JalaliDatePicker } from '@/components/app/jalali-widgets'
+    10→import { Modal } from '@/components/views/Orders'
+    11→import type { AppCtx } from '@/components/app/ui-bits'
+    12→import {
+    13→  Archive, Library, Plus, MapPin, Hand, Undo2, FileText, Landmark, FolderOpen, PackageOpen, Users, Package, ChevronDown,
+    14→} from 'lucide-react'
+    15→import { cn } from '@/lib/utils'
+    16→
+    17→type Binder = {
+    18→  id: string; code: string; title: string; groupName: string; cabinet: string; shelf: string
+    19→  colorTag: string; capacity: number; docCount: number; active: boolean
+    20→}
+    21→type Doc = {
+    22→  id: string; code: string; title: string; docType: string; party: string; partyId: string; amount: number
+    23→  docDate: string; invoiceNo: string; binderId: string; binderCode: string; seq: number; status: string
+    24→  borrowByName: string; borrowAt: string; refOrderCode: string; notes: string
+    25→  createdByName: string; createdAt: string
+    26→}
+    27→type DocItem = {
+    28→  id: string; docId: string; productId: string; productName: string; barcode: string
+    29→  qty: number; unit: string; unitPrice: number; expiryDate: string
+    30→}
+    31→type PartyEntry = { party: string; partyId: string; docCount: number; totalAmount: number; lastDate: string; firstDate: string }
+    32→type PartyFilter = { id: string; name: string } | null
+    33→type Stats = { docs: number; binders: number; borrowed: number; monthIntake: number; totalValue: number }
+    34→type LedgerProduct = { id: string; name: string; unit: string; brand: string; category: string; stock: number; buyPrice: number }
+    35→type HistoryEntry = { at: string; kind: 'ORDER' | 'ARCHIVE' | 'WASTE'; label: string } & Record<string, any>
+    36→type HistoryRes = {
+    37→  product: { id: string; name: string; unit: string; brand: string; category: string; barcode: string }
+    38→  timeline: HistoryEntry[]
+    39→  summary: {
+    40→    purchaseCount: number; totalPurchasedQty: number; lastBuyPrice: number; lastExpiry: string
+    41→    archiveDocCount: number; wasteCount: number; wasteValue: number; archiveValue: number
+    42→  }
+    43→}
+    44→
+    45→const DOC_TYPES: Record<string, { label: string; emoji: string }> = {
+    46→  INVOICE: { label: 'فاکتور خرید', emoji: '🧾' },
+    47→  CHEQUE_DOC: { label: 'سند چک', emoji: '🏦' },
+    48→  RECEIPT: { label: 'رسید پرداخت', emoji: '🎫' },
+    49→  CONTRACT: { label: 'قرارداد', emoji: '📜' },
+    50→  STATEMENT: { label: 'صورتحساب', emoji: '📊' },
+    51→  OTHER: { label: 'سایر اسناد', emoji: '📁' },
+    52→}
+    53→
+    54→const KIND_META: Record<string, { label: string; emoji: string; color: string }> = {
+    55→  ORDER: { label: 'سفارش خرید', emoji: '🛒', color: '#0e7a4a' },
+    56→  ARCHIVE: { label: 'سند آرشیو', emoji: '🗂', color: '#8a5a2b' },
+    57→  WASTE: { label: 'ضایعات', emoji: '🗑', color: '#b3372f' },
+    58→}
+    59→
+    60→type Tab = 'docs' | 'parties' | 'ledger'
+    61→
+    62→export default function ArchiveView({ ctx }: { ctx: AppCtx }) {
+    63→  const role = ctx.user!.role
+    64→  const canManage = ['GM', 'OM', 'ACC', 'OWNER'].includes(role)
+    65→  const canRegister = ['GM', 'OM', 'ACC', 'OWNER', 'SK'].includes(role)
+    66→
+    67→  const [tab, setTab] = useState<Tab>(ctx.param === 'parties' ? 'parties' : 'docs')
+    68→  const [binders, setBinders] = useState<Binder[]>([])
+    69→  const [docs, setDocs] = useState<Doc[]>([])
+    70→  const [parties, setParties] = useState<PartyEntry[]>([])
+    71→  const [stats, setStats] = useState<Stats | null>(null)
+    72→  const [q, setQ] = useState('')
+    73→  const [binderFilter, setBinderFilter] = useState('')
+    74→  const [statusFilter, setStatusFilter] = useState('')
+    75→  const [partyFilter, setPartyFilter] = useState<PartyFilter>(null)
+    76→  const [intakeOpen, setIntakeOpen] = useState(false)
+    77→  const [binderOpen, setBinderOpen] = useState(false)
+    78→  const [lastFiled, setLastFiled] = useState<{ doc: Doc; binder: Binder | { id: string; code: string; title: string; cabinet: string; shelf: string }; pickReason: string; itemsCreated: number } | null>(null)
+    79→  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+    80→
+    81→  // expandable line items (سجل کالا) per document
+    82→  const [expandedDoc, setExpandedDoc] = useState('')
+    83→  const [itemsMap, setItemsMap] = useState<Record<string, DocItem[]>>({})
+    84→  const [itemsLoading, setItemsLoading] = useState('')
+    85→
+    86→  // کارت کالا (product 360)
+    87→  const [ledgerProducts, setLedgerProducts] = useState<LedgerProduct[]>([])
+    88→  const [prodQ, setProdQ] = useState('')
+    89→  const [partyQ, setPartyQ] = useState('')
+    90→  const [selProduct, setSelProduct] = useState<LedgerProduct | null>(null)
+    91→  const [history, setHistory] = useState<HistoryRes | null>(null)
+    92→  const [histBusy, setHistBusy] = useState(false)
+    93→
+    94→  const load = useCallback((qq = q, bid = binderFilter, st = statusFilter, pf: PartyFilter = partyFilter) => {
+    95→    const params = new URLSearchParams()
+    96→    if (qq) params.set('q', qq)
+    97→    if (bid) params.set('binderId', bid)
+    98→    if (st) params.set('status', st)
+    99→    if (pf?.id) params.set('partyId', pf.id)
+   100→    if (pf?.name) params.set('party', pf.name)
+   101→    return api<{ binders: Binder[]; docs: Doc[]; parties: PartyEntry[]; stats: Stats }>(`/api/archive?${params}`).then((d) => {
+   102→      setBinders(d.binders); setDocs(d.docs); setParties(d.parties || []); setStats(d.stats)
+   103→    })
+   104→  }, [q, binderFilter, statusFilter, partyFilter])
+   105→
+   106→  useEffect(() => { load() }, [])
+   107→
+   108→  const onSearch = (v: string) => {
+   109→    setQ(v)
+   110→    if (debounce.current) clearTimeout(debounce.current)
+   111→    debounce.current = setTimeout(() => load(v, binderFilter, statusFilter), 320)
+   112→  }
+   113→
+   114→  const pickBinder = (id: string) => {
+   115→    const bid = id === binderFilter ? '' : id
+   116→    setBinderFilter(bid)
+   117→    load(q, bid, statusFilter)
+   118→  }
+   119→
+   120→  const onPartyPick = (p: PartyEntry) => {
+   121→    const pf: PartyFilter = { id: p.partyId, name: p.party }
+   122→    setPartyFilter(pf)
+   123→    setTab('docs')
+   124→    load(q, '', statusFilter, pf)
+   125→  }
+   126→
+   127→  const clearParty = () => {
+   128→    setPartyFilter(null)
+   129→    load(q, binderFilter, statusFilter, null)
+   130→  }
+   131→
+   132→  const toggleDoc = async (id: string) => {
+   133→    if (expandedDoc === id) return setExpandedDoc('')
+   134→    setExpandedDoc(id)
+   135→    if (itemsMap[id]) return
+   136→    setItemsLoading(id)
+   137→    try {
+   138→      const d = await api<{ doc: Doc; items: DocItem[] }>(`/api/archive?docId=${id}`)
+   139→      setItemsMap((m) => ({ ...m, [id]: d.items || [] }))
+   140→    } catch (e: any) {
+   141→      toast.error(e.message)
+   142→    } finally {
+   143→      setItemsLoading('')
+   144→    }
+   145→  }
+   146→
+   147→  const act = async (id: string, body: any, msg: string) => {
+   148→    try {
+   149→      await api(`/api/archive/${id}`, { method: 'PATCH', body })
+   150→      toast.success(msg)
+   151→      await load()
+   152→    } catch (e: any) { toast.error(e.message) }
+   153→  }
+   154→
+   155→  // ── کارت کالا: load product list once the tab is opened ──
+   156→  useEffect(() => {
+   157→    if (tab !== 'ledger' || ledgerProducts.length > 0) return
+   158→    api<{ products: LedgerProduct[] }>('/api/products')
+   159→      .then((d) => setLedgerProducts((d.products || []).slice(0, 200)))
+   160→      .catch(() => { /*silent — retry on next tab open*/ })
+   161→  }, [tab, ledgerProducts.length])
+   162→
+   163→  const openProduct = async (p: LedgerProduct) => {
+   164→    setSelProduct(p)
+   165→    setHistory(null)
+   166→    setHistBusy(true)
+   167→    try {
+   168→      setHistory(await api<HistoryRes>(`/api/archive/history?productId=${p.id}`))
+   169→    } catch (e: any) {
+   170→      toast.error(e.message)
+   171→    } finally {
+   172→      setHistBusy(false)
+   173→    }
+   174→  }
+   175→
+   176→  const filteredProducts = useMemo(() => {
+   177→    const n = prodQ.trim()
+   178→    if (!n) return ledgerProducts.slice(0, 8)
+   179→    return ledgerProducts.filter((p) => p.name.includes(n) || p.brand.includes(n) || p.category.includes(n)).slice(0, 8)
+   180→  }, [ledgerProducts, prodQ])
+   181→
+   182→  const cabinets = useMemo(() => {
+   183→    const m = new Map<string, Binder[]>()
+   184→    for (const b of binders) {
+   185→      if (!m.has(b.cabinet)) m.set(b.cabinet, [])
+   186→      m.get(b.cabinet)!.push(b)
+   187→    }
+   188→    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fa'))
+   189→  }, [binders])
+   190→
+   191→  const binderById = useMemo(() => new Map(binders.map((b) => [b.id, b])), [binders])
+   192→
+   193→  const partyEntry = useMemo(
+   194→    () => (partyFilter ? parties.find((p) => p.party === partyFilter.name) || null : null),
+   195→    [parties, partyFilter],
+   196→  )
+   197→
+   198→  return (
+   199→    <div className="space-y-4">
+   200→      {/* KPI row */}
+   201→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+   202→        {[
+   203→          { l: 'اسناد ثبت‌شده', v: faNum(stats?.docs ?? 0), s: 'در چرخهٔ فعال', c: '#0e7a4a', i: <FileText size={14} /> },
+   204→          { l: 'زونکن‌های آرشیو', v: faNum(stats?.binders ?? 0), s: 'طبقه‌بندی موضوعی', c: '#8a5a2b', i: <Library size={14} /> },
+   205→          { l: 'اسناد امانتی', v: faNum(stats?.borrowed ?? 0), s: 'خارج از زونکن', c: '#c96f4a', i: <Hand size={14} /> },
+   206→          { l: 'ثبت این ماه', v: faNum(stats?.monthIntake ?? 0), s: 'ورودی جدید', c: '#77934a', i: <Plus size={14} /> },
+   207→          { l: 'ارزش اسناد', v: faMoney(stats?.totalValue ?? 0), s: 'تومان', c: '#c9a227', i: <Landmark size={14} /> },
+   208→        ].map((s) => (
+   209→          <div key={s.l} className="glow-card rounded-2xl bg-card p-4">
+   210→            <p className="flex items-center gap-1.5 text-xl font-black" style={{ color: s.c }}>{s.i}{s.v}</p>
+   211→            <p className="mt-0.5 text-xs font-bold">{s.l}</p>
+   212→            <p className="text-[10px] text-muted-foreground">{s.s}</p>
+   213→          </div>
+   214→        ))}
+   215→      </div>
+   216→
+   217→      {/* tabs */}
+   218→      <div className="flex flex-wrap gap-2 rounded-2xl border border-[#8a5a2b]/25 bg-[#f7efe2] p-1.5">
+   219→        {([
+   220→          ['docs', <FolderOpen key="i" size={15} />, 'اسناد'],
+   221→          ['parties', <Users key="i" size={15} />, 'تأمین‌کنندگان'],
+   222→          ['ledger', <Package key="i" size={15} />, 'کارت کالا'],
+   223→        ] as [Tab, React.ReactNode, string][]).map(([k, icon, label]) => (
+   224→          <button
+   225→            key={k}
+   226→            type="button"
+   227→            onClick={() => setTab(k)}
+   228→            className={cn(
+   229→              'flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition',
+   230→              tab === k ? 'bg-white text-[#0e7a4a] shadow' : 'text-[#8a5a2b] hover:bg-white/60',
+   231→            )}
+   232→          >
+   233→            {icon} {label}
+   234→          </button>
+   235→        ))}
+   236→      </div>
+   237→
+   238→      {tab === 'docs' && (
+   239→        <>
+   240→          {partyFilter && (
+   241→            <div className="fade-in-up rounded-2xl border-2 border-[#c9a227]/60 bg-[#fdf6dd] p-4">
+   242→              <div className="flex flex-wrap items-center justify-between gap-2">
+   243→                <p className="flex items-center gap-1.5 text-sm font-black text-[#8a5a2b]">
+   244→                  <Users size={16} /> پروندهٔ طرف حساب: {partyFilter.name}
+   245→                </p>
+   246→                <button onClick={clearParty} className="min-h-[44px] rounded-xl border border-[#c9a227]/60 bg-white/70 px-3 py-2 text-[11px] font-black text-[#8a5a2b]">
+   247→                  نمایش همهٔ اسناد ✕
+   248→                </button>
+   249→              </div>
+   250→              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+   251→                <KeyValue k="تعداد اسناد" v={faNum(partyEntry?.docCount ?? docs.length)} />
+   252→                <KeyValue k="مجموع ارزش" v={`${faMoney(partyEntry?.totalAmount ?? docs.reduce((s, d) => s + d.amount, 0))} تومان`} />
+   253→                <KeyValue k="نخستین سند" v={partyEntry?.firstDate ? formatJalaliShort(partyEntry.firstDate) : '—'} />
+   254→                <KeyValue k="آخرین سند" v={partyEntry?.lastDate ? formatJalaliShort(partyEntry.lastDate) : '—'} />
+   255→              </div>
+   256→              {partyFilter.id ? (
+   257→                <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#0e7a4a]">
+   258→                  ✅ ذخیره در تأمین‌کنندگان — این طرف حساب با رکورد سامانه مرتبط است.
+   259→                  <button onClick={() => ctx.navigate('providers')} className="min-h-[44px] rounded-xl bg-[#0e7a4a]/10 px-3 py-2 text-[11px] font-black text-[#0e7a4a]">
+   260→                    بازکردن تأمین‌کنندگان
+   261→                  </button>
+   262→                </p>
+   263→              ) : (
+   264→                <p className="mt-2 text-[11px] font-bold text-[#c96f4a]">
+   265→                  ⚠️ این طرف حساب هنوز به رکورد تأمین‌کنندگان متصل نیست — در ثبت سند بعدی تطبیق خودکار انجام می‌شود.
+   266→                </p>
+   267→              )}
+   268→            </div>
+   269→          )}
+   270→
+   271→          <div className="grid gap-4 lg:grid-cols-5">
+   272→            {/* ── binder shelf ── */}
+   273→            <SectionCard
+   274→              title="قفسهٔ آرشیو — طبقه‌بندی موضوعی زونکن‌ها"
+   275→              subtitle="ساختار ۲۰ زونکنی گروه‌بندی طرف‌حساب‌ها؛ روی هر زونکن بزنید تا اسنادش نمایش داده شود"
+   276→              icon={<Library size={18} />}
+   277→              className="lg:col-span-2"
+   278→              actions={canManage && (
+   279→                <button onClick={() => setBinderOpen(true)} className="flex items-center gap-1 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-2 text-[11px] font-extrabold text-[#8a5a2b]">
+   280→                  <Plus size={13} /> زونکن جدید
+   281→                </button>
+   282→              )}
+   283→            >
+   284→              <div className="scroll-gold max-h-[52vh] space-y-3 overflow-y-auto pl-1">
+   285→                {cabinets.map(([cab, bs]) => (
+   286→                  <div key={cab} className="rounded-2xl border border-[#8a5a2b]/25 bg-gradient-to-b from-[#f7efe2] to-[#fdf6dd] p-3">
+   287→                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-[#8a5a2b]">
+   288→                      <Archive size={13} /> کابینت {faNum(cab)}
+   289→                    </p>
+   290→                    <div className="space-y-1.5">
+   291→                      {bs.map((b) => {
+   292→                        const fill = Math.min(100, Math.round((b.docCount / Math.max(1, b.capacity)) * 100))
+   293→                        const active = binderFilter === b.id
+   294→                        return (
+   295→                          <button
+   296→                            key={b.id}
+   297→                            type="button"
+   298→                            onClick={() => pickBinder(b.id)}
+   299→                            className={cn(
+   300→                              'w-full rounded-xl bg-white/85 p-2.5 text-right transition hover:shadow-md',
+   301→                              active && 'ring-2 ring-[#c9a227]',
+   302→                            )}
+   303→                          >
+   304→                            <div className="flex items-center gap-2.5">
+   305→                              <span className="h-9 w-2.5 shrink-0 rounded-full" style={{ background: b.colorTag }} />
+   306→                              <span className="min-w-0 flex-1">
+   307→                                <span className="flex items-center justify-between gap-2">
+   308→                                  <span className="truncate text-[11px] font-black">{b.title}</span>
+   309→                                  <span className="shrink-0 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{b.code}</span>
+   310→                                </span>
+   311→                                <span className="mt-0.5 flex items-center justify-between text-[9px] text-muted-foreground">
+   312→                                  <span>طبقهٔ {faNum(b.shelf)} • {faNum(b.docCount)} سند</span>
+   313→                                  <span style={{ color: fill >= 90 ? '#b3372f' : undefined }}>{faNum(fill)}٪ پر</span>
+   314→                                </span>
+   315→                                <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-[#8a5a2b]/10">
+   316→                                  <span className="block h-full rounded-full transition-all" style={{ width: `${fill}%`, background: b.colorTag }} />
+   317→                                </span>
+   318→                              </span>
+   319→                            </div>
+   320→                          </button>
+   321→                        )
+   322→                      })}
+   323→                    </div>
+   324→                  </div>
+   325→                ))}
+   326→              </div>
+   327→            </SectionCard>
+   328→
+   329→            {/* ── docs registry ── */}
+   330→            <SectionCard
+   331→              title="دفتر ثبت اسناد"
+   332→              subtitle="هر سند: شناسهٔ ماندگار + نشانگر موقعیت فیزیکی (ISO 15489) — روی سند بزنید تا اقلامش باز شود"
+   333→              icon={<FolderOpen size={18} />}
+   334→              className="lg:col-span-3"
+   335→              actions={canRegister && (
+   336→                <button onClick={() => setIntakeOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   337→                  <Plus size={14} /> ثبت سند در آرشیو
+   338→                </button>
+   339→              )}
+   340→            >
+   341→              <div className="mb-3 flex flex-wrap items-center gap-2">
+   342→                <div className="min-w-[180px] flex-1"><SearchInput value={q} onChange={onSearch} placeholder="جست‌وجو: طرف حساب، شماره فاکتور، شماره سند…" /></div>
+   343→                <select
+   344→                  value={statusFilter}
+   345→                  onChange={(e) => { setStatusFilter(e.target.value); load(q, binderFilter, e.target.value) }}
+   346→                  className="rounded-xl border border-input bg-white p-2 text-xs font-bold"
+   347→                >
+   348→                  <option value="">همهٔ وضعیت‌ها</option>
+   349→                  <option value="IN_BINDER">در زونکن</option>
+   350→                  <option value="BORROWED">امانتی</option>
+   351→                  <option value="DESTROYED">خارج‌شده</option>
+   352→                </select>
+   353→                {binderFilter && (
+   354→                  <button onClick={() => pickBinder(binderFilter)} className="rounded-xl bg-[#c9a227]/15 px-2.5 py-2 text-[11px] font-black text-[#8a5a2b]">
+   355→                    فقط {binderById.get(binderFilter)?.code || 'زونکن'} ✕
+   356→                  </button>
+   357→                )}
+   358→              </div>
+   359→
+   360→              {lastFiled && (
+   361→                <div className="fade-in-up mb-3 rounded-2xl border-2 border-[#c9a227] bg-[#fdf6dd] p-4 shadow-[0_8px_24px_rgba(201,162,39,0.18)]">
+   362→                  <p className="flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]">
+   363→                    <MapPin size={14} /> سند بایگانی شد — موقعیت فیزیکی برای یافتن فوری
+   364→                  </p>
+   365→                  <p className="mt-2 text-center text-lg font-black tracking-wide text-[#0e7a4a]" dir="ltr">{lastFiled.doc.code}</p>
+   366→                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+   367→                    <KeyValue k="زونکن" v={lastFiled.doc.binderCode} />
+   368→                    <KeyValue k="کابینت" v={faNum(lastFiled.binder.cabinet)} />
+   369→                    <KeyValue k="طبقه" v={faNum(lastFiled.binder.shelf)} />
+   370→                    <KeyValue k="ترتیب در زونکن" v={faNum(lastFiled.doc.seq)} />
+   371→                  </div>
+   372→                  <p className="mt-2 text-center text-[11px] font-bold text-[#8a5a2b]">
+   373→                    🗄️ کابینت {faNum(lastFiled.binder.cabinet)} → طبقهٔ {faNum(lastFiled.binder.shelf)} → زونکن «{lastFiled.binder.title}» → جایگاه {faNum(lastFiled.doc.seq)}
+   374→                    {' '}— {lastFiled.pickReason}
+   375→                  </p>
+   376→                  {lastFiled.itemsCreated > 0 && (
+   377→                    <p className="mt-1 text-center text-[11px] font-black text-[#0e7a4a]">
+   378→                      📋 {faNum(lastFiled.itemsCreated)} قلم کالا در سجل سند ثبت شد — تاریخچهٔ کالا از «کارت کالا» قابل ردیابی است
+   379→                    </p>
+   380→                  )}
+   381→                  <button onClick={() => setLastFiled(null)} className="mt-2 w-full rounded-xl border border-[#c9a227]/50 py-1.5 text-[11px] font-bold text-[#8a5a2b]">متوجه شدم</button>
+   382→                </div>
+   383→              )}
+   384→
+   385→              <div className="scroll-gold max-h-[46vh] space-y-2 overflow-y-auto pl-1">
+   386→                {docs.length === 0 && <EmptyState emoji="🗂️" title="سندی یافت نشد" hint="با «ثبت سند در آرشیو» نخستین سند را بایگانی کنید" />}
+   387→                {docs.map((d) => {
+   388→                  const t = DOC_TYPES[d.docType] || DOC_TYPES.OTHER
+   389→                  const b = binderById.get(d.binderId)
+   390→                  const items = itemsMap[d.id]
+   391→                  const expanded = expandedDoc === d.id
+   392→                  return (
+   393→                    <div
+   394→                      key={d.id}
+   395→                      onClick={() => toggleDoc(d.id)}
+   396→                      className={cn('glow-card cursor-pointer rounded-2xl bg-white/80 p-3.5 transition hover:shadow-md', expanded && 'ring-1 ring-[#c9a227]/60')}
+   397→                    >
+   398→                      <div className="flex flex-wrap items-center justify-between gap-2">
+   399→                        <div className="min-w-0">
+   400→                          <p className="truncate text-sm font-black">
+   401→                            <ChevronDown size={14} className={cn('ml-1 inline transition-transform', expanded && 'rotate-180')} />
+   402→                            {t.emoji} {d.title}
+   403→                            <span className="mr-2 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{d.code}</span>
+   404→                          </p>
+   405→                          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+   406→                            <span>{d.party}</span>
+   407→                            <span>• {formatJalaliShort(d.docDate)}</span>
+   408→                            {d.amount > 0 && <span>• {faMoney(d.amount)} تومان</span>}
+   409→                            {d.invoiceNo && (
+   410→                              <span className="rounded-md bg-[#0e7a4a]/10 px-1.5 py-0.5 font-black text-[#0e7a4a]">🧾 فاکتور {d.invoiceNo}</span>
+   411→                            )}
+   412→                            {d.refOrderCode && <span>• سفارش {d.refOrderCode}</span>}
+   413→                          </p>
+   414→                          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-[#0e7a4a]">
+   415→                            <MapPin size={11} /> زونکن {d.binderCode}
+   416→                            {b && <> — کابینت {faNum(b.cabinet)} • طبقهٔ {faNum(b.shelf)} • جایگاه {faNum(d.seq)}</>}
+   417→                          </p>
+   418→                          {d.status === 'BORROWED' && (
+   419→                            <p className="mt-1 text-[10px] font-black text-[#c96f4a]">✋ امانت‌گرفته توسط {d.borrowByName}</p>
+   420→                          )}
+   421→                        </div>
+   422→                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+   423→                          {d.status === 'IN_BINDER' && <Pill label="در زونکن" color="#0e7a4a" bg="#0e7a4a/10" />}
+   424→                          {d.status === 'BORROWED' && <Pill label="امانتی" color="#c96f4a" bg="#c96f4a/10" />}
+   425→                          {d.status === 'DESTROYED' && <Pill label="خارج‌شده" color="#6b7280" bg="#6b7280/10" />}
+   426→                          {d.status === 'IN_BINDER' && canRegister && (
+   427→                            <button
+   428→                              onClick={(e) => { e.stopPropagation(); act(d.id, { action: 'borrow' }, 'امانت ثبت شد — پس از استفاده بازگردانید') }}
+   429→                              className="flex items-center gap-1 rounded-lg bg-[#c96f4a]/10 px-2.5 py-1.5 text-[10px] font-black text-[#c96f4a]"
+   430→                            >
+   431→                              <Hand size={12} /> امانت می‌برم
+   432→                            </button>
+   433→                          )}
+   434→                          {d.status === 'BORROWED' && (
+   435→                            <button
+   436→                              onClick={(e) => { e.stopPropagation(); act(d.id, { action: 'return' }, 'سند به زونکن بازگشت ✅') }}
+   437→                              className="flex items-center gap-1 rounded-lg bg-[#0e7a4a]/10 px-2.5 py-1.5 text-[10px] font-black text-[#0e7a4a]"
+   438→                            >
+   439→                              <Undo2 size={12} /> بازگشت به زونکن
+   440→                            </button>
+   441→                          )}
+   442→                        </div>
+   443→                      </div>
+   444→
+   445→                      {expanded && (
+   446→                        <div className="mt-3 rounded-xl border border-[#8a5a2b]/20 bg-[#fdf6dd]/70 p-3" onClick={(e) => e.stopPropagation()}>
+   447→                          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-[#8a5a2b]">📋 اقلام سند — سجل کالا</p>
+   448→                          {itemsLoading === d.id ? (
+   449→                            <p className="py-2 text-center text-[11px] text-muted-foreground">…در حال بارگذاری اقلام</p>
+   450→                          ) : !items || items.length === 0 ? (
+   451→                            <p className="py-2 text-[11px] text-muted-foreground">ردیف کالایی برای این سند ثبت نشده است — از «ثبت سند» با ساخت اقلام یا از عملیات افزودن اقلام می‌توانید تکمیل کنید.</p>
+   452→                          ) : (
+   453→                            <div className="space-y-1.5">
+   454→                              {items.map((it) => (
+   455→                                <div key={it.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-white/80 px-2.5 py-2">
+   456→                                  <span className="text-[11px] font-black">{it.productName}</span>
+   457→                                  <span className="flex flex-wrap items-center gap-x-2.5 text-[10px] text-muted-foreground">
+   458→                                    <span>{faNum(it.qty)} {it.unit}</span>
+   459→                                    <span>× {faMoney(it.unitPrice)}</span>
+   460→                                    <span className="font-black text-[#0e7a4a]">= {faMoney((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))} تومان</span>
+   461→                                    {it.expiryDate && <span className="rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 font-black text-[#8a5a2b]">انقضا {formatJalaliShort(it.expiryDate)}</span>}
+   462→                                  </span>
+   463→                                </div>
+   464→                              ))}
+   465→                              <p className="text-left text-[10px] font-black text-[#8a5a2b]">
+   466→                                جمع اقلام: {faMoney(items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0))} تومان
+   467→                              </p>
+   468→                            </div>
+   469→                          )}
+   470→                        </div>
+   471→                      )}
+   472→                    </div>
+   473→                  )
+   474→                })}
+   475→              </div>
+   476→            </SectionCard>
+   477→          </div>
+   478→        </>
+   479→      )}
+   480→
+   481→      {tab === 'parties' && (
+   482→        <SectionCard
+   483→          title="راهنمای تأمین‌کنندگان و طرف‌حساب‌ها"
+   484→          subtitle="جست‌وجوی نام تأمین‌کننده/پخش — روی هر کارت بزنید تا پروندهٔ کامل اسنادش (فاکتورها و موقعیت فیزیکی) باز شود"
+   485→          icon={<Users size={18} />}
+   486→        >
+   487→          <div className="mb-3">
+   488→            <SearchInput value={partyQ} onChange={setPartyQ} placeholder="نام تأمین‌کننده، پخش یا شرکت را بزنید…" />
+   489→          </div>
+   490→          {parties.length === 0 ? (
+   491→            <EmptyState emoji="🤝" title="هنوز طرف‌حسابی ثبت نشده" hint="با ثبت نخستین سند آرشیو، راهنمای طرف‌حساب‌ها ساخته می‌شود" />
+   492→          ) : (
+   493→            <div className="scroll-gold grid max-h-[56vh] gap-2.5 overflow-y-auto pl-1 sm:grid-cols-2 lg:grid-cols-3">
+   494→              {parties
+   495→                .filter((p) => !partyQ.trim() || p.party.includes(partyQ.trim()))
+   496→                .map((p) => (
+   497→                  <button
+   498→                    key={p.party}
+   499→                    type="button"
+   500→                    onClick={() => onPartyPick(p)}
+   501→                    className="glow-card rounded-2xl bg-white/85 p-3.5 text-right transition hover:shadow-md"
+   502→                  >
+   503→                    <p className="truncate text-sm font-black">{p.party}</p>
+   504→                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+   505→                      <Pill label={`${faNum(p.docCount)} سند`} color="#8a5a2b" bg="#c9a227/15" />
+   506→                      <span className="text-[10px] font-bold text-muted-foreground">{faMoney(p.totalAmount)} تومان</span>
+   507→                    </div>
+   508→                    <p className="mt-1.5 text-[10px] text-muted-foreground">
+   509→                      آخرین سند: {p.lastDate ? formatJalaliShort(p.lastDate) : '—'}
+   510→                    </p>
+   511→                  </button>
+   512→                ))}
+   513→              {parties.filter((p) => !partyQ.trim() || p.party.includes(partyQ.trim())).length === 0 && (
+   514→                <div className="sm:col-span-2 lg:col-span-3">
+   515→                  <EmptyState emoji="🔍" title="طرف‌حسابی با این نام یافت نشد" hint="بخشی از نام را امتحان کنید — مثلاً «کاله» یا «رامک»" />
+   516→                </div>
+   517→              )}
+   518→            </div>
+   519→          )}
+   520→        </SectionCard>
+   521→      )}
+   522→
+   523→      {tab === 'ledger' && (
+   524→        <SectionCard
+   525→          title="کارت کالا — تاریخچهٔ کامل رکورد هر کالا"
+   526→          subtitle="سفارش‌های خرید + اسناد آرشیو فیزیکی + ضایعات در یک خط زمانی — پل رکورد دیجیتال به سند فیزیکی"
+   527→          icon={<Package size={18} />}
+   528→        >
+   529→          {selProduct && (
+   530→            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#fdf6dd] p-3">
+   531→              <p className="text-sm font-black text-[#8a5a2b]">📦 {selProduct.name} <span className="text-[10px] font-bold text-muted-foreground">({selProduct.category}{selProduct.brand ? ` — ${selProduct.brand}` : ''})</span></p>
+   532→              <button onClick={() => { setSelProduct(null); setHistory(null); setProdQ('') }} className="min-h-[44px] rounded-xl border border-[#c9a227]/50 bg-white/70 px-3 py-2 text-[11px] font-black text-[#8a5a2b]">
+   533→                انتخاب کالای دیگر
+   534→              </button>
+   535→            </div>
+   536→          )}
+   537→
+   538→          {!selProduct && (
+   539→            <>
+   540→              <div className="mb-3"><SearchInput value={prodQ} onChange={setProdQ} placeholder="نام کالا را بزنید — مثلاً: شیر کاله ۱ لیتری" /></div>
+   541→              {filteredProducts.length === 0 ? (
+   542→                <EmptyState emoji="🔎" title="کالایی یافت نشد" hint={ledgerProducts.length === 0 ? 'در حال بارگذاری فهرست کالاها…' : 'بخشی از نام کالا را وارد کنید'} />
+   543→              ) : (
+   544→                <div className="grid gap-2 sm:grid-cols-2">
+   545→                  {filteredProducts.map((p) => (
+   546→                    <button
+   547→                      key={p.id}
+   548→                      type="button"
+   549→                      onClick={() => openProduct(p)}
+   550→                      className="glow-card flex min-h-[44px] items-center justify-between rounded-xl bg-white/85 p-3 text-right transition hover:shadow-md"
+   551→                    >
+   552→                      <span className="min-w-0">
+   553→                        <span className="block truncate text-xs font-black">{p.name}</span>
+   554→                        <span className="text-[10px] text-muted-foreground">{p.category}{p.brand ? ` — ${p.brand}` : ''}</span>
+   555→                      </span>
+   556→                      <span className="shrink-0 rounded-lg bg-[#0e7a4a]/10 px-2 py-1 text-[10px] font-black text-[#0e7a4a]">مشاهدهٔ تاریخچه</span>
+   557→                    </button>
+   558→                  ))}
+   559→                </div>
+   560→              )}
+   561→            </>
+   562→          )}
+   563→
+   564→          {selProduct && histBusy && <p className="py-6 text-center text-xs font-bold text-muted-foreground">…در حال تجمیع تاریخچهٔ کالا</p>}
+   565→
+   566→          {selProduct && !histBusy && history && (
+   567→            <>
+   568→              <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+   569→                {[
+   570→                  { l: 'تعداد خرید', v: faNum(history.summary.purchaseCount), s: 'سفارش تأمین', c: '#0e7a4a' },
+   571→                  { l: 'مجموع خریداری‌شده', v: faNum(history.summary.totalPurchasedQty), s: history.product.unit, c: '#77934a' },
+   572→                  { l: 'آخرین قیمت خرید', v: faMoney(history.summary.lastBuyPrice), s: 'تومان', c: '#c9a227' },
+   573→                  { l: 'آخرین انقضا', v: history.summary.lastExpiry ? formatJalaliShort(history.summary.lastExpiry) : '—', s: 'ثبت‌شده', c: '#c96f4a' },
+   574→                  { l: 'اسناد آرشیو مرتبط', v: faNum(history.summary.archiveDocCount), s: `${faMoney(history.summary.archiveValue)} تومان`, c: '#8a5a2b' },
+   575→                  { l: 'ضایعات', v: faNum(history.summary.wasteCount), s: `${faMoney(history.summary.wasteValue)} تومان`, c: '#b3372f' },
+   576→                ].map((s) => (
+   577→                  <div key={s.l} className="glow-card rounded-2xl bg-card p-3">
+   578→                    <p className="text-base font-black" style={{ color: s.c }}>{s.v}</p>
+   579→                    <p className="mt-0.5 text-[10px] font-bold">{s.l}</p>
+   580→                    <p className="text-[9px] text-muted-foreground">{s.s}</p>
+   581→                  </div>
+   582→                ))}
+   583→              </div>
+   584→
+   585→              {history.timeline.length === 0 ? (
+   586→                <EmptyState emoji="📭" title="رکوردی برای این کالا یافت نشد" hint="پس از ثبت سفارش خرید یا سند آرشیو با اقلام کالا، تاریخچه اینجا ساخته می‌شود" />
+   587→              ) : (
+   588→                <div className="scroll-gold mt-4 max-h-[48vh] space-y-0 overflow-y-auto pr-2">
+   589→                  {history.timeline.map((r, idx) => {
+   590→                    const meta = KIND_META[r.kind] || KIND_META.ORDER
+   591→                    return (
+   592→                      <div key={idx} className="relative border-r-2 pr-4 pb-4" style={{ borderColor: `${meta.color}40` }}>
+   593→                        <span className="absolute -right-[7px] top-1 h-3 w-3 rounded-full border-2 border-white" style={{ background: meta.color }} />
+   594→                        <div className="glow-card rounded-xl bg-white/80 p-3">
+   595→                          <div className="flex flex-wrap items-center justify-between gap-2">
+   596→                            <p className="flex items-center gap-1.5 text-xs font-black" style={{ color: meta.color }}>
+   597→                              {meta.emoji} {meta.label} <span className="text-[#334155]">— {r.label}</span>
+   598→                            </p>
+   599→                            <span className="rounded-md bg-[#8a5a2b]/10 px-2 py-0.5 text-[10px] font-black text-[#8a5a2b]">{formatJalaliShort(r.at)}</span>
+   600→                          </div>
+   601→                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+   602→                            {r.kind === 'ORDER' && (
+   603→                              <>
+   604→                                <span className="font-bold">تأمین‌کننده: {r.providerName}</span>
+   605→                                <span>مقدار: {faNum(r.qty)}{r.receivedQty != null && r.receivedQty !== r.qty ? ` (دریافتی: ${faNum(r.receivedQty)})` : ''}</span>
+   606→                                <span className="font-bold text-[#0e7a4a]">قیمت خرید: {faMoney(r.unitPrice)} تومان</span>
+   607→                                {r.printedPrice != null && r.printedPrice > 0 && <span>قیمت چاپ‌شده: {faMoney(r.printedPrice)}</span>}
+   608→                                {r.orderStatus && <span className="rounded-md bg-[#0e7a4a]/10 px-1.5 py-0.5 font-black text-[#0e7a4a]">{ORDER_STATUSES[r.orderStatus]?.label || r.orderStatus}</span>}
+   609→                              </>
+   610→                            )}
+   611→                            {r.kind === 'ARCHIVE' && (
+   612→                              <>
+   613→                                <span className="font-bold">طرف حساب: {r.party}</span>
+   614→                                {r.invoiceNo && <span>فاکتور {r.invoiceNo}</span>}
+   615→                                <span>مقدار: {faNum(r.qty)} {r.unit}</span>
+   616→                                <span className="font-bold text-[#0e7a4a]">{faMoney((Number(r.qty) || 0) * (Number(r.unitPrice) || 0))} تومان</span>
+   617→                                {r.docStatus && r.docStatus !== 'IN_BINDER' && <span className="rounded-md bg-[#c96f4a]/10 px-1.5 py-0.5 font-black text-[#c96f4a]">{r.docStatus === 'BORROWED' ? 'در امانت' : 'خارج‌شده'}</span>}
+   618→                              </>
+   619→                            )}
+   620→                            {r.kind === 'WASTE' && (
+   621→                              <>
+   622→                                <span className="font-bold text-[#b3372f]">دلیل: {r.reasonLabel}</span>
+   623→                                <span>مقدار: {faNum(r.qty)} {r.unit}</span>
+   624→                                <span>ارزش تقریبی: {faMoney(r.estValue)} تومان</span>
+   625→                                {r.note && <span>— {r.note}</span>}
+   626→                              </>
+   627→                            )}
+   628→                            {(r.kind === 'ORDER' || r.kind === 'ARCHIVE') && r.expiryDate && (
+   629→                              <span className="rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 font-black text-[#8a5a2b]">انقضا {formatJalaliShort(r.expiryDate)}</span>
+   630→                            )}
+   631→                          </div>
+   632→                          {r.kind === 'ARCHIVE' && (
+   633→                            <p className="mt-2 flex flex-wrap items-center gap-1 rounded-lg bg-[#fdf6dd] px-2.5 py-1.5 text-[10px] font-black text-[#8a5a2b]">
+   634→                              <MapPin size={11} /> سند فیزیکی: {r.cabinet ? <>کابینت {faNum(r.cabinet)} › </> : ''}{r.shelf ? <>طبقهٔ {faNum(r.shelf)} › </> : ''}زونکن {r.binderCode}{r.binderTitle ? ` «${r.binderTitle}»` : ''} › جایگاه {faNum(r.seq)} — همین مسیر را در آرشیو اتاق اسناد دنبال کنید
+   635→                            </p>
+   636→                          )}
+   637→                        </div>
+   638→                      </div>
+   639→                    )
+   640→                  })}
+   641→                </div>
+   642→              )}
+   643→            </>
+   644→          )}
+   645→        </SectionCard>
+   646→      )}
+   647→
+   648→      <SectionCard title="مبانی علمی آرشیو" icon={<Archive size={18} />}>
+   649→        <div className="grid gap-2 text-[11px] leading-relaxed text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+   650→          <p className="rounded-xl bg-card p-3"><span className="font-black text-[#0e7a4a]">ISO 15489 (مدیریت اسناد):</span> هر سند یک شناسهٔ ماندگار می‌گیرد که هرگز تغییر نمی‌کند؛ جابه‌جایی فیزیکی فقط «نشانگر موقعیت» را عوض می‌کند.</p>
+   651→          <p className="rounded-xl bg-card p-3"><span className="font-black text-[#0e7a4a]">طبقه‌بندی موضوعی:</span> گروه‌بندی طرف‌حساب‌ها بر پایهٔ دستهٔ تأمین‌کننده (لبنیات، وارداتی، لوازم‌تحریر و…) — همان منطق زونکن‌های موجود، اما با کدگذاری استاندارد.</p>
+   652→          <p className="rounded-xl bg-card p-3"><span className="font-black text-[#0e7a4a]">زنجیرهٔ امانت:</span> هر خروج سند از زونکن ثبت و تا بازگشت پیگیری می‌شود — الگوی custody chain آرشیوهای حرفه‌ای.</p>
+   653→          <p className="rounded-xl bg-card p-3"><span className="font-black text-[#0e7a4a]">استمرار سجل کالا (Record-keeping Continuity):</span> تاریخچهٔ هر کالا — سفارش خرید، سند آرشیو فیزیکی و ضایعات — در یک خط زمانی پیوسته نگه‌داری می‌شود تا مسیر هر قلم از انبار تا زونکن، بدون گسست قابل ردیابی باشد.</p>
+   654→        </div>
+   655→      </SectionCard>
+   656→
+   657→      {intakeOpen && (
+   658→        <IntakeModal
+   659→          binders={binders}
+   660→          onClose={() => setIntakeOpen(false)}
+   661→          onSaved={(doc, binder, pickReason, itemsCreated) => { setIntakeOpen(false); setLastFiled({ doc, binder, pickReason, itemsCreated }); load() }}
+   662→        />
+   663→      )}
+   664→      {binderOpen && canManage && (
+   665→        <BinderModal
+   666→          onClose={() => setBinderOpen(false)}
+   667→          onSaved={() => { setBinderOpen(false); load() }}
+   668→        />
+   669→      )}
+   670→    </div>
+   671→  )
+   672→}
+   673→
+   674→/** register a document → auto location assignment + line items builder + instant physical-location card */
+   675→function IntakeModal({ binders, onClose, onSaved }: {
+   676→  binders: Binder[]
+   677→  onClose: () => void
+   678→  onSaved: (doc: Doc, binder: any, pickReason: string, itemsCreated: number) => void
+   679→}) {
+   680→  type ItemRow = { productName: string; productId: string; qty: string; unitPrice: string; expiry: string }
+   681→  const emptyRow = (): ItemRow => ({ productName: '', productId: '', qty: '', unitPrice: '', expiry: '' })
+   682→
+   683→  const [form, setForm] = useState({ title: '', docType: 'INVOICE', party: '', amount: '', invoiceNo: '', docDate: todayIso(), binderId: '', refOrderCode: '', notes: '' })
+   684→  const [rows, setRows] = useState<ItemRow[]>([emptyRow()])
+   685→  const [productOpts, setProductOpts] = useState<{ id: string; name: string; buyPrice: number; unit: string }[]>([])
+   686→  const [busy, setBusy] = useState(false)
+   687→  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
+   688→
+   689→  useEffect(() => {
+   690→    api<{ products: any[] }>('/api/products')
+   691→      .then((d) => setProductOpts((d.products || []).slice(0, 200).map((p) => ({ id: p.id, name: p.name, buyPrice: p.buyPrice, unit: p.unit }))))
+   692→      .catch(() => { /* free-text still works without suggestions */ })
+   693→  }, [])
+   694→
+   695→  const setRow = (idx: number, patch: Partial<ItemRow>) =>
+   696→    setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+   697→
+   698→  const onRowName = (idx: number, name: string) => {
+   699→    const p = productOpts.find((o) => o.name === name)
+   700→    if (p) setRow(idx, { productName: p.name, productId: p.id, unitPrice: rows[idx].unitPrice === '' && p.buyPrice > 0 ? String(p.buyPrice) : rows[idx].unitPrice })
+   701→    else setRow(idx, { productName: name, productId: '' })
+   702→  }
+   703→
+   704→  const rowsTotal = rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(r.unitPrice) || 0), 0)
+   705→  const validRows = rows.filter((r) => r.productName.trim())
+   706→  const effectiveAmount = Number(form.amount) || (validRows.length ? rowsTotal : 0)
+   707→
+   708→  const save = async () => {
+   709→    if (!form.title || !form.party) return toast.error('عنوان سند و طرف حساب الزامی است')
+   710→    const items = validRows.map((r) => ({
+   711→      productId: r.productId,
+   712→      productName: r.productName.trim(),
+   713→      qty: Number(r.qty) || 0,
+   714→      unitPrice: Number(r.unitPrice) || 0,
+   715→      expiryDate: r.expiry || '',
+   716→    }))
+   717→    setBusy(true)
+   718→    try {
+   719→      const res = await api<{ doc: Doc; binder: any; pickReason: string; itemsCreated: number }>('/api/archive', {
+   720→        method: 'POST',
+   721→        body: { kind: 'doc', ...form, amount: effectiveAmount, items },
+   722→      })
+   723→      toast.success('سند در آرشیو ثبت شد')
+   724→      onSaved(res.doc, res.binder, res.pickReason, res.itemsCreated || 0)
+   725→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   726→  }
+   727→
+   728→  return (
+   729→    <Modal title="ثبت سند در آرشیو فیزیکی" onClose={onClose} wide>
+   730→      <div className="grid gap-3 sm:grid-cols-2">
+   731→        <Labeled label="عنوان سند *"><input value={form.title} onChange={(e) => set('title', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً: فاکتور شماره ۲۴۱ کاله" /></Labeled>
+   732→        <Labeled label="نوع سند">
+   733→          <select value={form.docType} onChange={(e) => set('docType', e.target.value)} className="w-full rounded-xl border border-input bg-white p-3 text-sm">
+   734→            {Object.entries(DOC_TYPES).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+   735→          </select>
+   736→        </Labeled>
+   737→        <Labeled label="طرف حساب *"><input value={form.party} onChange={(e) => set('party', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="نام تأمین‌کننده / شرکت" /></Labeled>
+   738→        <Labeled label="شماره فاکتور (روی سند فیزیکی)"><input value={form.invoiceNo} onChange={(e) => set('invoiceNo', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" placeholder="241-1405" /></Labeled>
+   739→        <Labeled label="مبلغ سند (تومان)" hint={validRows.length > 0 ? `جمع اقلام: ${faMoney(rowsTotal)} تومان — اگر خالی بماند، از جمع اقلام محاسبه می‌شود` : undefined}>
+   740→          <FaPriceInput
+   741→            value={form.amount === '' ? '' : Number(form.amount)}
+   742→            onChange={(v) => set('amount', v === '' ? '' : String(v))}
+   743→            ariaLabel="مبلغ سند"
+   744→            className="w-full rounded-xl border border-input p-3 text-sm"
+   745→          />
+   746→        </Labeled>
+   747→        <Labeled label="تاریخ سند"><JalaliDatePicker value={form.docDate} onChange={(v) => set('docDate', v)} holidays={new Map()} /></Labeled>
+   748→        <Labeled label="زونکن مقصد">
+   749→          <select value={form.binderId} onChange={(e) => set('binderId', e.target.value)} className="w-full rounded-xl border border-input bg-white p-3 text-sm">
+   750→            <option value="">پیشنهاد خودکار سامانه 🎯</option>
+   751→            {binders.map((b) => <option key={b.id} value={b.id}>{b.code} — {b.title}</option>)}
+   752→          </select>
+   753→        </Labeled>
+   754→        <Labeled label="کد سفارش مرتبط (اختیاری)"><input value={form.refOrderCode} onChange={(e) => set('refOrderCode', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   755→      </div>
+   756→      <Labeled label="توضیح (اختیاری)"><input value={form.notes} onChange={(e) => set('notes', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   757→
+   758→      {/* ── line items builder (سجل کالا) ── */}
+   759→      <div className="mt-4 rounded-2xl border border-[#8a5a2b]/25 bg-[#f7efe2] p-3">
+   760→        <div className="mb-2 flex items-center justify-between">
+   761→          <p className="text-xs font-black text-[#8a5a2b]">📋 اقلام فاکتور — سجل کالا (اختیاری)</p>
+   762→          <p className="text-[11px] font-black text-[#0e7a4a]">جمع: {faMoney(rowsTotal)} تومان</p>
+   763→        </div>
+   764→        <div className="space-y-2">
+   765→          {rows.map((r, idx) => (
+   766→            <div key={idx} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-xl bg-white/85 p-2">
+   767→              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+   768→                <input
+   769→                  value={r.productName}
+   770→                  onChange={(e) => onRowName(idx, e.target.value)}
+   771→                  list="intake-product-opts"
+   772→                  className="w-full rounded-lg border border-input p-2 text-xs"
+   773→                  placeholder="نام کالا (انتخاب یا تایپ آزاد)"
+   774→                />
+   775→                <input
+   776→                  value={r.qty}
+   777→                  onChange={(e) => setRow(idx, { qty: e.target.value.replace(/[^\d.]/g, '') })}
+   778→                  className="w-full rounded-lg border border-input p-2 text-xs"
+   779→                  dir="ltr"
+   780→                  inputMode="decimal"
+   781→                  placeholder="مقدار"
+   782→                />
+   783→                <FaPriceInput
+   784→                  value={r.unitPrice === '' ? '' : Number(r.unitPrice)}
+   785→                  onChange={(v) => setRow(idx, { unitPrice: v === '' ? '' : String(v) })}
+   786→                  ariaLabel={`قیمت واحد ردیف ${idx + 1}`}
+   787→                  className="w-full rounded-lg border border-input p-2 text-xs"
+   788→                />
+   789→                <JalaliDatePicker value={r.expiry} onChange={(v) => setRow(idx, { expiry: v })} holidays={new Map()} />
+   790→              </div>
+   791→              <button
+   792→                type="button"
+   793→                onClick={() => setRows((rs) => (rs.length === 1 ? [emptyRow()] : rs.filter((_, i) => i !== idx)))}
+   794→                aria-label="حذف ردیف"
+   795→                className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#b3372f]/10 text-sm font-black text-[#b3372f]"
+   796→              >
+   797→                ✕
+   798→              </button>
+   799→            </div>
+   800→          ))}
+   801→        </div>
+   802→        <datalist id="intake-product-opts">
+   803→          {productOpts.map((o) => <option key={o.id} value={o.name} />)}
+   804→        </datalist>
+   805→        <button
+   806→          type="button"
+   807→          onClick={() => setRows((rs) => [...rs, emptyRow()])}
+   808→          className="mt-2 w-full rounded-xl border border-dashed border-[#8a5a2b]/40 bg-white/60 py-2.5 text-[11px] font-black text-[#8a5a2b]"
+   809→        >
+   810→          ＋ افزودن ردیف کالا
+   811→        </button>
+   812→        <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+   813→          با ثبت اقلام، تاریخچهٔ هر کالا (خرید، انقضا، قیمت) به سجل کالا اضافه می‌شود و از تب «کارت کالا» تا سند فیزیکی قابل ردیابی است.
+   814→        </p>
+   815→      </div>
+   816→
+   817→      <p className="mt-2 rounded-xl bg-[#fdf6dd]/70 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
+   818→        در حالت «پیشنهاد خودکار»، سامانه بر پایهٔ تطبیق موضوعی طرف حساب با دستهٔ زونکن‌ها (و در نبود تطبیق، کم‌ترین پرشدگی) جایگاه سند را تعیین و کد ماندگار می‌سازد؛ طرف حساب همچنین با فهرست تأمین‌کنندگان تطبیق داده می‌شود.
+   819→      </p>
+   820→      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   821→        {busy ? '…' : 'ثبت و تعیین جایگاه فیزیکی'}
+   822→      </button>
+   823→    </Modal>
+   824→  )
+   825→}
+   826→
+   827→/** register a new binder (management) */
+   828→function BinderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+   829→  const [form, setForm] = useState({ title: '', groupName: '', cabinet: '۵', shelf: '۵', colorTag: '#0e7a4a', capacity: '250', notes: '' })
+   830→  const [busy, setBusy] = useState(false)
+   831→  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
+   832→  const COLORS = ['#0e7a4a', '#c9a227', '#c96f4a', '#77934a', '#b3372f', '#8a5a2b', '#1e40af', '#6d28d9']
+   833→
+   834→  const save = async () => {
+   835→    if (!form.title) return toast.error('عنوان زونکن الزامی است')
+   836→    setBusy(true)
+   837→    try {
+   838→      await api('/api/archive', { method: 'POST', body: { kind: 'binder', ...form, capacity: Number(form.capacity) || 250 } })
+   839→      toast.success('زونکن ثبت شد')
+   840→      onSaved()
+   841→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   842→  }
+   843→
+   844→  return (
+   845→    <Modal title="ثبت زونکن جدید" onClose={onClose}>
+   846→      <div className="grid gap-3 sm:grid-cols-2">
+   847→        <Labeled label="عنوان گروه اسناد *"><input value={form.title} onChange={(e) => set('title', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً: فرآورده‌های گوشتی" /></Labeled>
+   848→        <Labeled label="دستهٔ موضوعی"><input value={form.groupName} onChange={(e) => set('groupName', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً: پروتئینی" /></Labeled>
+   849→        <Labeled label="کابینت"><input value={form.cabinet} onChange={(e) => set('cabinet', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   850→        <Labeled label="طبقه"><input value={form.shelf} onChange={(e) => set('shelf', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   851→        <Labeled label="ظرفیت (سند)">
+   852→          <input
+   853→            value={form.capacity}
+   854→            onChange={(e) => set('capacity', e.target.value.replace(/\D/g, ''))}
+   855→            className="w-full rounded-xl border border-input p-3 text-sm"
+   856→            dir="ltr"
+   857→            inputMode="numeric"
+   858→          />
+   859→        </Labeled>
+   860→        <Labeled label="رنگ عطف زونکن">
+   861→          <div className="flex flex-wrap gap-1.5">
+   862→            {COLORS.map((c) => (
+   863→              <button key={c} type="button" onClick={() => set('colorTag', c)} className={cn('h-7 w-7 rounded-full transition', form.colorTag === c && 'ring-2 ring-offset-2 ring-[#8a5a2b]')} style={{ background: c }} aria-label={`رنگ ${c}`} />
+   864→            ))}
+   865→          </div>
+   866→        </Labeled>
+   867→      </div>
+   868→      <button onClick={save} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   869→        {busy ? '…' : 'ثبت زونکن'}
+   870→      </button>
+   871→    </Modal>
+   872→  )
+   873→}
+   874→

@@ -1,0 +1,1072 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── People & Access ─────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  username       String   @unique
+  pin            String   @default("1234")
+  role           String   @default("SALES") // OWNER | GM | OM | PM | ACC | HC | CASHIER | SK | MERCH | SALES | IT | ADMIN
+  secondaryRoles String   @default("[]") // JSON array e.g. ["RECEIVER","IT"]
+  roleIds        String   @default("[]") // JSON array of Role.keys (multi-role: builtin + custom)
+  zones          String   @default("[]") // JSON array of zone/category names assigned for daily counting
+  color          String   @default("#0e7a4a")
+  active         Boolean  @default(true)
+  hidden         Boolean  @default(false) // root/admin — never shown in avatar picker, username+password login
+  password       String   @default("") // sha256 hex — used only by hidden ADMIN account
+  phone          String   @default("")
+  personnelId    String   @default("") // linked Personnel record
+  uiPrefs        String   @default("{}") // JSON {fontScale, calFont, calSystem, density, ...}
+  avatarUrl      String   @default("") // عکس واقعی پروفایل (dataURL یا مسیر)
+  avatarStyle    String   @default("") // JSON آواتار کارتونی {skin,hair,hairColor,outfit,accessory,bg,hijab,beard,glasses,emoji,...}
+  nickname       String   @default("") // نام مستعار دلخواه (۱۸-D پروفایل)
+  bio            String   @default("") // دربارهٔ من — حداکثر ۱۶۰ نویسه
+  points         Int      @default(0)
+  createdAt      DateTime @default(now())
+}
+
+// ── نقش‌های قابل تعریف (RBAC پویا) — مدیر می‌تواند نقش تازه بسازد (مثل مسئول شبکه‌های اجتماعی)
+// permissions = JSON {views: string[] | ["*"], caps: string[]} — caps فهرست دسترسی‌های عملیاتی
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique // MERCH, SOCIAL_MEDIA, custom_...
+  name        String // برچسب فارسی
+  category    String   @default("عمومی") // دسته/گروه نقش
+  description String   @default("")
+  color       String   @default("#0e7a4a")
+  builtin     Boolean  @default(false)
+  permissions String   @default("{}") // JSON {views:[], caps:[]}
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── پروندهٔ پرسنل (منابع انسانی) — متولد برای هدیه، شبا، فرزندان، مدارک اسکن‌شده
+model Personnel {
+  id               String   @id @default(cuid())
+  firstName        String
+  lastName         String
+  nationalId       String   @default("")
+  phone            String   @default("")
+  address          String   @default("")
+  birthday         String   @default("") // jalali yyyy-mm-dd — برای هدیه تولد
+  hireDate         String   @default("") // jalali yyyy-mm-dd
+  jobTitle         String   @default("")
+  department       String   @default("")
+  bankCard         String   @default("")
+  shaba            String   @default("")
+  baseSalary       Float    @default(0)
+  childSupport     Float    @default(0) // کمک هزینهٔ هر فرزند
+  children         String   @default("[]") // JSON [{name,birthday,gender}]
+  emergencyContact String   @default("") // JSON {name,phone,relation}
+  documents        String   @default("[]") // JSON [{name,kind,url,size,addedAt,addedByName}]
+  notes            String   @default("")
+  userId           String   @default("") // حساب کاربری متصل
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ── ویزیتور/نمایندهٔ تأمین‌کننده — یک‌بار تعریف، همیشه در تاریخچه
+model SalesRep {
+  id              String   @id @default(cuid())
+  fullName        String
+  mobile          String   @default("")
+  phone2          String   @default("")
+  email           String   @default("") // round-15
+  address         String   @default("") // round-15
+  birthday        String   @default("") // jalali — round-15 برای هدیه/احترام
+  kind            String   @default("REP") // REP | DRIVER | ACCOUNTANT | MANAGER | CONTACT | INSPECTOR | LANDLORD | OTHER — دفتر اشخاص
+  company         String   @default("") // شرکت/نهاد متبوع (وقتی provider نیست — round-15)
+  providerId      String   @default("") // شرکت اصلی
+  providerName    String   @default("")
+  jobRole         String   @default("REP") // سِمَت شغلی متنی
+  nationalId      String   @default("")
+  notes           String   @default("")
+  tags            String   @default("[]") // JSON array — برچسب‌های اشخاص مهم
+  providerHistory String   @default("[]") // JSON [{providerName, from, to?}] — سابقهٔ شرکت‌ها
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ───────────────────────── Supply chain ─────────────────────────
+
+model Provider {
+  id             String   @id @default(cuid())
+  name           String // e.g. "پخش گلدیس"
+  personName     String   @default("")
+  phone          String   @default("")
+  type           String   @default("DISTRIBUTOR") // VISITOR | DISTRIBUTOR | DIRECT
+  companyNames   String   @default("[]") // JSON array of brands/companies they distribute
+  manufacturerId String   @default("") // round-15: لینک به تولیدکنندهٔ مادر (SSOT)
+  notes          String   @default("")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  name         String
+  barcodes     String   @default("[]") // JSON array of barcode strings
+  holooCode    String   @default("")
+  unit         String   @default("عدد")
+  brand        String   @default("")
+  category     String   @default("عمومی")
+  providerId   String?
+  buyPrice     Float    @default(0)
+  sellPrice    Float    @default(0)
+  sellPrice2   Float    @default(0) // discounted sell price
+  stock        Int      @default(0)
+  reorderLevel Int      @default(12)
+  imageUrl     String   @default("")
+  notes        String   @default("")
+  active       Boolean  @default(true)
+  inHoloo      Boolean  @default(true)
+  lastPriceCheck    String @default("") // ISO date (yyyy-mm-dd) of last daily printed-price verification
+  lastCheckedPrice  Float  @default(0)  // printed price at the moment of last verification
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Order {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  providerId   String
+  providerName String
+  createdById  String
+  createdByName String
+  status       String   @default("SUBMITTED") // DRAFT SUBMITTED APPROVED RECEIVING RECEIVED VERIFIED ACCOUNTED DONE CANCELLED
+  deliveryDate String // ISO date
+  payMethod    String   @default("CASH") // CASH | CHEQUE | POS — round-19: کارتخوان فروشگاه
+  paymentRef   String   @default("") // round-19: مرجع پرداخت — شماره چک/سریال صیاد/۴ رقم آخر کارت
+  notes        String   @default("")
+  totalAmount  Float    @default(0)
+  history      String   @default("[]") // JSON [{at,userId,userName,action,detail}]
+  checkedById   String  @default("") // round-15: بازبینی/اصلاح حسابدار هنگام تحویل
+  checkedByName String  @default("")
+  checkedAt     String  @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model OrderItem {
+  id            String  @id @default(cuid())
+  orderId       String
+  productId     String
+  productName   String
+  barcode       String  @default("")
+  qty           Int
+  unitBuyPrice  Float   @default(0)
+  printedPrice  Float? // price printed on product, corrected at receiving
+  discount      Float   @default(0)
+  vat           Float   @default(9)
+  receivedQty   Int?
+  status        String  @default("PENDING") // PENDING RECEIVED SHORT REJECTED
+  note          String  @default("")
+  expiryDate    String  @default("") // yyyy-mm-dd — recorded at receiving for perishables
+  returned      Boolean @default(false) // round-15: مرجوع در لحظهٔ تحویل (قیمت چاپی/انقضا کوتاه/…)
+  returnReason  String  @default("")
+  missingQty    Int     @default(0) // round-15: کسری نهایی تأییدشده توسط حسابدار
+}
+
+// ───────────────────────── Finance ─────────────────────────
+
+model Cheque {
+  id             String   @id @default(cuid())
+  number         String   @default("")
+  amount         Float
+  orderId        String?
+  orderCode      String   @default("")
+  recipientName  String
+  recipientPhone String   @default("")
+  writtenAt      String // ISO
+  dueDate        String // ISO
+  periodDays     Int      @default(30)
+  status         String   @default("PENDING_OWNER") // PENDING_OWNER SIGNED DELIVERED CLEARED REJECTED RETURNED
+  ownerNote      String   @default("")
+  sayadSerial    String   @default("") // سریال صیاد (قانون جدید چک)
+  selfIssued     Boolean  @default(false) // چک مستقل ثبت‌شده توسط مالک/مدیر (بدون سفارش)
+  holooReceiptNo String   @default("") // رسید ثبت در هلو
+  repId          String   @default("") // چه کسی از طرف تأمین‌کننده چک را گرفت
+  repName        String   @default("")
+  createdById    String
+  createdByName  String
+  history        String   @default("[]")
+  createdAt      DateTime @default(now())
+}
+
+// پرداخت‌های غیرچکی مستقل (نقد/کارت‌خوندهٔ نماینده/کارت به کارت) — قابل ثبت توسط مالک و مدیران
+model Payment {
+  id             String   @id @default(cuid())
+  kind           String   @default("CASH") // CASH | POS | TRANSFER | OTHER
+  amount         Float
+  orderId        String   @default("")
+  orderCode      String   @default("")
+  providerName   String   @default("")
+  repId          String   @default("")
+  repName        String   @default("")
+  paidAt         String // ISO
+  holooReceiptNo String   @default("")
+  note           String   @default("")
+  createdById    String
+  createdByName  String
+  history        String   @default("[]")
+  createdAt      DateTime @default(now())
+}
+
+// سقف هزینه‌کرد در هر دوره (روز/هفته/ماه/فصل/سال) per روش پرداخت — اعتبار بازار
+model PayLimit {
+  id            String   @id @default(cuid())
+  period        String // DAY | WEEK | MONTH | SEASON | YEAR
+  dateKey       String   @default("") // DAY: iso | WEEK: iso شنبه | MONTH: 1405-08 | SEASON: 1405-S2 | YEAR: 1405 | "" = قاعدهٔ پیش‌فرض
+  method        String   @default("ALL") // ALL | CHEQUE | CASH | POS
+  maxAmount     Float
+  maxCheques    Int      @default(0) // 0 = بدون محدودیت تعداد
+  note          String   @default("")
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+model Holiday {
+  id         String  @id @default(cuid())
+  date       String  @unique // yyyy-mm-dd (gregorian)
+  title      String
+  source     String  @default("manual") // manual | keybit | builtin | timeir | seed
+  kind       String  @default("HOLIDAY") // HOLIDAY (تعطیل رسمی) | OCCASION (مناسبت — تعطیل نیست)
+  hijriLabel String  @default("") // e.g. «۱۳ رجب ۱۴۴۷» — برای مناسبت‌های قمری
+  solar      Boolean @default(false) // true = مناسبت خورشیدی ثابت (نوروز، ۲۲ بهمن…)
+}
+
+// ───────────────────────── Tasks, SOPs, Knowledge ─────────────────────────
+
+model Task {
+  id           String   @id @default(cuid())
+  title        String
+  description  String   @default("")
+  type         String   @default("TASK") // TASK | CHECKLIST | CLEANING | OTHER
+  status       String   @default("OPEN") // OPEN IN_PROGRESS PAUSED DONE
+  priority     String   @default("NORMAL") // LOW NORMAL HIGH URGENT
+  assignedToId String
+  assignedToName String
+  createdById  String
+  createdByName String
+  dueDate      String   @default("")
+  pauseNote    String   @default("")
+  points       Int      @default(10)
+  sopId        String?
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+}
+
+model SOP {
+  id          String   @id @default(cuid())
+  title       String
+  category    String   @default("عمومی")
+  steps       String   @default("[]") // JSON [{title, detail}]
+  createdById String
+  updatedBy   String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ───────────────────────── Communication ─────────────────────────
+
+model WallPost {
+  id         String   @id @default(cuid())
+  authorId   String
+  authorName String
+  title      String
+  content    String
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  fromId    String
+  fromName  String
+  toId      String
+  body      String
+  attachment String   @default("") // JSON {name,kind,size,dataUrl} — فایل/تصویر امن (≤512KB)
+  scheduledFor String @default("") // ISO datetime — پیام زمان‌بندی‌شده
+  status    String    @default("SENT") // SENT | SCHEDULED
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String
+  color     String   @default("#f6e7c1")
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Feedback {
+  id         String   @id @default(cuid())
+  userId     String?
+  authorName String   @default("ناشناس")
+  type       String   @default("ANON") // ANON | IDEA
+  content    String
+  status     String   @default("NEW") // NEW REVIEWING ACCEPTED REJECTED IMPLEMENTED
+  response   String   @default("")
+  points     Int      @default(0)
+  createdAt  DateTime @default(now())
+}
+
+// ───────────────────────── Gamification ─────────────────────────
+
+model Award {
+  id            String   @id @default(cuid())
+  userId        String
+  userName      String
+  points        Int
+  reason        String
+  awardedById   String
+  awardedByName String
+  createdAt     DateTime @default(now())
+}
+
+// ───────────────────────── Audit ─────────────────────────
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  userName  String
+  action    String
+  entity    String   @default("")
+  entityId  String   @default("")
+  detail    String   @default("")
+  createdAt DateTime @default(now())
+}
+
+// ───────────────────────── Shelf & floor ─────────────────────────
+
+model Planogram {
+  id            String   @id @default(cuid())
+  name          String
+  section       String   @default("")
+  rows          Int      @default(3)
+  cols          Int      @default(6)
+  layout        String   @default("[]") // JSON [[productId|null,...],...]
+  status        String   @default("DRAFT") // DRAFT PUBLISHED ARCHIVE
+  publishedById String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model RefillRequest {
+  id              String   @id @default(cuid())
+  planogramId     String?
+  productId       String?
+  productName     String
+  qty             Int      @default(1)
+  requestedById   String
+  requestedByName String
+  status          String   @default("OPEN") // OPEN READY DELIVERED
+  createdAt       DateTime @default(now())
+}
+
+model CustomerRequest {
+  id          String   @id @default(cuid())
+  productName String
+  productId   String?
+  count       Int      @default(1)
+  lastById    String   @default("")
+  lastByName  String   @default("")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ───────────────────────── Sales floor ─────────────────────────
+
+model Customer {
+  id               String   @id @default(cuid())
+  name             String
+  phone            String   @default("")
+  notes            String   @default("")
+  preferences      String   @default("")
+  favorite         Boolean  @default(false)
+  tier             String   @default("REGULAR") // VIP | LOYAL | REGULAR | NEW | AT_RISK | DORMANT — RFM-based (Hughes 1994)
+  birthday         String   @default("") // jalali yyyy-mm-dd — هدیهٔ تولد (Experian: 481% بازتری)
+  anniversary      String   @default("")
+  householdSize    Int      @default(0)
+  childrenAges     String   @default("[]") // JSON number[]
+  preferredChannel String   @default("NONE") // SMS | WHATSAPP | CALL | NONE
+  consentMarketing Boolean  @default(false)
+  tags             String   @default("[]") // JSON ["سس گوجه","بدون لاکتوز"]
+  joinedAt         String   @default("")
+  points           Int      @default(0)
+  lastVisitAt      String   @default("")
+  createdById      String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// جریان رخداد مشتری — شکل دادهٔ آمادهٔ تحلیل هوش مصنوعی (append-only)
+model CustomerEvent {
+  id         String   @id @default(cuid())
+  customerId String
+  type       String // VISIT | PURCHASE | REQUEST | SUGGESTION_GIVEN | SUGGESTION_ACCEPTED | COMPLAINT | REWARD | BIRTHDAY_GIFT | CAMPAIGN | NOTE | WINBACK
+  payload    String   @default("{}") // JSON آزاد
+  at         DateTime @default(now())
+  userId     String   @default("")
+  userName   String   @default("")
+}
+
+// کمپین بازاریابی — تولد/بازگشت/VIP/پیشنهاد ویژه
+model Campaign {
+  id            String   @id @default(cuid())
+  name          String
+  kind          String   @default("OFFER") // BIRTHDAY | WINBACK | VIP_EVENT | OFFER | OTHER
+  targetFilter  String   @default("{}") // JSON {tiers:[], minVisits:0, inactiveDays:0}
+  message       String   @default("")
+  status        String   @default("DRAFT") // DRAFT | SCHEDULED | DONE
+  scheduledFor  String   @default("")
+  resultStats   String   @default("{}") // JSON {targets,reached,replies}
+  createdById   String
+  createdByName String
+  createdAt     DateTime @default(now())
+}
+
+// شکایت مشتری — service recovery paradox: حلِ زیر ۲۴ ساعت + جبران کوچک
+model Complaint {
+  id                String    @id @default(cuid())
+  customerId        String
+  customerName      String    @default("")
+  category          String    @default("GENERAL") // PRODUCT | SERVICE | PRICE | QUEUE | GENERAL
+  severity          String    @default("NORMAL") // LOW | NORMAL | HIGH
+  body              String
+  status            String    @default("OPEN") // OPEN | RESOLVING | RESOLVED
+  resolutionNote    String    @default("")
+  compensationValue Float     @default(0)
+  assignedToId      String    @default("")
+  openedAt          DateTime  @default(now())
+  resolvedAt        DateTime?
+}
+
+// پیشنهاد فروش ثبت‌شدهٔ پرسنل + لایهٔ صداقت (random verification sampling — AS 2315)
+model SaleEngagement {
+  id             String   @id @default(cuid())
+  customerId     String   @default("")
+  customerName   String   @default("")
+  staffId        String
+  staffName      String
+  kind           String   @default("SUGGESTION") // SUGGESTION | HELP | CHECKOUT_ASSIST
+  productNames   String   @default("[]") // JSON
+  outcome        String   @default("PENDING") // PENDING | CONVERTED | REJECTED | VERIFIED_OK | VERIFIED_BAD
+  orderCode      String   @default("") // کد PreOrder در صورت تبدیل
+  claimNote      String   @default("")
+  verifySampled  Boolean  @default(false) // نمونهٔ تصادفی امروز سیستم
+  verifiedById   String   @default("")
+  verifiedByName String   @default("")
+  verifyNote     String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// فعالیت فراتر از وظایف تعریف‌شده — ثبت کارمند + قدردانی مدیر
+model ExtraActivity {
+  id             String   @id @default(cuid())
+  userId         String
+  userName       String
+  title          String
+  description    String   @default("")
+  minutes        Int      @default(15)
+  forDate        String // iso
+  status         String   @default("PENDING") // PENDING | ACKNOWLEDGED | REWARDED
+  rewardPoints   Int      @default(0)
+  reviewedById   String   @default("")
+  reviewedByName String   @default("")
+  createdAt      DateTime @default(now())
+}
+
+// ── دانشنامه و آموزش (مقالات + آموزش گام‌به‌گام) — بازپخش تور توسط ادمین
+model KbArticle {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  title         String
+  category      String   @default("عمومی")
+  body          String // markdown-ish
+  tags          String   @default("[]")
+  sortOrder     Int      @default(0)
+  updatedById   String   @default("")
+  updatedByName String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model TourState {
+  id        String   @id @default(cuid())
+  userId    String
+  tourKey   String   @default("main")
+  done      Boolean  @default(false)
+  step      Int      @default(0)
+  updatedAt DateTime @updatedAt
+  @@unique([userId, tourKey])
+}
+
+// ── زون‌های فروشگاه (Underhill zoning + ABC cycle-count cadence) — مالک/جانشین/حداقل نیرو
+model Zone {
+  id             String   @id @default(cuid())
+  name           String   @unique // هم‌نام دستهٔ کالا یا زون فیزیکی
+  type           String   @default("DRY") // DECOMPRESSION | POWER_AISLE | PERISHABLE | DRY | CHECKOUT | BACKROOM
+  criticality    String   @default("B") // A | B, C — A = هفتگی، C = ماهانه
+  countFrequency String   @default("MONTHLY") // WEEKLY | BIWEEKLY | MONTHLY
+  ownerId        String   @default("")
+  ownerName      String   @default("")
+  backupId       String   @default("")
+  backupName     String   @default("")
+  minStaff       Int      @default(1)
+  color          String   @default("#77934a")
+  notes          String   @default("")
+  updatedAt      DateTime @updatedAt
+}
+
+model PreOrder {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  customerId    String?
+  customerName  String
+  items         String   @default("[]") // JSON [{productId,name,qty,price}]
+  total         Float    @default(0)
+  createdById   String
+  createdByName String
+  status        String   @default("NEW") // NEW CASHIER_EDITED READY DONE CANCELLED
+  cashierId     String?
+  cashierName   String   @default("")
+  note          String   @default("")
+  payMethod     String   @default("") // round-19: نقدی | کارتخوان فروشگاه | چک
+  paymentRef    String   @default("") // round-19: مرجع پرداخت
+  history       String   @default("[]") // round-19: JSON [{at,byName,action,detail}] — دفتر تغییرات صندوق
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String @default("")
+}
+
+model BriefingSnapshot {
+  id            String   @id @default(cuid())
+  forDate       String   @unique // ISO date the briefing is for
+  jalaliLabel   String   @default("")
+  data          String   @default("{}") // full briefing JSON
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// Per-user notification preferences: muted categories + temporary snooze
+model NotifPref {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  mutedCats   String   @default("[]") // JSON array: order | cheque | stock | task | team
+  snoozeUntil String   @default("") // ISO datetime; empty = active
+  updatedAt   DateTime @updatedAt
+}
+
+// ───────────────────────── علم موجودی (Science toolkit) ─────────────────────────
+
+// دفتر ضایعات — waste/shrinkage log (shrinkage research: 1.36-1.48% of sales, mostly preventable)
+model WasteLog {
+  id            String   @id @default(cuid())
+  productId     String?
+  productName   String
+  category      String   @default("عمومی")
+  qty           Float    @default(0)
+  unit          String   @default("عدد")
+  reason        String   @default("EXPIRED") // EXPIRED | DAMAGED | SPOILED | THEFT | OTHER
+  estValue      Float    @default(0) // تومان
+  forDate       String // yyyy-mm-dd (iso)
+  note          String   @default("")
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// شمارش چرخه‌ای — cycle count sheet (IRA research: ~60% of records wrong at any time)
+model StockCount {
+  id            String    @id @default(cuid())
+  title         String
+  category      String    @default("عمومی")
+  forDate       String
+  status        String    @default("OPEN") // OPEN | CLOSED
+  items         String    @default("[]") // JSON [{productId,productName,systemQty,countedQty,diff,unit}]
+  accuracy      Float?    // IRA % at close
+  diffValue     Float     @default(0) // absolute value diff (تومان)
+  createdById   String    @default("")
+  createdByName String    @default("")
+  closedAt      DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+// استودیوی دمو — generated virtual demo companies (self-contained JSON snapshots, zero pollution of live data)
+model DemoCompany {
+  id            String   @id @default(cuid())
+  name          String
+  profile       String // gourmet_chain | hypermarket | boutique | neighborhood
+  branchCount   Int      @default(1)
+  description   String   @default("")
+  data          String @default("{}") // full generated simulation JSON
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// ───────────────────────── انعطاف پرداخت (cheque-day flexibility engine) ─────────────────────────
+// Treasury-management practice: every settlement date carries an org-wide tolerance window.
+// Rules resolve DAY > WEEK > MONTH > SEASON > YEAR > GLOBAL (most specific wins).
+
+model FlexRule {
+  id            String   @id @default(cuid())
+  scope         String   @default("GLOBAL") // GLOBAL | YEAR | SEASON | MONTH | WEEK | DAY
+  label         String // «سراسری» | «۱۴۰۵» | «تابستان ۱۴۰۵» | «آبان ۱۴۰۵» | «هفتهٔ ۲ آبان» | تاریخ دقیق
+  dateKey       String   @default("") // "1405" | "1405-S2" | "1405-08" | iso saturday | iso day
+  days          Int      @default(2) // ±N days the due date may shift
+  note          String   @default("")
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// ───────────────────────── آرشیو اسناد (hybrid digital-physical records archive) ─────────────────────────
+// Records-management (ISO 15489): persistent doc code + physical custody pointer.
+
+model ArchiveBinder {
+  id        String   @id @default(cuid())
+  code      String   @unique // B-01 …
+  title     String // نام گروه اسناد، e.g. «لبنیات — کاله، رامک، پگاه»
+  groupName String   @default("") // دستهٔ اصلی
+  cabinet   String   @default("۱") // کابینت
+  shelf     String   @default("۱") // طبقه
+  colorTag  String   @default("#0e7a4a")
+  capacity  Int      @default(250)
+  notes     String   @default("")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model ArchiveDoc {
+  id            String   @id @default(cuid())
+  code          String   @unique // B01-1405-0007 (persistent identifier — never changes)
+  title         String
+  docType       String   @default("INVOICE") // INVOICE | CHEQUE_DOC | RECEIPT | CONTRACT | STATEMENT | OTHER
+  party         String // طرف حساب (تأمین‌کننده / شرکت / نهاد)
+  partyId       String   @default("") // لینک به Provider (در صورت تطبیق)
+  amount        Float    @default(0)
+  docDate       String   @default("") // yyyy-mm-dd تاریخ سند
+  invoiceNo     String   @default("") // شماره فاکتور روی سند فیزیکی
+  binderId      String
+  binderCode    String   @default("")
+  seq           Int      @default(0) // ترتیب قرارگیری در زونکن
+  status        String   @default("IN_BINDER") // IN_BINDER | BORROWED | DESTROYED
+  borrowById    String   @default("")
+  borrowByName  String   @default("")
+  borrowAt      String   @default("") // ISO datetime of borrow
+  refOrderCode  String   @default("")
+  notes         String   @default("")
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+  // ── round-14: چرخهٔ حیات اسناد (ISO 15489) + مرجع هلو + وضعیت مالی + نماینده
+  lifecycle     String   @default("ACTIVE") // CAPTURED | CLASSIFIED | ACTIVE | SEMI_ACTIVE | RETENTION_DUE | DISPOSAL_PENDING | DISPOSED
+  fiscalYear    String   @default("") // سال مالی جلالی — لنگر قانونی نگهداری
+  retentionYears Int     @default(10) // قانون تجارت ماده ۱۳: ۱۰ سال
+  legalHold     Boolean  @default(false) // توقف دفع (اختلاف/رسیدگی مالیاتی)
+  disposeAfterIso String @default("")
+  confidentiality String @default("STAFF") // PUBLIC | STAFF | MANAGEMENT
+  disposalApprovedBy String @default("") // تأییدکنندهٔ دوم (OWNER/GM) — جداسازی وظایف
+  disposalMethod String  @default("") // SHRED | BURN | DIGITAL_DELETE
+  disposalDate  String   @default("")
+  holooInvoiceNo String  @default("") // شماره فاکتور خرید در هلو — برای جست‌وجوی ثانیه‌ای
+  holooReceiptNo String  @default("") // شماره رسید پرداخت در هلو
+  paymentStatus String   @default("UNPAID") // UNPAID | PARTIAL | PAID
+  paidAmount    Float    @default(0)
+  deliveryAt    String   @default("") // ISO datetime تحویل کالا
+  submittedAt   String   @default("") // ISO datetime ثبت اطلاعات در سامانه
+  repId         String   @default("") // نمایندهٔ طرف حساب در این سند
+  repName       String   @default("")
+  editedAt      String   @default("")
+  editedByName  String   @default("")
+}
+
+// اقلام سند آرشیو — invoice line items (کامل‌کردن تاریخچهٔ هر کالا در سطح سند فیزیکی)
+model ArchiveDocItem {
+  id          String @id @default(cuid())
+  docId       String
+  productId   String @default("")
+  productName String
+  barcode     String @default("")
+  qty         Float  @default(0)
+  unit        String @default("عدد")
+  unitPrice   Float  @default(0)
+  expiryDate  String @default("")
+  returned    Boolean @default(false) // قلم مرجوعی — در UI قرمز می‌درخشد
+  returnReason String @default("")
+  rejected    Boolean @default(false) // قلم نکول/مردود
+  rejectReason String @default("")
+  missing     Boolean @default(false) // اقلام نیامدهٔ فاکتور
+}
+
+// زنجیرهٔ custody سند (ISO 23081 / ARMA Integrity) — ضبط استقراض/بازگشت/انتقال/دفع
+model ArchiveCustody {
+  id        String   @id @default(cuid())
+  docId     String
+  docCode   String   @default("")
+  action    String // BORROW | RETURN | MOVE | SCAN | EDIT | DISPOSAL_REQUEST | DISPOSAL_DONE | PAYMENT | DELIVERY | HOLOO_REF
+  userId    String   @default("")
+  userName  String   @default("")
+  detail    String   @default("")
+  dueBackIso String  @default("") // مهلت بازگرداندن فایل امانی
+  createdAt DateTime @default(now())
+}
+
+// رخدادهای سند: تحویل، پرداخت (POS/چک/نقد), مرجوعی، مردودی، کسری، ثبت هلو
+// — هر رخداد وابسته به نمایندهٔ طرف حساب (SalesRep) است
+model DocEvent {
+  id            String   @id @default(cuid())
+  docId         String   @default("")
+  docCode       String   @default("")
+  kind          String // DELIVERY | PAYMENT_POS | PAYMENT_CHEQUE | PAYMENT_CASH | PAYMENT_TRANSFER | RETURN | REJECT | SHORTAGE | HOLOO_INVOICE | HOLOO_RECEIPT | NOTE
+  at            String // ISO datetime
+  amount        Float    @default(0)
+  repId         String   @default("")
+  repName       String   @default("")
+  holooRef      String   @default("") // شماره فاکتور/رسید هلو
+  note          String   @default("")
+  items         String   @default("[]") // JSON [{productName,qty,reason}] برای مرجوعی/مردودی/کسری
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// ─────────────── شمارش روزانهٔ زون (blind zone count) ───────────────
+// Merchandiser روزانه موجودی زون خود را بدون دیدن عدد سیستم می‌شمارد؛
+// سامانه فقط هشدار مغایرت با هلو می‌دهد (جلوگیری از anchoring bias در شمارش).
+model ZoneCount {
+  id            String   @id @default(cuid())
+  forDate       String   // yyyy-mm-dd
+  zone          String   // نام زون / دستهٔ کالا
+  userId        String
+  userName      String
+  items         String   @default("[]") // JSON [{productId,productName,unit,countedQty,systemQty,diff,within}] — systemQty/diff هرگز به مرچندایزر ارسال نمی‌شود
+  status        String   @default("IN_PROGRESS") // IN_PROGRESS | MATCHED | MISMATCH
+  mismatchCount Int      @default(0) // برای مرچندایزر صفر ارسال می‌شود؛ مدیران عدد واقعی می‌بینند
+  totalItems    Int      @default(0)
+  tolerance     Float    @default(2) // تلورانس مغایرت مجاز (درصد)
+  recheckCount  Int      @default(0) // چند بار «دوباره بشمار» املایش شده
+  mismatchReason String  @default("") // دلیل نهایی مغایرت از زبان کارمند (برای مدیر)
+  confirmStatus String   @default("PENDING") // PENDING | CONFIRMED | QUERIED — تأیید ناظر (مثلاً حسابدار)
+  confirmedById String   @default("")
+  confirmedByName String @default("")
+  confirmedAt   String   @default("")
+  confirmNote   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([forDate, zone, userId])
+}
+
+// ─────────────── مرخصی و برنامهٔ تیم ───────────────
+model LeaveRequest {
+  id           String   @id @default(cuid())
+  userId       String
+  userName     String
+  type         String   @default("DAILY") // HOURLY | DAILY | SICK | UNPAID
+  fromDate     String   // iso
+  toDate       String   // iso
+  fromHour     String   @default("")
+  toHour       String   @default("")
+  days         Float    @default(1)
+  reason       String   @default("")
+  status       String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  approverId   String   @default("")
+  approverName String   @default("")
+  responseNote String   @default("")
+  replacementId   String @default("") // round-19: جانشین انتخابی (fuzzy search از کارکنان فعال)
+  replacementName String @default("")
+  createdAt    DateTime @default(now())
+}
+
+// round-19: روزهای غیرکاری اداری — جمعه‌ها از تاریخ خودکار استنتاج می‌شوند و رکورد نمی‌خواهند
+model Offday {
+  id            String   @id @default(cuid())
+  date          String   @unique // jalali yyyy-mm-dd
+  kind          String   @default("OFFDAY") // OFFDAY | FRIDAY
+  note          String   @default("")
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// ─────────────── ساعت کار تیم (SPLH) ───────────────
+model LaborHour {
+  id          String   @id @default(cuid())
+  userId      String
+  userName    String
+  forDate     String   // iso
+  hours       Float
+  kind        String   @default("REGULAR") // REGULAR | OVERTIME
+  note        String   @default("")
+  createdById String   @default("")
+  createdAt   DateTime @default(now())
+  @@unique([userId, forDate])
+}
+
+// ── موتور قواعد اعلان (visual workflow) — ادمین بدون کد، مسیر «رخداد ← مخاطب» را ویرایش می‌کند
+model NotifRule {
+  id            String   @id @default(cuid())
+  key           String   @unique // e.g. leave.requested | zonecount.mismatch | urgent.new
+  name          String
+  event         String // trigger event key
+  enabled       Boolean  @default(true)
+  severity      String   @default("important") // critical | important | info
+  icon          String   @default("🔔")
+  targets       String   @default("{}") // JSON {roles:[], users:[], fieldRef:""} — fieldRef مثل submitter/approver/zoneOwner
+  conditions    String   @default("[]") // JSON [{field,op,value}]
+  escalation    String   @default("[]") // JSON [{afterMinutes,to:{roles,users},mode:"notify"|"reassign"}]
+  digest        String   @default("{}") // JSON {enabled, slots:["09:00","14:00","19:00"]}
+  dedupeHours   Int      @default(12)
+  note          String   @default("")
+  updatedById   String   @default("")
+  updatedByName String   @default("")
+  updatedAt     DateTime @updatedAt
+}
+
+// صندوق خروجی اعلان‌ها — ساخته‌شده توسط موتور قواعد (merged با هشدارهای محاسباتی)
+model NotifOutbox {
+  id          String   @id @default(cuid())
+  ruleKey     String   @default("")
+  severity    String   @default("info") // critical | important | info
+  icon        String   @default("🔔")
+  title       String
+  detail      String   @default("")
+  go          String   @default("") // مسیر hash برای پرش
+  targetRoles String   @default("[]") // JSON
+  targetUsers String   @default("[]") // JSON user ids
+  dedupeKey   String   @default("")
+  readBy      String   @default("[]") // JSON user ids
+  createdAt   DateTime @default(now())
+}
+
+// ── پرسش فوری — کاربر سوال فوری دارد؛ مدیران مطلع می‌شوند بدون قطع‌کردن کار حیاتی‌شان
+model UrgentQuestion {
+  id             String    @id @default(cuid())
+  question       String
+  context        String    @default("") // کالا/بستر سوال
+  askedById      String
+  askedByName    String
+  answered       Boolean   @default(false)
+  answer         String    @default("")
+  answeredById   String    @default("")
+  answeredByName String    @default("")
+  answeredAt     DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+// ── نظارت و تأیید — ادمین تعیین می‌کند چه کسی چه بخشی را تأیید/نظارت کند (مثلاً حسابدار آمار شمارش)
+model Oversight {
+  id        String   @id @default(cuid())
+  domain    String   @unique // zonecount | pricecheck | leaves | extra-activity
+  userIds   String   @default("[]") // JSON user ids — ناظران/تأییدکنندگان
+  note      String   @default("")
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────── خط زمانی همگام‌سازی هلو آپکس (ledger + snapshot) ───────────────
+model SyncLedger {
+  id            String    @id @default(cuid())
+  kind          String    @default("PRODUCTS") // PRODUCTS | SUPPLIERS | FULL
+  source        String    @default("holoo-apex")
+  status        String    @default("RUNNING") // RUNNING | SUCCESS | FAILED | ROLLED_BACK
+  stats         String    @default("{}") // JSON {created,updated,skipped,errors}
+  log           String    @default("[]") // JSON [{at,line}]
+  snapshot      String    @default("[]") // JSON pre-sync snapshot [{productId,holooCode,stock,buyPrice,sellPrice}] برای بازگردانی
+  startedById   String    @default("")
+  startedByName String    @default("")
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+}
+
+// ═══════════════════════ ROUND 15 ═══════════════════════
+
+// ── تولیدکننده (Manufacturer) — رأس زنجیرهٔ تأمین؛ توزیع‌کننده‌ها/مأموران به آن وصل می‌شوند
+model Manufacturer {
+  id        String   @id @default(cuid())
+  name      String // e.g. «کاله»، «میهن»، «گلدیس»
+  country   String   @default("ایران")
+  website   String   @default("")
+  phone     String   @default("")
+  brands    String   @default("[]") // JSON array of brand names — تطبیق با Product.brand
+  notes     String   @default("")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── حقوق و دستمزد (payroll) — مطابق قانون کار ایران؛ مبالغ به ریال
+// پروفایل هر پرسنل: مقادیر پایه + تنظیمات فرمول (پیش‌فرض‌ها از Setting «payroll.defaults»)
+model SalaryProfile {
+  id                  String   @id @default(cuid())
+  personnelId         String   @unique
+  baseSalary          Float    @default(0) // حقوق پایهٔ ماهانه
+  housing             Float    @default(0) // حق مسکن
+  foodAllowance       Float    @default(0) // بن کارگری
+  maritalAllowance    Float    @default(0) // حق تأهل
+  childAllowance      Float    @default(0) // حق اولاد هر فرزند (شرط: ≥۷۲۰ روز سابقه)
+  childCount          Int      @default(0)
+  seniorityBase       Float    @default(0) // پایهٔ سنوات روزانه
+  overtimeDivisor     Float    @default(220) // مخرج مزد ساعتی (قانون: ۲۲۰)
+  includeBenefitsInOT Boolean  @default(false) // آیا مزایا در مأخذ اضافه‌کاری وارد شوند
+  active              Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+}
+
+// یک ماه حقوقی یک پرسنل — جمع‌های محاسبه‌شده اینجا کش می‌شوند (منبع حقیقت: SalaryDay/Adjust)
+model SalaryMonth {
+  id                    String   @id @default(cuid())
+  personnelId           String
+  personnelName         String   @default("")
+  jy                    Int // سال شمسی
+  jm                    Int // ماه شمسی ۱..۱۲
+  status                String   @default("DRAFT") // DRAFT | CONFIRMED | PAID
+  workDays              Float    @default(0) // روز کارکرد مؤثر
+  overtimeHours         Float    @default(0) // جمع اضافه‌کاری عادی
+  holidayOtHours        Float    @default(0) // جمع جمعه/تعطیل‌کاری
+  nightHours            Float    @default(0) // جمع شب‌کاری
+  gross                 Float    @default(0) // جمع حقوق و مزایا
+  insurance             Float    @default(0) // کسور بیمه (۷٪)
+  tax                   Float    @default(0) // کسور مالیات پلکانی
+  otherDeductions       Float    @default(0) // جرایم/مساعده
+  net                   Float    @default(0) // خالص پرداختی
+  seniorityAccrual      Float    @default(0) // سنوات این ماه (ذخیرهٔ سالانه)
+  payslipNo             String   @default("") // شمارهٔ فیش
+  confirmedById         String   @default("")
+  confirmedByName       String   @default("")
+  confirmedAt           String   @default("")
+  paidAt                String   @default("")
+  note                  String   @default("")
+  createdAt             DateTime @default(now())
+  @@unique([personnelId, jy, jm])
+}
+
+// کارکرد روزانه — اضافه‌کاری/شب‌کاری/تعطیل‌کاری به دقیقه برای هر روز ماه
+model SalaryDay {
+  id               String @id @default(cuid())
+  monthId          String
+  forDate          String // iso yyyy-mm-dd
+  otMinutes        Int    @default(0) // اضافه‌کاری روز عادی
+  holidayOtMinutes Int    @default(0) // جمعه/تعطیل‌کاری (ضریب متفاوت)
+  nightMinutes     Int    @default(0) // شب‌کاری ۲۲–۶
+  absence          String @default("NONE") // NONE | FULL | HALF — غیبت/تاخیر روزانه
+  dayKind          String @default("WORK") // WORK | OFF | FRIDAY | HOLIDAY | LEAVE
+  note             String @default("")
+  @@unique([monthId, forDate])
+}
+
+// اقلام متغیر ماه: تشویقی، جریمه، پورسانت (فقط مالک)، مساعده و…
+model SalaryAdjust {
+  id            String   @id @default(cuid())
+  monthId       String
+  kind          String // REWARD | FINE | COMMISSION | ADVANCE | OTHER
+  amount        Float
+  note          String   @default("") // جریمه بدون شرح قانونی ثبت نمی‌شود
+  ownerOnly     Boolean  @default(false) // پورسانت — فقط مالک/root می‌بیند
+  createdById   String   @default("")
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+}
+
+// ── پلان فروشگاه (round-16) — نقشهٔ دوبعدی طبقه‌ها با بلوک‌های پیش‌ساخته ──
+// هر کسب‌وکار چند طبقه/فضا دارد؛ هر طبقه یک FloorPlan با بلوک‌های چیدمان‌شدنی است.
+model FloorPlan {
+  id         String   @id @default(cuid())
+  name       String // «طبقهٔ همکف»، «انبار میانه»…
+  floorIndex Int      @default(0) // ترتیب طبقه (۰ = همکف)
+  width      Int      @default(1200) // بوم بر حسب واحد منطقی (px)
+  height     Int      @default(800)
+  shape      String   @default("[]") // JSON [{x,y}] رئوس چندضلعی زمین (سانتیمتر) — خالی = مستطیلی
+  unitLabel  String   @default("سانتی‌متر")
+  archived   Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+}
+
+// بلوک پیش‌ساخته روی بوم: قفسه، راهرو، یخچال (بسته/باز/ویترینی/بستنی)، صندوق U، ورودی…
+// meta = JSON آزاد: {planogramId?, zoneId?, capacity?, notes?} — zoneId در Zone رجیستر می‌شود
+model FloorBlock {
+  id       String @id @default(cuid())
+  planId   String
+  kind     String // AISLE | SHELF | GONDOLA | FRIDGE_CLOSED | FRIDGE_OPEN | FRIDGE_SHOWCASE | FREEZER_ICECREAM | CASHIER_U | CHECKOUT | ENTRANCE | STORAGE | PRODUCE | BAKERY | DELI | CUSTOM
+  x        Int    @default(0)
+  y        Int    @default(0)
+  w        Int    @default(120)
+  h        Int    @default(60)
+  rotation Int    @default(0) // 0 | 90 | 180 | 270
+  label    String @default("")
+  zoneName String @default("") // نام زون (پیوند با Zone.name)
+  meta     String @default("{}") // JSON: {planogramId, responsibleId, capacity, note}
+}
+
+// ── مدیریت دسته‌بندی محصولات (round-17) — CRUD کامل با آیکون/لوگو/رنگ ──
+// SSOT نام دسته = Product.category (string). حذف دسته، محصولات را «عمومی» می‌کند.
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  icon      String   @default("📦") // emoji
+  color     String   @default("#0e7a4a")
+  imageUrl  String   @default("") // لوگوی اختیاری (dataURL یا مسیر)
+  sort      Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── سیستم شیفت (round-17) — قالب هفتگی بر پایهٔ روز هفته ──
+// weekday = JS getDay(): 0=یکشنبه … 5=جمعه (آخر هفتهٔ ایران) … 6=شنبه (شروع هفتهٔ کاری)
+// شیفت می‌تواند >۴ ساعت باشد و حتی در روز تعطیل تعریف شود (توافق طرفین — مادهٔ ۵۹ اخلاقی فقط هشدار).
+// end <= start یعنی شیفت از نیمه‌شب می‌گذرد (شیفت شب).
+model Shift {
+  id        String   @id @default(cuid())
+  name      String // «صبح» / «عصر» / «شب»
+  weekday   Int // 0..6 (JS getDay)
+  start     String // "HH:MM"
+  end       String // "HH:MM"
+  staffNeed Int      @default(1) // تعداد نیروی موردنیاز این شیفت
+  color     String   @default("#0e7a4a")
+  active    Boolean  @default(true)
+  note      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// تخصیص واقعی پرسنل به شیفت در تاریخ مشخص (برنامهٔ روزانه) — double = شیفت دوم همان روز
+model ShiftAssignment {
+  id           String   @id @default(cuid())
+  date         String // ISO yyyy-mm-dd
+  shiftId      String
+  personnelId  String   @default("") // پروندهٔ پرسنل
+  personnelName String  @default("")
+  userId       String   @default("") // حساب کاربری (اختیاری)
+  double       Boolean  @default(false) // شیفت دوم — حقوق بر مبنای قرارداد
+  note         String   @default("")
+  createdById   String  @default("")
+  createdByName String  @default("")
+  createdAt    DateTime @default(now())
+  @@unique([date, shiftId, personnelId])
+}

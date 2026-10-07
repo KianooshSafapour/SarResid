@@ -1,0 +1,589 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faMoney, faNum, formatJalaliFull, formatJalaliShort, todayIso } from '@/lib/jalali'
+     7→import { ORDER_STATUSES, ORDER_FLOW } from '@/lib/constants'
+     8→import { SectionCard, Pill, EmptyState, SearchInput, Labeled, KeyValue, stockStatus, CATEGORY_EMOJI } from '@/components/app/ui-bits'
+     9→import { JalaliDatePicker, useHolidays } from '@/components/app/jalali-widgets'
+    10→import type { AppCtx } from '@/components/app/ui-bits'
+    11→import { Plus, X, ClipboardList, History, CheckCircle2, AlertTriangle, Pencil, Send, Ban, ChevronDown } from 'lucide-react'
+    12→import { cn } from '@/lib/utils'
+    13→
+    14→type Provider = { id: string; name: string; personName: string; phone: string; type: string; companyNames: string[]; productCount: number }
+    15→type Product = { id: string; name: string; barcodes: string[]; category: string; brand: string; unit: string; buyPrice: number; sellPrice: number; stock: number; reorderLevel: number; providerId: string | null; imageUrl: string }
+    16→type OrderRow = { id: string; code: string; providerName: string; status: string; deliveryDate: string; totalAmount: number; itemsCount: number; createdByName: string; isOverdue: boolean; payMethod: string; notes: string; history: any[]; createdAt: string }
+    17→type DraftItem = { productId: string; name: string; qty: number; unitBuyPrice: number }
+    18→
+    19→export default function OrdersView({ ctx }: { ctx: AppCtx }) {
+    20→  // param can be 'new' or an order id
+    21→  const [mode, setMode] = useState<'list' | 'new' | 'detail'>(ctx.param === 'new' ? 'new' : ctx.param ? 'detail' : 'list')
+    22→  useEffect(() => setMode(ctx.param === 'new' ? 'new' : ctx.param ? 'detail' : 'list'), [ctx.param])
+    23→
+    24→  if (mode === 'new') return <NewOrderWizard ctx={ctx} onDone={(id) => ctx.navigate('orders', id)} />
+    25→  if (mode === 'detail') return <OrderDetail ctx={ctx} orderId={ctx.param} onBack={() => ctx.navigate('orders')} />
+    26→  return <OrdersList ctx={ctx} onOpen={(id) => ctx.navigate('orders', id)} />
+    27→}
+    28→
+    29→/* ───────────────────────── List ───────────────────────── */
+    30→
+    31→function OrdersList({ ctx, onOpen }: { ctx: AppCtx; onOpen: (id: string) => void }) {
+    32→  const [orders, setOrders] = useState<OrderRow[]>([])
+    33→  const [status, setStatus] = useState('')
+    34→  const [q, setQ] = useState('')
+    35→  const [loading, setLoading] = useState(true)
+    36→
+    37→  const load = () => api<{ orders: OrderRow[] }>('/api/orders').then((d) => setOrders(d.orders)).finally(() => setLoading(false))
+    38→  useEffect(() => { load() }, [])
+    39→
+    40→  const filtered = useMemo(
+    41→    () => orders.filter((o) => (!status || o.status === status) && (!q || o.code.includes(q) || o.providerName.includes(q))),
+    42→    [orders, status, q]
+    43→  )
+    44→
+    45→  const canCreate = ['GM', 'PM', 'OM'].includes(ctx.user!.role)
+    46→
+    47→  return (
+    48→    <div className="space-y-4">
+    49→      <SectionCard
+    50→        title="سفارش‌های تأمین‌کننده"
+    51→        subtitle="از ثبت تا تحویل، تأیید انبار و حسابداری — همه در یک مسیر شفاف"
+    52→        icon={<ClipboardList size={18} />}
+    53→        actions={
+    54→          canCreate && (
+    55→            <button onClick={() => ctx.navigate('orders', 'new')} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-4 py-2.5 text-xs font-extrabold text-white shadow-lg transition hover:shadow-xl">
+    56→              <Plus size={15} /> سفارش جدید
+    57→            </button>
+    58→          )
+    59→        }
+    60→      >
+    61→        <div className="mb-4 flex flex-wrap items-center gap-2">
+    62→          <SearchInput value={q} onChange={setQ} placeholder="جستجوی کد سفارش یا تأمین‌کننده…" className="w-full sm:w-72" />
+    63→          <div className="flex flex-wrap gap-1.5">
+    64→            <FilterChip active={!status} label="همه" onClick={() => setStatus('')} />
+    65→            {['SUBMITTED', 'APPROVED', 'RECEIVING', 'RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE', 'CANCELLED'].map((s) => (
+    66→              <FilterChip key={s} active={status === s} label={ORDER_STATUSES[s].label} color={ORDER_STATUSES[s].color} onClick={() => setStatus(s)} />
+    67→            ))}
+    68→          </div>
+    69→        </div>
+    70→
+    71→        {loading ? (
+    72→          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 animate-pulse rounded-xl bg-muted" />)}</div>
+    73→        ) : filtered.length === 0 ? (
+    74→          <EmptyState emoji="📦" title="سفارشی یافت نشد" hint="با دکمه «سفارش جدید» اولین سفارش را ثبت کنید" />
+    75→        ) : (
+    76→          <div className="grid gap-2.5">
+    77→            {filtered.map((o) => {
+    78→              const st = ORDER_STATUSES[o.status]
+    79→              return (
+    80→                <button key={o.id} onClick={() => onOpen(o.id)} className="glow-card group rounded-2xl bg-white/70 p-3.5 text-right sm:p-4">
+    81→                  <div className="flex flex-wrap items-center gap-3">
+    82→                    <span className="flex h-11 w-11 items-center justify-center rounded-xl text-xl" style={{ background: st.bg }}>🚚</span>
+    83→                    <div className="min-w-0 flex-1">
+    84→                      <div className="flex flex-wrap items-center gap-2">
+    85→                        <span className="text-sm font-black">{o.code}</span>
+    86→                        <Pill label={st.label} color={st.color} bg={st.bg} />
+    87→                        {o.isOverdue && <Pill label="سرآمده ⚠️" color="#b3372f" bg="#fee2e2" />}
+    88→                        {o.payMethod === 'CHEQUE' && <Pill label="چکی" color="#8a6d10" bg="#fdf6dd" />}
+    89→                      </div>
+    90→                      <p className="mt-0.5 text-xs text-muted-foreground">
+    91→                        {o.providerName} • {faNum(o.itemsCount)} قلم • ثبت: {o.createdByName} • تحویل: {formatJalaliFull(o.deliveryDate)}
+    92→                      </p>
+    93→                    </div>
+    94→                    <span className="text-sm font-black text-[#8a6d10]">{faMoney(o.totalAmount)}</span>
+    95→                  </div>
+    96→                </button>
+    97→              )
+    98→            })}
+    99→          </div>
+   100→        )}
+   101→      </SectionCard>
+   102→    </div>
+   103→  )
+   104→}
+   105→
+   106→function FilterChip({ active, label, onClick, color }: { active: boolean; label: string; onClick: () => void; color?: string }) {
+   107→  return (
+   108→    <button
+   109→      onClick={onClick}
+   110→      className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', active ? 'border-transparent text-white shadow' : 'border-border bg-card text-foreground/70 hover:bg-secondary')}
+   111→      style={active ? { background: color || '#0e7a4a' } : {}}
+   112→    >
+   113→      {label}
+   114→    </button>
+   115→  )
+   116→}
+   117→
+   118→/* ───────────────────────── Create wizard ───────────────────────── */
+   119→
+   120→function NewOrderWizard({ ctx, onDone }: { ctx: AppCtx; onDone: (id: string) => void }) {
+   121→  const holidays = useHolidays()
+   122→  const [step, setStep] = useState(1)
+   123→  const [providers, setProviders] = useState<Provider[]>([])
+   124→  const [products, setProducts] = useState<Product[]>([])
+   125→  const [providerId, setProviderId] = useState('')
+   126→  const [company, setCompany] = useState('')
+   127→  const [draft, setDraft] = useState<Record<string, number>>({})
+   128→  const [deliveryDate, setDeliveryDate] = useState(todayIso().valueOf() ? addDays(1) : '')
+   129→  const [payMethod, setPayMethod] = useState('CASH')
+   130→  const [notes, setNotes] = useState('')
+   131→  const [detailFor, setDetailFor] = useState<Product | null>(null)
+   132→  const [busy, setBusy] = useState(false)
+   133→
+   134→  function add(days: number) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10) }
+   135→
+   136→  useEffect(() => {
+   137→    api<{ providers: Provider[] }>('/api/providers').then((d) => setProviders(d.providers))
+   138→    api<{ products: Product[] }>('/api/products').then((d) => setProducts(d.products))
+   139→    setDeliveryDate(add(1))
+   140→  }, [])
+   141→
+   142→  const provider = providers.find((p) => p.id === providerId)
+   143→  const isGM = ctx.user!.role === 'GM' || ctx.user!.role === 'OM'
+   144→  const prodsOfCompany = useMemo(() => {
+   145→    if (!provider) return []
+   146→    return products.filter((p) => p.providerId === providerId && (!company || p.brand === company))
+   147→  }, [products, provider, company, providerId])
+   148→  const draftItems: DraftItem[] = Object.entries(draft).filter(([, q]) => q > 0).map(([pid, qty]) => {
+   149→    const p = products.find((x) => x.id === pid)!
+   150→    return { productId: pid, name: p.name, qty, unitBuyPrice: p.buyPrice }
+   151→  })
+   152→  const total = draftItems.reduce((s, i) => s + i.qty * i.unitBuyPrice, 0)
+   153→
+   154→  const submit = async (approve: boolean) => {
+   155→    if (!provider || draftItems.length === 0 || !deliveryDate) return
+   156→    setBusy(true)
+   157→    try {
+   158→      const res = await api<{ order: any }>('/api/orders', {
+   159→        method: 'POST',
+   160→        body: {
+   161→          providerId, providerName: provider.name,
+   162→          items: draftItems,
+   163→          deliveryDate, payMethod, notes,
+   164→          status: approve ? 'APPROVED' : 'SUBMITTED',
+   165→        },
+   166→      })
+   167→      toast.success(approve ? 'سفارش ثبت و تأیید شد ✅' : 'سفارش ثبت شد — در انتظار تأیید مدیر کل')
+   168→      onDone(res.order.id)
+   169→    } catch (e: any) {
+   170→      toast.error(e.message)
+   171→    } finally { setBusy(false) }
+   172→  }
+   173→
+   174→  return (
+   175→    <div className="space-y-4">
+   176→      {/* steps */}
+   177→      <div className="flex items-center gap-2 rounded-2xl border border-border bg-card p-3">
+   178→        {[1, 2, 3, 4].map((s) => (
+   179→          <div key={s} className="flex flex-1 items-center gap-2">
+   180→            <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black', step >= s ? 'bg-primary text-white' : 'bg-muted text-muted-foreground')}>{faNum(s)}</span>
+   181→            <span className={cn('hidden text-xs font-bold sm:block', step >= s ? 'text-foreground' : 'text-muted-foreground')}>
+   182→              {s === 1 ? 'تأمین‌کننده' : s === 2 ? 'انتخاب کالا' : s === 3 ? 'زمان و پرداخت' : 'بازبینی و ثبت'}
+   183→            </span>
+   184→            {s < 4 && <span className={cn('h-0.5 flex-1 rounded', step > s ? 'bg-primary' : 'bg-border')} />}
+   185→          </div>
+   186→        ))}
+   187→      </div>
+   188→
+   189→      {step === 1 && (
+   190→        <SectionCard title="انتخاب تأمین‌کننده / ویزیتور" subtitle="شرکت‌هایی که هر پخش‌کننده کار می‌کند را ببینید" icon={<Plus size={18} />}>
+   191→          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+   192→            {providers.map((p) => (
+   193→              <button key={p.id} onClick={() => { setProviderId(p.id); setCompany(''); setStep(2) }}
+   194→                className={cn('glow-card rounded-2xl bg-white/70 p-4 text-right', providerId === p.id && 'ring-2 ring-primary')}>
+   195→                <div className="flex items-center justify-between">
+   196→                  <span className="text-sm font-black">{p.name}</span>
+   197→                  <Pill label={p.type === 'DIRECT' ? 'کارخانه' : p.type === 'VISITOR' ? 'ویزیتور' : 'پخش'} color={p.type === 'DIRECT' ? '#0e7a4a' : p.type === 'VISITOR' ? '#c96f4a' : '#8a6d10'} />
+   198→                </div>
+   199→                <p className="mt-1 text-xs text-muted-foreground">{p.personName} • {faNum(p.phone)}</p>
+   200→                <div className="mt-2 flex flex-wrap gap-1">
+   201→                  {p.companyNames.map((c) => <Pill key={c} label={c} color="#0e7a4a" className="!bg-secondary" />)}
+   202→                </div>
+   203→              </button>
+   204→            ))}
+   205→          </div>
+   206→        </SectionCard>
+   207→      )}
+   208→
+   209→      {step === 2 && provider && (
+   210→        <SectionCard
+   211→          title={`کالاهای ${provider.name}`}
+   212→          subtitle="روی دکمه + بزنید تا به سفارش اضافه شود — رنگ نشانگر، وضعیت انبار است"
+   213→          icon={<Plus size={18} />}
+   214→          actions={<button onClick={() => setStep(1)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">← تغییر تأمین‌کننده</button>}
+   215→        >
+   216→          {provider.companyNames.length > 1 && (
+   217→            <div className="mb-3 flex flex-wrap gap-1.5">
+   218→              <FilterChip active={!company} label="همه شرکت‌ها" onClick={() => setCompany('')} />
+   219→              {provider.companyNames.map((c) => <FilterChip key={c} active={company === c} label={c} onClick={() => setCompany(c)} />)}
+   220→            </div>
+   221→          )}
+   222→          <div className="scroll-gold grid max-h-[52vh] grid-cols-2 gap-3 overflow-y-auto pl-1 sm:grid-cols-3 lg:grid-cols-4">
+   223→            {prodsOfCompany.map((p) => {
+   224→              const st = stockStatus(p.stock, p.reorderLevel)
+   225→              const qty = draft[p.id] || 0
+   226→              return (
+   227→                <div key={p.id} className="glow-card relative flex flex-col rounded-2xl bg-white/80 p-3">
+   228→                  <button onClick={() => setDetailFor(p)} className="mb-2 flex h-20 items-center justify-center rounded-xl bg-gradient-to-br from-secondary to-muted text-3xl">
+   229→                    {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="h-full w-full rounded-xl object-cover" /> : CATEGORY_EMOJI[p.category] || '📦'}
+   230→                  </button>
+   231→                  <p className="line-clamp-2 min-h-9 text-xs font-extrabold leading-4">{p.name}</p>
+   232→                  <div className="mt-1 flex items-center justify-between text-[10px]">
+   233→                    <span className="text-muted-foreground">{p.brand}</span>
+   234→                    <span className="font-black" style={{ color: st.color }}>{st.label} {faNum(p.stock)}</span>
+   235→                  </div>
+   236→                  <div className="mt-2 flex items-center justify-between">
+   237→                    <span className="text-[11px] font-bold text-[#8a6d10]">{faMoney(p.buyPrice)}</span>
+   238→                    <div className="flex items-center gap-1">
+   239→                      {qty > 0 && (
+   240→                        <>
+   241→                          <button className="stepper-btn !h-8 !w-8 !text-base" onClick={() => setDraft((d) => ({ ...d, [p.id]: Math.max(0, (d[p.id] || 0) - 1) }))}>−</button>
+   242→                          <span className="w-8 text-center text-sm font-black">{faNum(qty)}</span>
+   243→                        </>
+   244→                      )}
+   245→                      <button className="stepper-btn !h-8 !w-8 !text-base !border-primary !bg-primary !text-white" onClick={() => setDraft((d) => ({ ...d, [p.id]: (d[p.id] || 0) + 1 }))}>+</button>
+   246→                    </div>
+   247→                  </div>
+   248→                  <button onClick={() => setDetailFor(p)} className="mt-1.5 rounded-lg bg-muted/70 py-1 text-[10px] font-bold text-muted-foreground hover:bg-muted">
+   249→                    📊 سفارش و فروش ماه اخیر
+   250→                  </button>
+   251→                </div>
+   252→              )
+   253→            })}
+   254→          </div>
+   255→          <div className="mt-4 flex items-center justify-between rounded-xl bg-secondary/60 p-3">
+   256→            <span className="text-xs font-bold">{faNum(draftItems.length)} قلم انتخاب شده</span>
+   257→            <button disabled={!draftItems.length} onClick={() => setStep(3)} className="rounded-xl bg-primary px-6 py-2.5 text-xs font-extrabold text-white disabled:opacity-40">
+   258→              ادامه →
+   259→            </button>
+   260→          </div>
+   261→        </SectionCard>
+   262→      )}
+   263→
+   264→      {step === 3 && (
+   265→        <SectionCard title="زمان تحویل و روش پرداخت" subtitle="تقویم شمسی با نشان‌دادن تعطیلات رسمی" icon={<Plus size={18} />}>
+   266→          <div className="grid gap-4 sm:grid-cols-2">
+   267→            <Labeled label="تاریخ تحویل مورد انتظار">
+   268→              <JalaliDatePicker value={deliveryDate} onChange={setDeliveryDate} holidays={holidays} minDate={todayIso()} warnHoliday />
+   269→            </Labeled>
+   270→            <Labeled label="روش پرداخت">
+   271→              <div className="grid grid-cols-2 gap-2">
+   272→                {[['CASH', 'نقدی هنگام تحویل 💵'], ['CHEQUE', 'چک 🧾']].map(([v, l]) => (
+   273→                  <button key={v} onClick={() => setPayMethod(v)} className={cn('rounded-xl border p-3 text-xs font-bold transition', payMethod === v ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card hover:bg-secondary')}>
+   274→                    {l}
+   275→                  </button>
+   276→                ))}
+   277→              </div>
+   278→            </Labeled>
+   279→          </div>
+   280→          <div className="mt-4">
+   281→            <Labeled label="یادداشت سفارش (اختیاری)">
+   282→              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm outline-none focus:border-primary" placeholder="مثلاً: تحویل قبل ساعت ۹ صبح" />
+   283→            </Labeled>
+   284→          </div>
+   285→          <div className="mt-4 flex justify-between">
+   286→            <button onClick={() => setStep(2)} className="rounded-xl border px-5 py-2.5 text-xs font-bold">→ بازگشت</button>
+   287→            <button disabled={!deliveryDate} onClick={() => setStep(4)} className="rounded-xl bg-primary px-6 py-2.5 text-xs font-extrabold text-white disabled:opacity-40">بازبینی نهایی ←</button>
+   288→          </div>
+   289→        </SectionCard>
+   290→      )}
+   291→
+   292→      {step === 4 && (
+   293→        <SectionCard title="بازبینی و ثبت سفارش" subtitle="قبل از ثبت، همه چیز را چک کنید" icon={<CheckCircle2 size={18} />}>
+   294→          <div className="mb-4 grid gap-2 sm:grid-cols-3">
+   295→            <KeyValue k="تأمین‌کننده" v={provider?.name} />
+   296→            <KeyValue k="تاریخ تحویل" v={formatJalaliFull(deliveryDate)} />
+   297→            <KeyValue k="مبلغ کل" v={`${faMoney(total)} تومان`} />
+   298→          </div>
+   299→          <ul className="scroll-gold mb-4 max-h-56 space-y-1.5 overflow-y-auto">
+   300→            {draftItems.map((i) => (
+   301→              <li key={i.productId} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
+   302→                <span className="font-bold">{i.name}</span>
+   303→                <span>{faNum(i.qty)} × {faMoney(i.unitBuyPrice)} = <b>{faMoney(i.qty * i.unitBuyPrice)}</b></span>
+   304→              </li>
+   305→            ))}
+   306→          </ul>
+   307→          <div className="flex flex-wrap justify-between gap-2">
+   308→            <button onClick={() => setStep(3)} className="rounded-xl border px-5 py-2.5 text-xs font-bold">→ بازگشت</button>
+   309→            <div className="flex gap-2">
+   310→              <button disabled={busy} onClick={() => submit(false)} className="rounded-xl border border-primary bg-secondary px-5 py-2.5 text-xs font-extrabold text-primary">
+   311→                ثبت و ارسال برای تأیید {isGM ? '' : '(مدیر کل)'}
+   312→              </button>
+   313→              {isGM && (
+   314→                <button disabled={busy} onClick={() => submit(true)} className="rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg">
+   315→                  ثبت و تأیید نهایی ✅
+   316→                </button>
+   317→              )}
+   318→            </div>
+   319→          </div>
+   320→        </SectionCard>
+   321→      )}
+   322→
+   323→      {/* product history modal */}
+   324→      {detailFor && <ProductHistoryModal product={detailFor} onClose={() => setDetailFor(null)} onOrder={(q) => { setDraft((d) => ({ ...d, [detailFor.id]: (d[detailFor.id] || 0) + q })); setDetailFor(null) }} />}
+   325→    </div>
+   326→  )
+   327→}
+   328→
+   329→function ProductHistoryModal({ product, onClose, onOrder }: { product: Product; onClose: () => void; onOrder: (q: number) => void }) {
+   330→  const [history, setHistory] = useState<any>(null)
+   331→  useEffect(() => {
+   332→    api<{ history: any }>(`/api/products/${product.id}`).then((d) => setHistory(d.history)).catch(() => {})
+   333→  }, [product.id])
+   334→  return (
+   335→    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+   336→      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+   337→      <div className="scroll-gold glow-card max-h-[80vh] w-full max-w-md overflow-y-auto rounded-2xl bg-card p-5">
+   338→        <div className="mb-3 flex items-start justify-between">
+   339→          <h3 className="text-sm font-black">{product.name}</h3>
+   340→          <button onClick={onClose}><X size={18} /></button>
+   341→        </div>
+   342→        {history ? (
+   343→          <>
+   344→            <div className="mb-3 grid grid-cols-2 gap-2">
+   345→              <KeyValue k="سفارش ماه اخیر" v={`${faNum(history.orderedLastMonth)} عدد`} />
+   346→              <KeyValue k="تعداد سفارش" v={`${faNum(history.ordersLastMonth)} بار`} />
+   347→              <KeyValue k="قیمت فروش فعلی" v={`${faMoney(product.sellPrice)} تومان`} />
+   348→              <KeyValue k="موجودی" v={faNum(product.stock)} />
+   349→            </div>
+   350→            <p className="mb-2 text-xs font-black text-muted-foreground">آخرین سفارش‌ها:</p>
+   351→            {history.lastOrders.length === 0 ? (
+   352→              <p className="text-xs text-muted-foreground">در ماه اخیر سفارشی ثبت نشده</p>
+   353→            ) : (
+   354→              <ul className="mb-4 space-y-1">
+   355→                {history.lastOrders.map((o: any, i: number) => (
+   356→                  <li key={i} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-1.5 text-[11px]">
+   357→                    <span className="font-bold">{o.code}</span>
+   358→                    <span>{faNum(o.qty)} عدد</span>
+   359→                    <span className="text-muted-foreground">{formatJalaliShort(o.at)}</span>
+   360→                  </li>
+   361→                ))}
+   362→              </ul>
+   363→            )}
+   364→          </>
+   365→        ) : (
+   366→          <div className="py-6 text-center text-xs text-muted-foreground">در حال بارگذاری…</div>
+   367→        )}
+   368→        <div className="flex gap-2">
+   369→          <button onClick={() => onOrder(1)} className="flex-1 rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">+ افزودن ۱ عدد به سفارش</button>
+   370→          <button onClick={() => onOrder(6)} className="rounded-xl bg-secondary px-4 py-2.5 text-xs font-extrabold text-primary">+{faNum(6)}</button>
+   371→          <button onClick={() => onOrder(12)} className="rounded-xl bg-secondary px-4 py-2.5 text-xs font-extrabold text-primary">+{faNum(12)}</button>
+   372→        </div>
+   373→      </div>
+   374→    </div>
+   375→  )
+   376→}
+   377→
+   378→/* ───────────────────────── Detail + workflow ───────────────────────── */
+   379→
+   380→function OrderDetail({ ctx, orderId, onBack }: { ctx: AppCtx; orderId: string; onBack: () => void }) {
+   381→  const holidays = useHolidays()
+   382→  const [order, setOrder] = useState<any>(null)
+   383→  const [items, setItems] = useState<any[]>([])
+   384→  const [editOpen, setEditOpen] = useState(false)
+   385→  const [corrOpen, setCorrOpen] = useState(false)
+   386→  const [corrTitle, setCorrTitle] = useState('')
+   387→  const [corrDetail, setCorrDetail] = useState('')
+   388→  const [editDate, setEditDate] = useState('')
+   389→  const [editNotes, setEditNotes] = useState('')
+   390→
+   391→  const load = () =>
+   392→    api<{ order: any; items: any[] }>(`/api/orders/${orderId}`).then((d) => {
+   393→      setOrder(d.order)
+   394→      setItems(d.items)
+   395→    })
+   396→  useEffect(() => { load() }, [orderId])
+   397→
+   398→  if (!order) return <div className="py-16 text-center text-sm text-muted-foreground">در حال بارگذاری…</div>
+   399→
+   400→  const st = ORDER_STATUSES[order.status]
+   401→  const role = ctx.user!.role
+   402→  const act = async (body: any, successMsg: string) => {
+   403→    try {
+   404→      await api(`/api/orders/${orderId}`, { method: 'PATCH', body })
+   405→      toast.success(successMsg)
+   406→      await load()
+   407→      ctx.refreshNotifications()
+   408→    } catch (e: any) { toast.error(e.message) }
+   409→  }
+   410→
+   411→  const canApprove = order.status === 'SUBMITTED' && ['GM', 'OM'].includes(role)
+   412→  const canReceive = ['APPROVED', 'RECEIVING'].includes(order.status) && ['GM', 'OM', 'SK'].includes(role) || (['APPROVED', 'RECEIVING'].includes(order.status) && ctx.user!.secondaryRoles.includes('RECEIVER'))
+   413→  const canVerify = order.status === 'RECEIVED' && ['SK', 'GM', 'OM'].includes(role)
+   414→  const canEdit = !['RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE', 'CANCELLED'].includes(order.status) && ['GM', 'PM', 'OM'].includes(role)
+   415→  const canCancel = !['DONE', 'CANCELLED'].includes(order.status) && ['GM', 'OM'].includes(role)
+   416→
+   417→  return (
+   418→    <div className="space-y-4">
+   419→      <SectionCard
+   420→        title={`${order.code} — ${order.providerName}`}
+   421→        subtitle={`ثبت‌کننده: ${order.createdByName} • ${formatJalaliFull(order.createdAt)}`}
+   422→        icon={<ClipboardList size={18} />}
+   423→        actions={<button onClick={onBack} className="rounded-lg border px-3 py-1.5 text-xs font-bold">→ همه سفارش‌ها</button>}
+   424→      >
+   425→        {/* status pipeline */}
+   426→        <div className="mb-5 flex flex-wrap items-center gap-1.5">
+   427→          {ORDER_FLOW.map((s, i) => {
+   428→            const idx = ORDER_FLOW.indexOf(order.status)
+   429→            const done = idx >= 0 && i < idx
+   430→            const current = order.status === s
+   431→            return (
+   432→              <div key={s} className="flex items-center gap-1.5">
+   433→                <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-black', current ? 'text-white shadow' : done ? 'bg-[#0e7a4a]/15 text-[#0e7a4a]' : 'bg-muted text-muted-foreground')} style={current ? { background: ORDER_STATUSES[s].color } : {}}>
+   434→                  {ORDER_STATUSES[s].label}
+   435→                </span>
+   436→                {i < ORDER_FLOW.length - 1 && <span className={cn('h-0.5 w-4 rounded', done ? 'bg-[#0e7a4a]' : 'bg-border')} />}
+   437→              </div>
+   438→            )
+   439→          })}
+   440→          {order.status === 'CANCELLED' && <Pill label="لغو شده" color="#b3372f" bg="#fee2e2" />}
+   441→        </div>
+   442→
+   443→        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+   444→          <KeyValue k="تاریخ تحویل" v={formatJalaliFull(order.deliveryDate)} />
+   445→          <KeyValue k="مبلغ کل" v={`${faMoney(order.totalAmount)} تومان`} />
+   446→          <KeyValue k="پرداخت" v={order.payMethod === 'CHEQUE' ? 'چک' : 'نقدی'} />
+   447→          <KeyValue k="وضعیت" v={<Pill label={st.label} color={st.color} bg={st.bg} />} />
+   448→        </div>
+   449→
+   450→        {order.isOverdue && (
+   451→          <div className="mb-4 flex items-center gap-2 rounded-xl border border-[#b3372f]/30 bg-[#fee2e2]/60 p-3 text-xs font-bold text-[#b3372f]">
+   452→            <AlertTriangle size={16} /> این سفارش از تاریخ تحویل گذشته و هنوز دریافت نشده — با تأمین‌کننده فالوآپ کنید.
+   453→          </div>
+   454→        )}
+   455→        {order.notes && <p className="mb-4 rounded-xl bg-accent/60 p-3 text-xs">📝 {order.notes}</p>}
+   456→
+   457→        {/* items */}
+   458→        <div className="overflow-x-auto">
+   459→          <table className="w-full text-right text-xs">
+   460→            <thead>
+   461→              <tr className="border-b border-border text-[10px] text-muted-foreground">
+   462→                <th className="p-2">کالا</th>
+   463→                <th className="p-2">بارکد</th>
+   464→                <th className="p-2">سفارش</th>
+   465→                <th className="p-2">قیمت واحد</th>
+   466→                <th className="p-2">جمع</th>
+   467→                <th className="p-2">دریافتی</th>
+   468→              </tr>
+   469→            </thead>
+   470→            <tbody>
+   471→              {items.map((it) => (
+   472→                <tr key={it.id} className="border-b border-border/40">
+   473→                  <td className="p-2 font-bold">{it.productName}</td>
+   474→                  <td className="p-2 font-mono text-[10px] text-muted-foreground">{it.barcode ? faNum(it.barcode) : '—'}</td>
+   475→                  <td className="p-2">{faNum(it.qty)}</td>
+   476→                  <td className="p-2">{faMoney(it.unitBuyPrice)}</td>
+   477→                  <td className="p-2 font-bold">{faMoney(it.qty * it.unitBuyPrice)}</td>
+   478→                  <td className="p-2">
+   479→                    {it.receivedQty != null ? (
+   480→                      <Pill label={`${faNum(it.receivedQty)} / ${faNum(it.qty)}`} color={it.receivedQty < it.qty ? '#a16207' : '#166534'} />
+   481→                    ) : it.status === 'REJECTED' ? <Pill label="رد شده" color="#b3372f" /> : it.status === 'SHORT' ? <Pill label="کسری" color="#a16207" /> : '—'}
+   482→                  </td>
+   483→                </tr>
+   484→              ))}
+   485→            </tbody>
+   486→          </table>
+   487→        </div>
+   488→
+   489→        {/* actions */}
+   490→        <div className="mt-5 flex flex-wrap gap-2">
+   491→          {canApprove && (
+   492→            <button onClick={() => act({ action: 'approve' }, 'سفارش تأیید و به تأمین‌کننده اطلاع داده شد ✅')} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-4 py-2.5 text-xs font-extrabold text-white">
+   493→              <CheckCircle2 size={15} /> تأیید و ارسال به تأمین‌کننده
+   494→            </button>
+   495→          )}
+   496→          {canReceive && (
+   497→            <button onClick={() => ctx.navigate('receiving', order.id)} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#c96f4a] to-[#d98a5f] px-4 py-2.5 text-xs font-extrabold text-white">
+   498→              🚚 دریافت مرسوله
+   499→            </button>
+   500→          )}
+   501→          {canVerify && (
+   502→            <button onClick={() => ctx.navigate('verify', order.id)} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#77934a] to-[#8fa85e] px-4 py-2.5 text-xs font-extrabold text-white">
+   503→              <Warehouse size={15} /> تأیید انبار
+   504→            </button>
+   505→          )}
+   506→          {canEdit && (
+   507→            <button onClick={() => { setEditDate(order.deliveryDate); setEditNotes(order.notes); setEditOpen(true) }} className="flex items-center gap-1.5 rounded-xl border border-primary/50 bg-secondary px-4 py-2.5 text-xs font-extrabold text-primary">
+   508→              <Pencil size={14} /> ویرایش سفارش
+   509→            </button>
+   510→          )}
+   511→          {['RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE'].includes(order.status) && ['GM', 'PM', 'OM', 'ACC'].includes(role) && (
+   512→            <button onClick={() => setCorrOpen(true)} className="flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-extrabold text-muted-foreground">
+   513→              <History size={14} /> ثبت اصلاحیه
+   514→            </button>
+   515→          )}
+   516→          {canCancel && (
+   517→            <button onClick={() => act({ action: 'cancel', detail: 'لغو توسط ' + ctx.user!.name }, 'سفارش لغو شد')} className="flex items-center gap-1.5 rounded-xl border border-[#b3372f]/40 px-4 py-2.5 text-xs font-extrabold text-[#b3372f]">
+   518→              <Ban size={14} /> لغو سفارش
+   519→            </button>
+   520→          )}
+   521→        </div>
+   522→      </SectionCard>
+   523→
+   524→      {/* history timeline */}
+   525→      <SectionCard title="تاریخچه کامل سفارش" subtitle="هر تغییر با نام و زمان ثبت می‌شود — شفافیت کامل" icon={<History size={18} />}>
+   526→        <ol className="relative space-y-3 border-r-2 border-dashed border-[#c9a227]/40 pr-5">
+   527→          {order.history.map((h: any, i: number) => (
+   528→            <li key={i} className="relative">
+   529→              <span className="absolute -right-[27px] top-1 h-3.5 w-3.5 rounded-full border-2 border-[#c9a227] bg-card" />
+   530→              <p className="text-xs font-extrabold">{h.action}</p>
+   531→              {h.detail && <p className="text-[11px] text-muted-foreground">{h.detail}</p>}
+   532→              <p className="text-[10px] text-muted-foreground">{h.userName} • {formatJalaliFull(h.at)} {new Date(h.at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</p>
+   533→            </li>
+   534→          ))}
+   535→        </ol>
+   536→      </SectionCard>
+   537→
+   538→      {/* edit modal */}
+   539→      {editOpen && (
+   540→        <Modal title="ویرایش سفارش" onClose={() => setEditOpen(false)}>
+   541→          <Labeled label="تاریخ تحویل">
+   542→            <JalaliDatePicker value={editDate} onChange={setEditDate} holidays={holidays} minDate={todayIso()} warnHoliday={false} />
+   543→          </Labeled>
+   544→          <Labeled label="یادداشت">
+   545→            <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className="w-full rounded-xl border border-input p-3 text-sm" />
+   546→          </Labeled>
+   547→          <p className="rounded-lg bg-accent/60 p-2.5 text-[11px]">برای تغییر تعداد اقلام، پیش از دریافت مرسوله با پشتیبانی حسابداری هماهنگ کنید؛ یا پس از دریافت از «اصلاحیه» استفاده نمایید.</p>
+   548→          <button onClick={async () => { await act({ action: 'edit', deliveryDate: editDate, notes: editNotes, detail: 'ویرایش تاریخ/یادداشت' }, 'سفارش ویرایش شد ✏️'); setEditOpen(false) }} className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">
+   549→            ذخیره تغییرات
+   550→          </button>
+   551→        </Modal>
+   552→      )}
+   553→
+   554→      {/* correction modal */}
+   555→      {corrOpen && (
+   556→        <Modal title="ثبت اصلاحیه (بدون تغییر تاریخچه)" onClose={() => setCorrOpen(false)}>
+   557→          <Labeled label="عنوان اصلاحیه"><input value={corrTitle} onChange={(e) => setCorrTitle(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً: اصلاح تعداد شیر پگاه" /></Labeled>
+   558→          <Labeled label="توضیح"><textarea value={corrDetail} onChange={(e) => setCorrDetail(e.target.value)} rows={3} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   559→          <button
+   560→            onClick={async () => {
+   561→              if (!corrTitle.trim()) return toast.error('عنوان اصلاحیه را بنویسید')
+   562→              await act({ action: 'correct', title: corrTitle, detail: corrDetail }, 'اصلاحیه ثبت شد و در تاریخچه ماند 📜')
+   563→              setCorrOpen(false); setCorrTitle(''); setCorrDetail('')
+   564→            }}
+   565→            className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white"
+   566→          >
+   567→            ثبت اصلاحیه
+   568→          </button>
+   569→        </Modal>
+   570→      )}
+   571→    </div>
+   572→  )
+   573→}
+   574→
+   575→export function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
+   576→  return (
+   577→    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+   578→      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+   579→      <div className={cn('scroll-gold glow-card max-h-[85vh] w-full overflow-y-auto rounded-2xl bg-card p-5', wide ? 'max-w-2xl' : 'max-w-md')}>
+   580→        <div className="mb-4 flex items-center justify-between">
+   581→          <h3 className="text-sm font-black">{title}</h3>
+   582→          <button onClick={onClose} className="rounded-lg p-1 hover:bg-muted"><X size={18} /></button>
+   583→        </div>
+   584→        <div className="space-y-3">{children}</div>
+   585→      </div>
+   586→    </div>
+   587→  )
+   588→}
+   589→

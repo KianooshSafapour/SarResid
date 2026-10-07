@@ -1,0 +1,452 @@
+    36→    36→  const [detailFor, setDetailFor] = useState<Product | null>(null)
+    37→    37→  const [labelMode, setLabelMode] = useState(false)
+    38→    38→  const [labelSel, setLabelSel] = useState<Record<string, boolean>>({})
+    39→    39→  const [labelOpen, setLabelOpen] = useState(false)
+    40→    40→
+    41→    41→  const load = () =>
+    42→    42→    api<{ products: Product[]; categories: string[] }>('/api/products').then((d) => {
+    43→    43→      setProducts(d.products)
+    44→    44→      setCategories(d.categories)
+    45→    45→    })
+    46→    46→  useEffect(() => { load() }, [])
+    47→    47→
+    48→    48→  const filtered = useMemo(
+    49→    49→    () => products.filter((p) =>
+    50→    50→      (!cat || p.category === cat) &&
+    51→    51→      (!lowOnly || p.stock <= p.reorderLevel) &&
+    52→    52→      (!hotOnly || (p.sales30 || 0) >= 5) &&
+    53→    53→      (!q || p.name.includes(q) || p.brand.includes(q) || p.barcodes.some((b) => b.includes(q)))
+    54→    54→    ),
+    55→    55→    [products, q, cat, lowOnly, hotOnly]
+    56→    56→  )
+    57→    57→
+    58→    58→  const canEdit = ['GM', 'PM', 'OM', 'ACC', 'SK'].includes(ctx.user!.role)
+    59→    59→  const canOrder = ['GM', 'PM', 'OM'].includes(ctx.user!.role)
+    60→    60→  const lowCount = products.filter((p) => p.stock <= p.reorderLevel).length
+    61→    61→
+    62→    62→  return (
+    63→    63→    <div className="space-y-4">
+    64→    64→      <SectionCard
+    65→    65→        title="کالاها و موجودی انبار"
+    66→    66→        subtitle="رنگ هر کارت وضعیت موجودی است: قرمز کمبود جدی، زرد رو به اتمام، سبز مناسب"
+    67→    67→        icon={<ShoppingBasket size={18} />}
+    68→    68→        actions={
+    69→    69→          canEdit && (
+    70→    70→            <div className="flex flex-wrap gap-2">
+    71→    71→              {canOrder && lowCount > 0 && (
+    72→    72→                <button onClick={() => setSmartOpen(true)} className="flex items-center gap-1 rounded-xl bg-gradient-to-l from-[#77934a] to-[#8fa85e] px-3.5 py-2 text-xs font-extrabold text-white shadow-md">
+    73→    73→                  <Sparkles size={14} /> پیش‌نویس هوشمند ({faNum(lowCount)})
+    74→    74→                </button>
+    75→    75→              )}
+    76→    76→              <button onClick={() => setAddOpen(true)} className="flex items-center gap-1 rounded-xl bg-primary px-3.5 py-2 text-xs font-extrabold text-white">
+    77→    77→                <Plus size={14} /> کالای جدید
+    78→    78→              </button>
+    79→    79→              <button onClick={() => setImportOpen(true)} className="flex items-center gap-1 rounded-xl bg-[#0f766e] px-3.5 py-2 text-xs font-extrabold text-white">
+    80→    80→                <FileSpreadsheet size={14} /> ورود از هلو (اکسل)
+    81→    81→              </button>
+    82→    82→              <button onClick={() => setMergeOpen(true)} className="flex items-center gap-1 rounded-xl bg-[#8a5a2b] px-3.5 py-2 text-xs font-extrabold text-white">
+    83→    83→                <Merge size={14} /> ادغام تکراری‌ها
+    84→    84→              </button>
+    85→    85→              <button
+    86→    86→                onClick={() => { setLabelMode((v) => !v); setLabelSel({}) }}
+    87→    87→                className={cn('flex items-center gap-1 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white', labelMode ? 'bg-[#b3372f]' : 'bg-[#5c7236]')}
+    88→    88→              >
+    89→    89→                <Tags size={14} /> {labelMode ? 'انصراف از انتخاب' : 'چاپ لیبل قفسه'}
+    90→    90→              </button>
+    91→    91→            </div>
+    92→    92→          )
+    93→    93→        }
+    94→    94→      >
+    95→    95→        <div className="mb-4 flex flex-wrap items-center gap-2">
+    96→    96→          <SearchInput value={q} onChange={setQ} placeholder="نام، برند یا بارکد…" className="w-full sm:w-64" />
+    97→    97→          <button onClick={() => setLowOnly((v) => !v)} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold', lowOnly ? 'border-[#b3372f] bg-[#b3372f] text-white' : 'border-border bg-card')}>
+    98→    98→            فقط کم‌موجودی‌ها
+    99→    99→          </button>
+   100→   100→          <button onClick={() => setHotOnly((v) => !v)} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', hotOnly ? 'border-[#c96f4a] bg-[#c96f4a] text-white shadow-md' : 'border-border bg-card hover:border-[#c96f4a]/50')} title="کالاهایی که در ۳۰ روز اخیر ۵ عدد یا بیشتر فروخته‌اند">
+   101→   101→            پرفروش‌ها 🔥
+   102→   102→          </button>
+   103→   103→          <span className="hidden items-center gap-2 text-[10px] font-bold text-muted-foreground lg:flex" title="سرعت فروش از پیش‌فاکتورهای ۳۰ روز اخیر محاسبه می‌شود">
+   104→   104→            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[#c96f4a]" /> پرفروش ۸+</span>
+   105→   105→            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[#c9a227]" /> معمولی ۳+</span>
+   106→   106→            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" /> کم‌فروش</span>
+   107→   107→          </span>
+   108→   108→          <div className="flex flex-wrap gap-1.5">
+   109→   109→            <FilterChip active={!cat} label="همه دسته‌ها" onClick={() => setCat('')} />
+   110→   110→            {categories.map((c) => <FilterChip key={c} active={cat === c} label={`${CATEGORY_EMOJI[c] || '📦'} ${c}`} onClick={() => setCat(c)} />)}
+   111→   111→          </div>
+   112→   112→        </div>
+   113→   113→
+   114→   114→        <div className="scroll-gold grid max-h-[64vh] grid-cols-2 gap-3 overflow-y-auto pl-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+   115→   115→          {filtered.map((p) => {
+   116→   116→            const st = stockStatus(p.stock, p.reorderLevel)
+   117→   117→            const selected = !!labelSel[p.id]
+   118→   118→            return (
+   119→   119→              <div key={p.id} className={cn('glow-card group relative flex flex-col rounded-2xl bg-white/85 p-3 transition', labelMode && selected && 'ring-2 ring-[#0e7a4a]')}>
+   120→   120→                {labelMode && (
+   121→   121→                  <button
+   122→   122→                    onClick={() => setLabelSel((s) => ({ ...s, [p.id]: !s[p.id] }))}
+   123→   123→                    className="absolute left-2 top-2 z-10 rounded-lg bg-white/90 p-1 shadow-md transition hover:bg-white"
+   124→   124→                    aria-label={selected ? 'حذف از انتخاب' : 'افزودن به انتخاب'}
+   125→   125→                  >
+   126→   126→                    {selected ? <CheckSquare size={18} className="text-[#0e7a4a]" /> : <Square size={18} className="text-muted-foreground" />}
+   127→   127→                  </button>
+   128→   128→                )}
+   129→   129→                <button onClick={() => (labelMode ? setLabelSel((s) => ({ ...s, [p.id]: !s[p.id] })) : setDetailFor(p))} className="mb-2 flex h-24 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-secondary to-muted text-4xl">
+   130→   130→                  {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover" /> : CATEGORY_EMOJI[p.category] || '📦'}
+   131→   131→                </button>
+   132→   132→                <p className="line-clamp-2 min-h-9 text-xs font-extrabold leading-4">{p.name}</p>
+   133→   133→                <p className="mt-0.5 text-[10px] text-muted-foreground">{p.brand || '—'} • {p.category}</p>
+   134→   134→                {(p.sales30 || 0) >= 3 && (
+   135→   135→                  <span
+   136→   136→                    className={cn(
+   137→   137→                      'mt-1 inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black',
+   138→   138→                      (p.sales30 || 0) >= 8 ? 'bg-[#c96f4a]/15 text-[#c96f4a]' : 'bg-[#c9a227]/15 text-[#8a6d10]'
+   139→   139→                    )}
+   140→   140→                    title="سرعت فروش ۳۰ روز اخیر (از پیش‌فاکتورها)"
+   141→   141→                  >
+   142→   142→                    {(p.sales30 || 0) >= 8 ? '🔥' : '▫'} فروش {faNum(p.sales30 || 0)} در ماه
+   143→   143→                  </span>
+   144→   144→                )}
+   145→   145→                <div className="mt-1.5 flex items-center justify-between">
+   146→   146→                  <span className="text-[11px] font-bold text-[#8a6d10]">{faMoney(p.sellPrice)}</span>
+   147→   147→                  <span className="text-xs font-black" style={{ color: st.color }}>{faNum(p.stock)}</span>
+   148→   148→                </div>
+   149→   149→                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+   150→   150→                  <div className="h-full rounded-full" style={{ width: `${Math.min(100, (p.stock / Math.max(p.reorderLevel * 2, 1)) * 100)}%`, background: st.color }} />
+   151→   151→                </div>
+   152→   152→                {canEdit && (
+   153→   153→                  <button onClick={() => setEditFor(p)} className="mt-2 flex items-center justify-center gap-1 rounded-lg bg-muted/70 py-1.5 text-[10px] font-bold text-muted-foreground transition hover:bg-muted group-hover:text-primary">
+   154→   154→                    <Pencil size={11} /> ویرایش
+   155→   155→                  </button>
+   156→   156→                )}
+   157→   157→              </div>
+   158→   158→            )
+   159→   159→          })}
+   160→   160→        </div>
+   161→   161→        {filtered.length === 0 && <EmptyState emoji="🔍" title="کالایی یافت نشد" />}
+   162→   162→        {labelMode && (
+   163→   163→          <div className="sticky bottom-0 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#0e7a4a]/30 bg-[#e9f0e4]/90 p-3 backdrop-blur">
+   164→   164→            <p className="text-[11px] font-bold">
+   165→   165→              {faNum(Object.values(labelSel).filter(Boolean).length)} کالا انتخاب شد — برای چاپ لیبل قفسه (نام + قیمت + بارکد)
+   166→   166→            </p>
+   167→   167→            <button
+   168→   168→              onClick={() => {
+   169→   169→                const n = Object.values(labelSel).filter(Boolean).length
+   170→   170→                if (n === 0) return toast.error('اول کالاها را انتخاب کنید')
+   171→   171→                setLabelOpen(true)
+   172→   172→              }}
+   173→   173→              className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white shadow-md"
+   174→   174→            >
+   175→   175→              <Printer size={14} /> چاپ لیبل‌ها
+   176→   176→            </button>
+   177→   177→          </div>
+   178→   178→        )}
+   179→   179→      </SectionCard>
+   180→   180→
+   181→   181→      {(editFor || addOpen) && (
+   182→   182→        <ProductEditModal
+   183→   183→          product={editFor}
+   184→   184→          onClose={() => { setEditFor(null); setAddOpen(false) }}
+   185→   185→          onSaved={() => { setEditFor(null); setAddOpen(false); load() }}
+   186→   186→        />
+   187→   187→      )}
+   188→   188→
+   189→   189→      {importOpen && <ImportWizard onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load() }} />}
+   190→   190→      {mergeOpen && <MergeWizard products={products} onClose={() => setMergeOpen(false)} onDone={() => { setMergeOpen(false); load() }} />}
+   191→   191→      {detailFor && <ProductDetailModal product={detailFor} onClose={() => setDetailFor(null)} />}
+   192→   192→      {labelOpen && (
+   193→   193→        <LabelPrintModal
+   194→   194→          products={filtered.filter((p) => labelSel[p.id])}
+   195→   195→          onClose={() => setLabelOpen(false)}
+   196→   196→        />
+   197→   197→      )}
+   198→   198→      {smartOpen && (
+   199→   199→        <SmartReorderModal
+   200→   200→          products={products}
+   201→   201→          onClose={() => setSmartOpen(false)}
+   202→   202→          onDone={(created) => {
+   203→   203→            setSmartOpen(false)
+   204→   204→            load()
+   205→   205→            toast.success(`${created} سفارش پیش‌نویس ساخته شد — از بخش سفارش‌ها ارسال کنید`)
+   206→   206→            ctx.navigate('orders')
+   207→   207→          }}
+   208→   208→        />
+   209→   209→      )}
+   210→   210→    </div>
+   211→   211→  )
+   212→   212→}
+   213→   213→
+   214→   214→function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+   215→   215→  return (
+   216→   216→    <button onClick={onClick} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', active ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70 hover:bg-secondary')}>
+   217→   217→      {label}
+   218→   218→    </button>
+   219→   219→  )
+   220→   220→}
+   221→   221→
+   222→   222→/* ───────────────── Smart reorder: low-stock → DRAFT orders per provider ───────────────── */
+   223→   223→
+   224→   224→type ProviderRow = { id: string; name: string }
+   225→   225→
+   226→   226→function SmartReorderModal({ products, onClose, onDone }: { products: Product[]; onClose: () => void; onDone: (created: number) => void }) {
+   227→   227→  const [providers, setProviders] = useState<ProviderRow[]>([])
+   228→   228→  const [qtys, setQtys] = useState<Record<string, number>>({})
+   229→   229→  const [excluded, setExcluded] = useState<Record<string, boolean>>({}) // by providerId
+   230→   230→  const [skipped, setSkipped] = useState<Record<string, boolean>>({}) // per product
+   231→   231→  const [busy, setBusy] = useState(false)
+   232→   232→
+   233→   233→  useEffect(() => {
+   234→   234→    api<{ providers: ProviderRow[] }>('/api/providers').then((d) => setProviders(d.providers)).catch(() => {})
+   235→   235→  }, [])
+   236→   236→
+   237→   237→  const low = useMemo(() => products.filter((p) => p.stock <= p.reorderLevel), [products])
+   238→   238→  const suggested = (p: Product) => Math.max(p.reorderLevel * 2 - p.stock, 1)
+   239→   239→
+   240→   240→  // initialize suggestion quantities once
+   241→   241→  useEffect(() => {
+   242→   242→    if (Object.keys(qtys).length === 0 && low.length > 0) {
+   243→   243→      const init: Record<string, number> = {}
+   244→   244→      for (const p of low) init[p.id] = suggested(p)
+   245→   245→      setQtys(init)
+   246→   246→    }
+   247→   247→  }, [low.length])
+   248→   248→
+   249→   249→  const groups = useMemo(() => {
+   250→   250→    const m = new Map<string, Product[]>()
+   251→   251→    for (const p of low) {
+   252→   252→      const key = p.providerId || '_none'
+   253→   253→      if (!m.has(key)) m.set(key, [])
+   254→   254→      m.get(key)!.push(p)
+   255→   255→    }
+   256→   256→    return [...m.entries()]
+   257→   257→  }, [low])
+   258→   258→
+   259→   259→  const activeGroups = groups.filter(([pid]) => !excluded[pid])
+   260→   260→  const activeItems = activeGroups.flatMap(([, ps]) => ps).filter((p) => !skipped[p.id])
+   261→   261→  const estTotal = activeItems.reduce((s, p) => s + (qtys[p.id] || 0) * p.buyPrice, 0)
+   262→   262→
+   263→   263→  const create = async () => {
+   264→   264→    if (activeItems.length === 0) return
+   265→   265→    setBusy(true)
+   266→   266→    const d = new Date()
+   267→   267→    d.setDate(d.getDate() + 2)
+   268→   268→    const deliveryDate = d.toISOString().slice(0, 10)
+   269→   269→    let created = 0
+   270→   270→    try {
+   271→   271→      for (const [pid, ps] of activeGroups) {
+   272→   272→        const items = ps.filter((p) => !skipped[p.id])
+   273→   273→        if (items.length === 0) continue
+   274→   274→        const prov = providers.find((x) => x.id === pid)
+   275→   275→        await api('/api/orders', {
+   276→   276→          method: 'POST',
+   277→   277→          body: {
+   278→   278→            providerId: pid,
+   279→   279→            providerName: prov?.name || 'بدون تأمین‌کننده',
+   280→   280→            status: 'DRAFT',
+   281→   281→            deliveryDate,
+   282→   282→            notes: 'پیش‌نویس هوشمند — بر اساس نقطه سفارش و موجودی فعلی',
+   283→   283→            items: items.map((p) => ({ productId: p.id, qty: qtys[p.id] || suggested(p), unitBuyPrice: p.buyPrice })),
+   284→   284→          },
+   285→   285→        })
+   286→   286→        created++
+   287→   287→      }
+   288→   288→      onDone(created)
+   289→   289→    } catch (e: any) {
+   290→   290→      toast.error(e.message)
+   291→   291→    } finally {
+   292→   292→      setBusy(false)
+   293→   293→    }
+   294→   294→  }
+   295→   295→
+   296→   296→  return (
+   297→   297→    <Modal title="پیش‌نویس هوشمند سفارش 🤖" onClose={onClose} wide>
+   298→   298→      <p className="mb-4 rounded-xl border border-[#77934a]/30 bg-[#e9f0e4]/60 p-3 text-[11px] leading-5">
+   299→   299→        سامانه {faNum(low.length)} کالای رسیده به نقطه سفارش را پیدا کرده و بر اساس «دو برابر نقطه سفارش منهای موجودی فعلی» پیشنهاد تعداد می‌دهد.
+   300→   300→        تعدادها را اصلاح کنید، تأمین‌کننده‌های غیرضروری را بردارید و سفارش‌های پیش‌نویس را یک‌جا بسازید — بعد از بخش سفارش‌ها ارسالشان کنید.
+   301→   301→      </p>
+   302→   302→
+   303→   303→      {low.length === 0 ? (
+   304→   304→        <EmptyState emoji="🌿" title="همه موجودی‌ها سالم‌اند" hint="فعلاً کالایی به نقطه سفارش نرسیده" />
+   305→   305→      ) : (
+   306→   306→        <div className="scroll-gold max-h-[52vh] space-y-3 overflow-y-auto pl-1">
+   307→   307→          {groups.map(([pid, ps]) => {
+   308→   308→            const prov = providers.find((x) => x.id === pid)
+   309→   309→            const isExcluded = !!excluded[pid]
+   310→   310→            const groupTotal = ps.reduce((s, p) => s + (qtys[p.id] || 0) * p.buyPrice, 0)
+   311→   311→            return (
+   312→   312→              <div key={pid} className={cn('rounded-2xl border p-3 transition', isExcluded ? 'border-border bg-muted/40 opacity-60' : 'glow-card border-[#77934a]/30 bg-white/80')}>
+   313→   313→                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   314→   314→                  <label className="flex cursor-pointer items-center gap-2">
+   315→   315→                    <input
+   316→   316→                      type="checkbox"
+   317→   317→                      checked={!isExcluded}
+   318→   318→                      onChange={(e) => setExcluded((x) => ({ ...x, [pid]: !e.target.checked }))}
+   319→   319→                      className="h-4 w-4 accent-[#77934a]"
+   320→   320→                    />
+   321→   321→                    <span className="text-sm font-black">🚚 {prov?.name || 'بدون تأمین‌کننده مشخص'}</span>
+   322→   322→                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-[#5c7236]">{faNum(ps.length)} قلم</span>
+   323→   323→                  </label>
+   324→   324→                  <span className="text-[11px] font-black text-[#8a6d10]">{faMoney(groupTotal)} تومان</span>
+   325→   325→                </div>
+   326→   326→                <div className="grid gap-1.5 sm:grid-cols-2">
+   327→   327→                  {ps.map((p) => (
+   328→   328→                    <div key={p.id} className={cn('flex items-center justify-between gap-2 rounded-xl border border-border/70 px-2.5 py-2', skipped[p.id] && 'opacity-40')}>
+   329→   329→                      <label className="flex min-w-0 cursor-pointer items-center gap-2">
+   330→   330→                        <input
+   331→   331→                          type="checkbox"
+   332→   332→                          checked={!skipped[p.id]}
+   333→   333→                          disabled={isExcluded}
+   334→   334→                          onChange={(e) => setSkipped((x) => ({ ...x, [p.id]: !e.target.checked }))}
+   335→   335→                          className="h-3.5 w-3.5 accent-[#0e7a4a]"
+   336→   336→                        />
+   337→   337→                        <span className="min-w-0">
+   338→   338→                          <span className="block truncate text-[11px] font-bold">{p.name}</span>
+   339→   339→                          <span className="block text-[9px] text-muted-foreground">
+   340→   340→                            موجودی {faNum(p.stock)} • نقطه سفارش {faNum(p.reorderLevel)} {p.stock === 0 ? '• 🔴 ناموجود' : ''}
+   341→   341→                          </span>
+   342→   342→                        </span>
+   343→   343→                      </label>
+   344→   344→                      <span className="flex shrink-0 items-center gap-1">
+   345→   345→                        <button
+   346→   346→                          disabled={isExcluded}
+   347→   347→                          onClick={() => setQtys((q) => ({ ...q, [p.id]: Math.max((q[p.id] || 1) - 1, 1) }))}
+   348→   348→                          className="stepper-btn !h-8 !w-8 text-sm disabled:opacity-30"
+   349→   349→                        >
+   350→   350→                          −
+   351→   351→                        </button>
+   352→   352→                        <span className="w-10 text-center text-xs font-black">{faNum(qtys[p.id] || 0)}</span>
+   353→   353→                        <button
+   354→   354→                          disabled={isExcluded}
+   355→   355→                          onClick={() => setQtys((q) => ({ ...q, [p.id]: (q[p.id] || 0) + 1 }))}
+   356→   356→                          className="stepper-btn !h-8 !w-8 text-sm disabled:opacity-30"
+   357→   357→                        >
+   358→   358→                          +
+   359→   359→                        </button>
+   360→   360→                      </span>
+   361→   361→                    </div>
+   362→   362→                  ))}
+   363→   363→                </div>
+   364→   364→              </div>
+   365→   365→            )
+   366→   366→          })}
+   367→   367→        </div>
+   368→   368→      )}
+   369→   369→
+   370→   370→      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+   371→   371→        <div className="text-[11px] font-bold text-muted-foreground">
+   372→   372→          {faNum(activeItems.length)} قلم در {faNum(activeGroups.length)} سفارش پیش‌نویس • برآورد خرید: <b className="text-[#8a6d10]">{faMoney(estTotal)} تومان</b>
+   373→   373→        </div>
+   374→   374→        <div className="flex gap-2">
+   375→   375→          <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-xs font-bold">انصراف</button>
+   376→   376→          <button
+   377→   377→            onClick={create}
+   378→   378→            disabled={busy || activeItems.length === 0}
+   379→   379→            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg disabled:opacity-40"
+   380→   380→          >
+   381→   381→            <Sparkles size={14} /> {busy ? 'در حال ساخت…' : `ساخت ${faNum(activeGroups.length)} سفارش پیش‌نویس`}
+   382→   382→          </button>
+   383→   383→        </div>
+   384→   384→      </div>
+   385→   385→    </Modal>
+   386→   386→  )
+   387→   387→}
+   388→   388→
+   389→   389→/* ───────────────── Product edit + image tools ───────────────── */
+   390→   390→
+   391→   391→function ProductEditModal({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
+   392→   392→  const [form, setForm] = useState<any>(null)
+   393→   393→  const [imgSearching, setImgSearching] = useState(false)
+   394→   394→  const [imgQuery, setImgQuery] = useState('')
+   395→   395→  const [imgResults, setImgResults] = useState<{ url: string }[]>([])
+   396→   396→  const fileRef = useRef<HTMLInputElement>(null)
+   397→   397→  const [busy, setBusy] = useState(false)
+   398→   398→
+   399→   399→  useEffect(() => {
+   400→   400→    if (product) setForm({ ...product, barcodes: product.barcodes.join(', ') })
+   401→   401→    else setForm({ name: '', barcodes: '', holooCode: '', unit: 'عدد', brand: '', category: 'عمومی', buyPrice: '', sellPrice: '', sellPrice2: '', stock: '0', reorderLevel: '12', imageUrl: '', notes: '' })
+   402→   402→  }, [product])
+   403→   403→
+   404→   404→  if (!form) return null
+   405→   405→  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }))
+   406→   406→
+   407→   407→  const searchImages = async () => {
+   408→   408→    if (!imgQuery.trim()) return
+   409→   409→    setImgSearching(true)
+   410→   410→    try {
+   411→   411→      const res = await api<{ images: { url: string }[] }>('/api/products/image-search', { method: 'POST', body: { query: imgQuery } })
+   412→   412→      setImgResults(res.images)
+   413→   413→      if (!res.images.length) toast.error('تصویری پیدا نشد — می‌توانید آدرس تصویر دستی وارد کنید یا فایل آپلود کنید')
+   414→   414→    } catch (e: any) { toast.error(e.message) } finally { setImgSearching(false) }
+   415→   415→  }
+   416→   416→
+   417→   417→  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+   418→   418→    const file = e.target.files?.[0]
+   419→   419→    if (!file) return
+   420→   420→    if (file.size > 400_000) return toast.error('حجم تصویر باید کمتر از ۴۰۰ کیلوبایت باشد')
+   421→   421→    const reader = new FileReader()
+   422→   422→    reader.onload = () => set('imageUrl', reader.result)
+   423→   423→    reader.readAsDataURL(file)
+   424→   424→  }
+   425→   425→
+   426→   426→  const save = async () => {
+   427→   427→    if (!form.name?.trim()) return toast.error('نام کالا الزامی است')
+   428→   428→    setBusy(true)
+   429→   429→    const body = {
+   430→   430→      ...form,
+   431→   431→      barcodes: String(form.barcodes).split(',').map((s: string) => s.trim()).filter(Boolean),
+   432→   432→    }
+   433→   433→    try {
+   434→   434→      if (product) await api(`/api/products/${product.id}`, { method: 'PATCH', body })
+   435→   435→      else await api('/api/products', { method: 'POST', body })
+   436→   436→      toast.success('کالا ذخیره شد ✅')
+   437→   437→      onSaved()
+   438→   438→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   439→   439→  }
+   440→   440→
+   441→   441→  return (
+   442→   442→    <Modal title={product ? `ویرایش «${product.name}»` : 'کالای جدید'} onClose={onClose} wide>
+   443→   443→      <div className="grid gap-3 sm:grid-cols-2">
+   444→   444→        <Labeled label="نام کالا *"><input value={form.name} onChange={(e) => set('name', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   445→   445→        <Labeled label="بارکدها (با کاما جدا کنید)"><input value={form.barcodes} onChange={(e) => set('barcodes', e.target.value)} className="w-full rounded-xl border border-input p-3 font-mono text-sm" dir="ltr" /></Labeled>
+   446→   446→        <Labeled label="کد هلو"><input value={form.holooCode} onChange={(e) => set('holooCode', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   447→   447→        <Labeled label="برند"><input value={form.brand} onChange={(e) => set('brand', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   448→   448→        <Labeled label="دسته"><input value={form.category} onChange={(e) => set('category', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   449→   449→        <Labeled label="واحد"><input value={form.unit} onChange={(e) => set('unit', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   450→   450→        <Labeled label="قیمت خرید (تومان)"><input type="number" value={form.buyPrice} onChange={(e) => set('buyPrice', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   451→   451→        <Labeled label="قیمت فروش (تومان)"><input type="number" value={form.sellPrice} onChange={(e) => set('sellPrice', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   452→   452→        <Labeled label="قیمت فروش با تخفیف"><input type="number" value={form.sellPrice2} onChange={(e) => set('sellPrice2', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   453→   453→        <Labeled label="موجودی انبار"><input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   454→   454→        <Labeled label="حد سفارش مجدد (زیر این عدد، قرمز می‌شود)"><input type="number" value={form.reorderLevel} onChange={(e) => set('reorderLevel', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   455→   455→      </div>
+   456→   456→
+   457→   457→      {/* image section */}
+   458→   458→      <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   459→   459→        <p className="mb-2 flex items-center gap-1.5 text-xs font-black"><ImagePlus size={14} /> تصویر کالا</p>
+   460→   460→        <div className="mb-2 flex items-center gap-2">
+   461→   461→          {form.imageUrl ? (
+   462→   462→            <img src={form.imageUrl} alt="تصویر کالا" className="h-16 w-16 rounded-xl object-cover" />
+   463→   463→          ) : (
+   464→   464→            <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-secondary text-2xl">🖼️</span>
+   465→   465→          )}
+   466→   466→          <input value={form.imageUrl} onChange={(e) => set('imageUrl', e.target.value)} placeholder="یا آدرس اینترنتی تصویر…" className="flex-1 rounded-xl border border-input p-2.5 text-xs" dir="ltr" />
+   467→   467→          <button onClick={() => fileRef.current?.click()} className="rounded-xl bg-secondary px-3 py-2.5 text-[11px] font-bold">📁 از دستگاه</button>
+   468→   468→          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onUpload} />
+   469→   469→        </div>
+   470→   470→        <div className="flex gap-2">
+   471→   471→          <input value={imgQuery} onChange={(e) => setImgQuery(e.target.value)} placeholder="جستجوی عکس در اینترنت: مثلاً بسته شیر پگاه…" className="flex-1 rounded-xl border border-input p-2.5 text-xs" />
+   472→   472→          <button onClick={searchImages} disabled={imgSearching} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-[11px] font-extrabold text-white disabled:opacity-50">
+   473→   473→            {imgSearching ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />} جستجو
+   474→   474→          </button>
+   475→   475→        </div>
+   476→   476→        {imgResults.length > 0 && (
+   477→   477→          <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+   478→   478→            {imgResults.map((r, i) => (
+   479→   479→              <button key={i} onClick={() => { set('imageUrl', r.url); setImgResults([]); toast.success('تصویر انتخاب شد') }} className="overflow-hidden rounded-xl border-2 border-transparent transition hover:border-primary">
+   480→   480→                <img src={r.url} alt={`گزینه ${i + 1}`} className="h-20 w-full object-cover" />
+   481→   481→              </button>
+   482→   482→            ))}
+   483→   483→          </div>
+   484→   484→        )}
+   485→   485→      </div>
+
+[showing lines 36-485 of 853; use offset=486 with limit to continue reading]

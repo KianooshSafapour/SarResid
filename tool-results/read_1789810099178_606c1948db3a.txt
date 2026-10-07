@@ -1,0 +1,793 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faNum, faMoney, formatJalaliDateTime, formatJalaliShort, todayIso, addDaysIso } from '@/lib/jalali'
+     7→import { ROLE_LABELS } from '@/lib/constants'
+     8→import { SectionCard, StatCard, Pill, EmptyState, Labeled, KeyValue, Avatar, FaPriceInput } from '@/components/app/ui-bits'
+     9→import type { AppCtx } from '@/components/app/ui-bits'
+    10→import { RankBars, LineChart, BarChart } from '@/components/app/charts'
+    11→import { cn } from '@/lib/utils'
+    12→import { JalaliDatePicker } from '@/components/app/jalali-widgets'
+    13→import { Trophy, Sparkles, Gift, CheckCircle2, ListTodo, Lightbulb, Users, Gauge, Clock, Target, TrendingUp, ShoppingCart, CalendarDays, Trash2, Info } from 'lucide-react'
+    14→
+    15→type LBRow = { rank: number; id: string; name: string; role: string; points: number; color: string }
+    16→type Award = { id: string; userName?: string; points: number; reason: string; awardedByName: string; createdAt: string }
+    17→type Badge = { key: string; label: string; emoji: string; earned: boolean; hint: string }
+    18→type GamData = {
+    19→  leaderboard: LBRow[]
+    20→  awards: Award[]
+    21→  recentAwards: Award[]
+    22→  stats: { rank: number; points: number; total: number; tasksDone: number; tasksOpen: number; ideasAccepted: number }
+    23→  badges: Badge[]
+    24→}
+    25→
+    26→export default function PerfView({ ctx }: { ctx: AppCtx }) {
+    27→  const [tab, setTab] = useState<'points' | 'splh'>('points')
+    28→  const [data, setData] = useState<GamData | null>(null)
+    29→  const canAward = ['GM', 'OM', 'PM', 'OWNER', 'HC'].includes(ctx.user!.role)
+    30→
+    31→  const load = async () => {
+    32→    try {
+    33→      const d = await api<GamData>('/api/gamification')
+    34→      setData(d)
+    35→    } catch (e: any) {
+    36→      toast.error(e.message)
+    37→    }
+    38→  }
+    39→  useEffect(() => {
+    40→    api<GamData>('/api/gamification').then((d) => setData(d)).catch((e: any) => toast.error(e.message))
+    41→  }, [])
+    42→
+    43→  const tabs = [
+    44→    { key: 'points' as const, label: 'امتیازها و قدردانی', icon: <Trophy size={15} /> },
+    45→    { key: 'splh' as const, label: 'بهره‌وری نیروی کار (SPLH)', icon: <Gauge size={15} /> },
+    46→  ]
+    47→
+    48→  return (
+    49→    <div className="space-y-4">
+    50→      {/* ── tabs ── */}
+    51→      <div className="scroll-gold flex gap-2 overflow-x-auto pb-1">
+    52→        {tabs.map((t) => (
+    53→          <button
+    54→            key={t.key}
+    55→            onClick={() => setTab(t.key)}
+    56→            className={cn(
+    57→              'flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-black transition-all',
+    58→              tab === t.key
+    59→                ? 'border-[#0e7a4a] bg-[#0e7a4a] text-white shadow-lg shadow-[#0e7a4a]/25'
+    60→                : 'border-border bg-card text-foreground hover:border-[#c9a227]/60 hover:bg-secondary'
+    61→            )}
+    62→          >
+    63→            {t.icon} {t.label}
+    64→          </button>
+    65→        ))}
+    66→      </div>
+    67→
+    68→      {tab === 'points' &&
+    69→        (data ? (
+    70→          <PointsBody ctx={ctx} data={data} canAward={canAward} onReload={load} />
+    71→        ) : (
+    72→          <div className="py-16 text-center text-sm text-muted-foreground">در حال بارگذاری امتیازها…</div>
+    73→        ))}
+    74→
+    75→      {tab === 'splh' && <SplhSection ctx={ctx} />}
+    76→    </div>
+    77→  )
+    78→}
+    79→
+    80→/* ─────────────────────────── امتیازها و قدردانی (محتوای پیشین) ─────────────────────────── */
+    81→function PointsBody({ ctx, data, canAward, onReload }: { ctx: AppCtx; data: GamData; canAward: boolean; onReload: () => void }) {
+    82→  const load = onReload
+    83→  const { stats, badges, leaderboard, awards, recentAwards } = data
+    84→
+    85→  return (
+    86→    <div className="space-y-4">
+    87→      {/* ── hero ── */}
+    88→      <div className="hero-emerald glow-card fade-in-up relative overflow-hidden rounded-2xl p-6 text-white">
+    89→        <span className="pointer-events-none absolute -left-4 -top-6 text-[120px] opacity-10">🫒</span>
+    90→        <div className="relative flex flex-wrap items-center justify-between gap-4">
+    91→          <div>
+    92→            <p className="flex items-center gap-1.5 text-xs font-bold opacity-80">
+    93→              <Trophy size={14} /> رتبه {faNum(stats.rank)} از {faNum(stats.total)} همکار
+    94→            </p>
+    95→            <p className="mt-2 text-5xl font-black leading-none">
+    96→              {faNum(stats.points)}
+    97→              <span className="mr-2 text-base font-bold opacity-80">امتیاز</span>
+    98→            </p>
+    99→            <p className="mt-3 text-sm font-bold opacity-90">مدیران تلاش شما را می‌بینند و قدردان هستند 🌟</p>
+   100→          </div>
+   101→          <div className="grid grid-cols-3 gap-2 text-center">
+   102→            {[
+   103→              { icon: <ListTodo size={14} />, label: 'وظایف انجام‌شده', v: stats.tasksDone },
+   104→              { icon: <CheckCircle2 size={14} />, label: 'وظایف باز', v: stats.tasksOpen },
+   105→              { icon: <Lightbulb size={14} />, label: 'ایده پذیرفته‌شده', v: stats.ideasAccepted },
+   106→            ].map((s) => (
+   107→              <div key={s.label} className="rounded-2xl bg-white/10 px-3 py-3 backdrop-blur-sm">
+   108→                <p className="flex items-center justify-center gap-1 text-lg font-black">{s.icon}{faNum(s.v)}</p>
+   109→                <p className="mt-1 text-[9px] font-bold opacity-80">{s.label}</p>
+   110→              </div>
+   111→            ))}
+   112→          </div>
+   113→        </div>
+   114→      </div>
+   115→
+   116→      {/* ── badges ── */}
+   117→      <SectionCard
+   118→        title="نشان‌های من 🎖️"
+   119→        subtitle="نشان‌ها با انجام وظیفه، ثبت ایده و کسب امتیاز باز می‌شوند"
+   120→        icon={<Sparkles size={18} />}
+   121→      >
+   122→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   123→          {badges.map((b) => (
+   124→            <div
+   125→              key={b.key}
+   126→              className={cn(
+   127→                'rounded-2xl border p-4 text-center transition',
+   128→                b.earned
+   129→                  ? 'gold-glow-border border-[#c9a227]/50 bg-gradient-to-b from-[#fdf6dd]/80 to-[#faf3d7]/40 shadow-[0_0_18px_-6px_#c9a22788]'
+   130→                  : 'border-border bg-muted/30 opacity-70 grayscale'
+   131→              )}
+   132→            >
+   133→              <span className="text-3xl">{b.emoji}</span>
+   134→              <p className="mt-1.5 text-xs font-black text-foreground">{b.label}</p>
+   135→              <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">{b.earned ? 'کسب شد ✅' : b.hint}</p>
+   136→            </div>
+   137→          ))}
+   138→        </div>
+   139→      </SectionCard>
+   140→
+   141→      <div className="grid gap-4 lg:grid-cols-2">
+   142→        {/* ── leaderboard ── */}
+   143→        <SectionCard title="جدول قهرمانان تیم 🏆" subtitle="امتیاز همهٔ همکاران فعال" icon={<Users size={18} />}>
+   144→          {leaderboard.length === 0 ? (
+   145→            <EmptyState emoji="🏆" title="هنوز امتیازی ثبت نشده" />
+   146→          ) : (
+   147→            <div className="scroll-gold max-h-[44vh] overflow-y-auto pl-1">
+   148→              <RankBars
+   149→                data={leaderboard.map((l) => ({
+   150→                  label: l.id === ctx.user!.id ? `${l.name} (شما)` : l.name,
+   151→                  value: l.points,
+   152→                  color: l.color || '#0e7a4a',
+   153→                }))}
+   154→              />
+   155→            </div>
+   156→          )}
+   157→        </SectionCard>
+   158→
+   159→        <div className="space-y-4">
+   160→          {/* ── my awards timeline ── */}
+   161→          <SectionCard title="قدردانی‌های اخیر من 🌟" subtitle="امتیازهایی که مدیریت به شما اهدا کرده" icon={<Sparkles size={18} />}>
+   162→            {awards.length === 0 ? (
+   163→              <EmptyState emoji="🌟" title="هنوز قدردانی ثبت نشده" hint="با انجام وظیفه‌ها و ثبت ایده، اولین امتیازتان را بگیرید" />
+   164→            ) : (
+   165→              <div className="scroll-gold relative max-h-[38vh] space-y-3 overflow-y-auto border-r-2 border-dashed border-[#c9a227]/40 pr-4">
+   166→                {awards.map((a) => (
+   167→                  <div key={a.id} className="relative">
+   168→                    <span className="absolute -right-[23px] top-3 h-3 w-3 rounded-full border-2 border-[#c9a227] bg-[#fdf6dd]" />
+   169→                    <div className="glow-card rounded-xl bg-white/80 p-3">
+   170→                      <div className="flex items-start justify-between gap-2">
+   171→                        <p className="text-xs font-bold text-foreground">{a.reason}</p>
+   172→                        <Pill label={`+${faNum(a.points)} امتیاز`} color="#8a6d10" />
+   173→                      </div>
+   174→                      <p className="mt-1 text-[10px] text-muted-foreground">
+   175→                        {a.awardedByName} • {formatJalaliDateTime(a.createdAt)}
+   176→                      </p>
+   177→                    </div>
+   178→                  </div>
+   179→                ))}
+   180→              </div>
+   181→            )}
+   182→          </SectionCard>
+   183→
+   184→          {/* ── team recent awards ── */}
+   185→          <SectionCard title="قدردانی‌های اخیر تیم 🤝" subtitle="آخرین اهدای امتیاز در کل فروشگاه" icon={<Gift size={18} />}>
+   186→            {recentAwards.length === 0 ? (
+   187→              <EmptyState emoji="🤝" title="هنوز قدردانی تیمی ثبت نشده" />
+   188→            ) : (
+   189→              <div className="space-y-1.5">
+   190→                {recentAwards.slice(0, 6).map((a) => (
+   191→                  <div key={a.id} className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 px-3 py-2">
+   192→                    <div className="flex min-w-0 items-center gap-2">
+   193→                      <Avatar name={a.userName || '؟'} color="#0e7a4a" size={26} />
+   194→                      <div className="min-w-0">
+   195→                        <p className="truncate text-[11px] font-bold">{a.userName} — {a.reason}</p>
+   196→                        <p className="text-[9px] text-muted-foreground">توسط {a.awardedByName} • {formatJalaliDateTime(a.createdAt)}</p>
+   197→                      </div>
+   198→                    </div>
+   199→                    <Pill label={`+${faNum(a.points)}`} color="#0e7a4a" />
+   200→                  </div>
+   201→                ))}
+   202→              </div>
+   203→            )}
+   204→          </SectionCard>
+   205→        </div>
+   206→      </div>
+   207→
+   208→      {/* ── award form (managers) ── */}
+   209→      {canAward && <AwardSection leaderboard={leaderboard} onDone={load} />}
+   210→    </div>
+   211→  )
+   212→}
+   213→
+   214→/* ─────────────────────────── award points (managers) ─────────────────────────── */
+   215→function AwardSection({ leaderboard, onDone }: { leaderboard: LBRow[]; onDone: () => void }) {
+   216→  const [targetId, setTargetId] = useState('')
+   217→  const [selPoints, setSelPoints] = useState<number | null>(null)
+   218→  const [custom, setCustom] = useState('')
+   219→  const [reason, setReason] = useState('')
+   220→  const [busy, setBusy] = useState(false)
+   221→
+   222→  const effective = Number(custom) > 0 ? Number(custom) : selPoints
+   223→
+   224→  const submit = async () => {
+   225→    if (!targetId) return toast.error('همکار را انتخاب کنید')
+   226→    if (!effective || effective <= 0) return toast.error('تعداد امتیاز را انتخاب یا وارد کنید')
+   227→    if (!reason.trim()) return toast.error('دلیل قدردانی را بنویسید — قلب این بخش همین است')
+   228→    setBusy(true)
+   229→    try {
+   230→      await api('/api/gamification/award', { method: 'POST', body: { userId: targetId, points: effective, reason: reason.trim() } })
+   231→      toast.success('امتیاز اهدا شد — همکارتان مطلع می‌شود 🎉')
+   232→      setTargetId('')
+   233→      setSelPoints(null)
+   234→      setCustom('')
+   235→      setReason('')
+   236→      onDone()
+   237→    } catch (e: any) {
+   238→      toast.error(e.message)
+   239→    } finally {
+   240→      setBusy(false)
+   241→    }
+   242→  }
+   243→
+   244→  return (
+   245→    <SectionCard
+   246→      title="اعطای امتیاز به همکار 🎁"
+   247→      subtitle="قدردانی لحظه‌ای، انگیزهٔ ماندگار — دلیل را صادقانه و مشخص بنویسید"
+   248→      icon={<Gift size={18} />}
+   249→    >
+   250→      <div className="grid gap-3 lg:grid-cols-2">
+   251→        <div className="space-y-3">
+   252→          <Labeled label="همکار مورد قدردانی *">
+   253→            <select
+   254→              value={targetId}
+   255→              onChange={(e) => setTargetId(e.target.value)}
+   256→              className="w-full rounded-xl border border-input bg-white p-3 text-sm"
+   257→            >
+   258→              <option value="">— انتخاب کنید —</option>
+   259→              {leaderboard.map((l) => (
+   260→                <option key={l.id} value={l.id}>
+   261→                  {l.name} ({ROLE_LABELS[l.role] || l.role}) — {l.points} امتیاز
+   262→                </option>
+   263→              ))}
+   264→            </select>
+   265→          </Labeled>
+   266→
+   267→          <Labeled label="تعداد امتیاز *" hint="می‌توانید عدد دلخواه هم وارد کنید">
+   268→            <div className="flex flex-wrap items-center gap-1.5">
+   269→              {[5, 10, 15, 20, 25, 50].map((p) => (
+   270→                <button
+   271→                  key={p}
+   272→                  type="button"
+   273→                  onClick={() => { setSelPoints(p); setCustom('') }}
+   274→                  className={cn(
+   275→                    'rounded-full px-4 py-2 text-xs font-black transition',
+   276→                    effective === p && !custom
+   277→                      ? 'bg-primary text-white shadow-md'
+   278→                      : 'border border-border bg-card text-foreground/70 hover:border-primary/50'
+   279→                  )}
+   280→                >
+   281→                  {faNum(p)}
+   282→                </button>
+   283→              ))}
+   284→              <input
+   285→                type="number" dir="ltr" min={1}
+   286→                value={custom}
+   287→                onChange={(e) => setCustom(e.target.value)}
+   288→                placeholder="عدد دلخواه"
+   289→                className="w-24 rounded-xl border border-input bg-white p-2.5 text-center text-xs font-black"
+   290→              />
+   291→            </div>
+   292→          </Labeled>
+   293→        </div>
+   294→
+   295→        <div className="space-y-3">
+   296→          <Labeled label="دلیل قدردانی *">
+   297→            <textarea
+   298→              value={reason}
+   299→              onChange={(e) => setReason(e.target.value)}
+   300→              rows={4}
+   301→              placeholder="مثلاً: در شیفت شلوغ عصر، با حوصله مشتری‌ها را جابه‌جا کرد و نظم قفسه را حفظ کرد"
+   302→              className="w-full resize-none rounded-xl border border-input bg-white/90 p-3 text-sm"
+   303→            />
+   304→          </Labeled>
+   305→          <button
+   306→            onClick={submit}
+   307→            disabled={busy}
+   308→            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#c9a227] py-3.5 text-sm font-extrabold text-white shadow-md transition hover:brightness-105 disabled:opacity-40"
+   309→          >
+   310→            <Gift size={16} /> {busy ? '…' : 'اهدا امتیاز 🎁'}
+   311→          </button>
+   312→        </div>
+   313→      </div>
+   314→    </SectionCard>
+   315→  )
+   316→}
+   317→
+   318→/* ─────────────────────────── بهره‌وری نیروی کار (SPLH) ───────────────────────────
+   319→ * SPLH = Sales Per Labor Hour = فروش ÷ ساعت کار — شاخص استاندارد بهره‌وری نیروی کار در خرده‌فروشی.
+   320→ * تا زمان اتصال خروجی صندوق (POS)، مبنای فروش همان پیش‌فاکتورهای غیرلغوشدهٔ سامانه است (شفاف با کاربر).
+   321→ */
+   322→
+   323→type SplhSeries = { day: string; hours: number; overtime: number; revenue: number; splh: number | null }
+   324→type SplhStaffRow = { userId: string; userName: string; hours: number; overtime: number; avgHoursPerDay: number; share: number }
+   325→type SplhRecent = { id: string; userId: string; userName: string; forDate: string; hours: number; kind: string; note: string }
+   326→type SplhData = {
+   327→  series: SplhSeries[]
+   328→  staff: SplhStaffRow[]
+   329→  me: SplhStaffRow
+   330→  team: { hours: number; overtime: number; headcount: number }
+   331→  recent: SplhRecent[]
+   332→  totals: {
+   333→    hours: number
+   334→    overtime: number
+   335→    revenue: number
+   336→    splh: number | null
+   337→    bestDay: { day: string; splh: number } | null
+   338→    worstDay: { day: string; splh: number } | null
+   339→    target: number
+   340→    aboveTargetDays: number
+   341→    activeDays: number
+   342→  }
+   343→  canEdit: boolean
+   344→}
+   345→
+   346→const SPLH_BONUS_COEF = 0.005 // ضریب ثابت صندوق پاداش بهره‌وری (۰٫۵٪)
+   347→const SPLH_DEFAULT_TARGET = 500000
+   348→const fa1 = (n: number) => faNum(Math.round(n * 10) / 10).replace('.', '٫')
+   349→
+   350→function SplhSection({ ctx }: { ctx: AppCtx }) {
+   351→  const [data, setData] = useState<SplhData | null>(null)
+   352→  const [days, setDays] = useState(30)
+   353→  const [users, setUsers] = useState<{ id: string; name: string; role: string }[]>([])
+   354→  const [busy, setBusy] = useState(false)
+   355→  const [edUserId, setEdUserId] = useState('')
+   356→  const [edDate, setEdDate] = useState(todayIso())
+   357→  const [edHours, setEdHours] = useState<number | ''>('')
+   358→  const [edKind, setEdKind] = useState<'REGULAR' | 'OVERTIME'>('REGULAR')
+   359→  const [edNote, setEdNote] = useState('')
+   360→  const [targetDraft, setTargetDraft] = useState<number | ''>('')
+   361→
+   362→  const load = useCallback(async (d: number) => {
+   363→    try {
+   364→      const res = await api<SplhData>(`/api/splh?days=${d}`)
+   365→      setData(res)
+   366→      setTargetDraft(res.totals.target)
+   367→    } catch (e: any) {
+   368→      toast.error(e.message)
+   369→    }
+   370→  }, [])
+   371→  useEffect(() => {
+   372→    load(days)
+   373→  }, [days, load])
+   374→
+   375→  // فهرست همکاران فعال — فقط برای ویرایشگرها
+   376→  useEffect(() => {
+   377→    if (!data?.canEdit) return
+   378→    api<{ users: { id: string; name: string; role: string; active: boolean }[] }>('/api/users')
+   379→      .then((r) => setUsers(r.users.filter((u) => u.active)))
+   380→      .catch(() => {})
+   381→  }, [data?.canEdit])
+   382→
+   383→  const submitHours = async () => {
+   384→    if (!edUserId) return toast.error('همکار را انتخاب کنید')
+   385→    if (!edDate) return toast.error('تاریخ را انتخاب کنید')
+   386→    const h = Number(edHours)
+   387→    if (!h || h <= 0 || h > 16) return toast.error('ساعت کار باید بیشتر از صفر و حداکثر ۱۶ باشد')
+   388→    setBusy(true)
+   389→    try {
+   390→      await api('/api/splh', { method: 'POST', body: { userId: edUserId, forDate: edDate, hours: h, kind: edKind, note: edNote.trim() } })
+   391→      toast.success('ساعت کار ثبت شد ✅')
+   392→      setEdHours('')
+   393→      setEdNote('')
+   394→      load(days)
+   395→    } catch (e: any) {
+   396→      toast.error(e.message)
+   397→    } finally {
+   398→      setBusy(false)
+   399→    }
+   400→  }
+   401→
+   402→  const removeLog = async (id: string) => {
+   403→    setBusy(true)
+   404→    try {
+   405→      await api(`/api/splh?id=${id}`, { method: 'DELETE' })
+   406→      toast.success('رکورد ساعت کار حذف شد')
+   407→      load(days)
+   408→    } catch (e: any) {
+   409→      toast.error(e.message)
+   410→    } finally {
+   411→      setBusy(false)
+   412→    }
+   413→  }
+   414→
+   415→  const saveTarget = async () => {
+   416→    const t = Number(targetDraft)
+   417→    if (!t || t <= 0) return toast.error('هدف را وارد کنید (تومان بر ساعت)')
+   418→    setBusy(true)
+   419→    try {
+   420→      await api('/api/splh', { method: 'PUT', body: { target: t } })
+   421→      toast.success('هدف بهره‌وری ذخیره شد 🎯')
+   422→      load(days)
+   423→    } catch (e: any) {
+   424→      toast.error(e.message)
+   425→    } finally {
+   426→      setBusy(false)
+   427→    }
+   428→  }
+   429→
+   430→  if (!data) {
+   431→    return <div className="py-16 text-center text-sm text-muted-foreground">در حال بارگذاری بهره‌وری نیروی کار…</div>
+   432→  }
+   433→
+   434→  const t = data.totals
+   435→  const splhLine = data.series.filter((d) => d.splh != null).map((d) => ({ label: d.day, value: Math.round(d.splh!) }))
+   436→  const revBars = data.series.map((d) => ({ label: d.day, value: Math.round(d.revenue) }))
+   437→  // صندوق پاداش: Σ روزهای بالای هدف × (SPLH−هدف) × ساعت همان روز × ضریب ۰٫۵٪
+   438→  const bonusPool = data.series.reduce(
+   439→    (s, d) => (d.splh && d.splh > t.target ? s + (d.splh - t.target) * d.hours * SPLH_BONUS_COEF : s),
+   440→    0
+   441→  )
+   442→
+   443→  return (
+   444→    <div className="space-y-4">
+   445→      {/* ── window selector ── */}
+   446→      <div className="flex flex-wrap items-center justify-between gap-2">
+   447→        <p className="text-xs font-bold text-muted-foreground">بازهٔ تحلیل:</p>
+   448→        <div className="flex gap-1.5">
+   449→          {[7, 14, 30].map((d) => (
+   450→            <button
+   451→              key={d}
+   452→              onClick={() => setDays(d)}
+   453→              className={cn(
+   454→                'rounded-full px-4 py-1.5 text-xs font-black transition',
+   455→                days === d ? 'bg-[#0e7a4a] text-white shadow-md' : 'border border-border bg-card text-foreground/70 hover:border-[#c9a227]/60'
+   456→              )}
+   457→            >
+   458→              {faNum(d)} روز
+   459→            </button>
+   460→          ))}
+   461→        </div>
+   462→      </div>
+   463→
+   464→      {/* ── KPI cards ── */}
+   465→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   466→        <StatCard
+   467→          label="SPLH دوره (تومان/ساعت)"
+   468→          value={t.splh != null ? faMoney(t.splh) : '—'}
+   469→          hint="فروش ÷ جمع ساعت کار"
+   470→          tone="emerald"
+   471→          icon={<Gauge size={18} />}
+   472→        />
+   473→        <StatCard label="جمع ساعت کار" value={`${fa1(t.hours)} ساعت`} hint={`شامل ${fa1(t.overtime)} ساعت اضافه‌کار`} tone="gold" icon={<Clock size={18} />} />
+   474→        <StatCard label="فروش ثبت‌شده" value={faMoney(t.revenue)} hint="مجموع پیش‌فاکتورهای غیرلغوشده" tone="olive" icon={<ShoppingCart size={18} />} />
+   475→        <StatCard
+   476→          label="روزهای بالای هدف"
+   477→          value={`${faNum(t.aboveTargetDays)} از ${faNum(t.activeDays)}`}
+   478→          hint={`هدف: ${faMoney(t.target)} تومان/ساعت`}
+   479→          tone="terra"
+   480→          icon={<Target size={18} />}
+   481→        />
+   482→      </div>
+   483→
+   484→      {/* ── charts ── */}
+   485→      <div className="grid gap-4 lg:grid-cols-2">
+   486→        <SectionCard
+   487→          title="روند SPLH روزانه"
+   488→          subtitle="فروش هر روز تقسیم بر ساعت کار همان روز"
+   489→          icon={<TrendingUp size={18} />}
+   490→        >
+   491→          {/* هدف به‌صورت نوار خط‌چین طلایی بالای نمودار (LineChart چندسری ندارد) */}
+   492→          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-dashed border-[#c9a227]/60 bg-[#c9a227]/10 px-3 py-1.5 text-[11px] font-bold text-[#8a6d10]">
+   493→            <span>— — هدف: {faMoney(t.target)} تومان/ساعت</span>
+   494→            <span>
+   495→              {faNum(t.aboveTargetDays)} روز بالای هدف از {faNum(t.activeDays)} روز فعال
+   496→            </span>
+   497→          </div>
+   498→          {splhLine.length >= 2 ? (
+   499→            <>
+   500→              <LineChart data={splhLine} color="#0e7a4a" height={180} formatValue={(v) => `${faMoney(v)} ت/ساعت`} />
+   501→              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+   502→                <KeyValue k="بهترین روز" v={t.bestDay ? `${formatJalaliShort(t.bestDay.day)} — ${faMoney(t.bestDay.splh)}` : '—'} />
+   503→                <KeyValue k="ضعیف‌ترین روز" v={t.worstDay ? `${formatJalaliShort(t.worstDay.day)} — ${faMoney(t.worstDay.splh)}` : '—'} />
+   504→              </div>
+   505→            </>
+   506→          ) : (
+   507→            <EmptyState emoji="📈" title="دادهٔ کافی برای نمودار نیست" hint="پس از ثبت ساعت کار و فروشِ چند روز، روند اینجا نمایش داده می‌شود" />
+   508→          )}
+   509→        </SectionCard>
+   510→
+   511→        <SectionCard
+   512→          title="فروش روزانه"
+   513→          subtitle="فروش ثبت‌شده در سامانه (پیش‌فاکتورها) — تا زمان اتصال خروجی POS"
+   514→          icon={<ShoppingCart size={18} />}
+   515→        >
+   516→          {revBars.length > 0 ? (
+   517→            <BarChart
+   518→              data={revBars}
+   519→              color="#77934a"
+   520→              height={180}
+   521→              formatValue={(v) => `${faMoney(v)} تومان`}
+   522→              formatLabel={(l) => faNum(Number(l.slice(8, 10)))}
+   523→            />
+   524→          ) : (
+   525→            <EmptyState emoji="🧾" title="پیش‌فاکتوری در این بازه ثبت نشده" />
+   526→          )}
+   527→        </SectionCard>
+   528→      </div>
+   529→
+   530→      {/* ── staff detail (managers) / own summary (others) ── */}
+   531→      {data.canEdit ? (
+   532→        <SectionCard title="ساعت کار همکاران" subtitle={`سهم هر همکار از جمع ${fa1(t.hours)} ساعت در بازهٔ انتخابی`} icon={<Users size={18} />}>
+   533→          {data.staff.length === 0 ? (
+   534→            <EmptyState emoji="⏱️" title="ساعت کاری ثبت نشده" hint="از فرم «ثبت ساعت کار» پایین، روزها و همکاران را وارد کنید" />
+   535→          ) : (
+   536→            <div className="scroll-gold max-h-[50vh] overflow-y-auto">
+   537→              <table className="w-full text-right text-xs">
+   538→                <thead>
+   539→                  <tr className="text-[10px] text-muted-foreground">
+   540→                    <th className="pb-2 font-bold">همکار</th>
+   541→                    <th className="pb-2 font-bold">ساعت کار</th>
+   542→                    <th className="pb-2 font-bold">اضافه‌کار</th>
+   543→                    <th className="pb-2 font-bold">میانگین روزانه</th>
+   544→                    <th className="pb-2 font-bold">سهم از تیم</th>
+   545→                  </tr>
+   546→                </thead>
+   547→                <tbody>
+   548→                  {data.staff.map((s) => (
+   549→                    <tr key={s.userId} className="border-t border-border/60">
+   550→                      <td className="py-2.5 font-bold text-foreground">
+   551→                        {s.userName}
+   552→                        {s.userId === ctx.user!.id && <span className="mr-1 text-[10px] text-[#8a6d10]">(شما)</span>}
+   553→                      </td>
+   554→                      <td className="py-2.5 tabular-nums">{fa1(s.hours)}</td>
+   555→                      <td className="py-2.5">
+   556→                        {s.overtime > 0 ? <Pill label={`${fa1(s.overtime)} ساعت`} color="#c96f4a" /> : <span className="text-muted-foreground">—</span>}
+   557→                      </td>
+   558→                      <td className="py-2.5 tabular-nums text-muted-foreground">{fa1(s.avgHoursPerDay)}</td>
+   559→                      <td className="py-2.5">
+   560→                        <div className="flex items-center gap-2">
+   561→                          <div className="h-2 w-16 overflow-hidden rounded-full bg-muted sm:w-28">
+   562→                            <div
+   563→                              className="h-full rounded-full transition-all duration-500"
+   564→                              style={{ width: `${Math.min(100, s.share)}%`, background: 'linear-gradient(90deg, #0e7a4a, #0e7a4a88)' }}
+   565→                            />
+   566→                          </div>
+   567→                          <span className="font-extrabold text-[#8a6d10]">{faNum(Math.round(s.share))}٪</span>
+   568→                        </div>
+   569→                      </td>
+   570→                    </tr>
+   571→                  ))}
+   572→                </tbody>
+   573→              </table>
+   574→            </div>
+   575→          )}
+   576→        </SectionCard>
+   577→      ) : (
+   578→        <SectionCard title="ساعت کاری من" subtitle="خلاصهٔ عملکرد شما + جمع تیم (بدون جزئیات فردی همکاران)" icon={<Clock size={18} />}>
+   579→          <div className="grid gap-2 sm:grid-cols-2">
+   580→            <KeyValue
+   581→              k="ساعت کار من در این بازه"
+   582→              v={`${fa1(data.me.hours)} ساعت${data.me.overtime > 0 ? ` (اضافه‌کار ${fa1(data.me.overtime)})` : ''}`}
+   583→            />
+   584→            <KeyValue k="میانگین روزانه من" v={`${fa1(data.me.avgHoursPerDay)} ساعت`} />
+   585→            <KeyValue k="جمع ساعت کار تیم" v={`${fa1(data.team.hours)} ساعت`} />
+   586→            <KeyValue k="همکاران دارای ساعت ثبت‌شده" v={faNum(data.team.headcount)} />
+   587→          </div>
+   588→        </SectionCard>
+   589→      )}
+   590→
+   591→      {/* ── manager editor ── */}
+   592→      {data.canEdit && (
+   593→        <SectionCard
+   594→          title="ثبت ساعت کار"
+   595→          subtitle="ثبت مجدد برای همان همکار و همان روز، رکورد قبلی را به‌روزرسانی می‌کند"
+   596→          icon={<CalendarDays size={18} />}
+   597→        >
+   598→          <div className="grid gap-3 lg:grid-cols-2">
+   599→            <div className="space-y-3">
+   600→              <Labeled label="همکار *">
+   601→                <select
+   602→                  value={edUserId}
+   603→                  onChange={(e) => setEdUserId(e.target.value)}
+   604→                  className="w-full rounded-xl border border-input bg-white p-3 text-sm"
+   605→                >
+   606→                  <option value="">— انتخاب کنید —</option>
+   607→                  {users.map((u) => (
+   608→                    <option key={u.id} value={u.id}>
+   609→                      {u.name} ({ROLE_LABELS[u.role] || u.role})
+   610→                    </option>
+   611→                  ))}
+   612→                </select>
+   613→              </Labeled>
+   614→              <Labeled label="تاریخ *" hint="میان‌بر: امروز / دیروز">
+   615→                <div className="space-y-2">
+   616→                  <div className="flex gap-1.5">
+   617→                    {[
+   618→                      { label: 'امروز', v: todayIso() },
+   619→                      { label: 'دیروز', v: addDaysIso(-1) },
+   620→                    ].map((c) => (
+   621→                      <button
+   622→                        key={c.label}
+   623→                        type="button"
+   624→                        onClick={() => setEdDate(c.v)}
+   625→                        className={cn(
+   626→                          'rounded-full border px-4 py-1.5 text-[11px] font-bold transition',
+   627→                          edDate === c.v
+   628→                            ? 'border-[#0e7a4a] bg-[#0e7a4a] text-white'
+   629→                            : 'border-border bg-card text-foreground/70 hover:border-[#c9a227]/60'
+   630→                        )}
+   631→                      >
+   632→                        {c.label}
+   633→                      </button>
+   634→                    ))}
+   635→                  </div>
+   636→                  <JalaliDatePicker value={edDate} onChange={setEdDate} holidays={new Map()} quickChips={false} />
+   637→                </div>
+   638→              </Labeled>
+   639→              <Labeled label="نوع ساعت *">
+   640→                <div className="flex gap-1.5">
+   641→                  {[
+   642→                    { k: 'REGULAR' as const, label: 'عادی ☀️' },
+   643→                    { k: 'OVERTIME' as const, label: 'اضافه‌کار 🌙' },
+   644→                  ].map((o) => (
+   645→                    <button
+   646→                      key={o.k}
+   647→                      type="button"
+   648→                      onClick={() => setEdKind(o.k)}
+   649→                      className={cn(
+   650→                        'rounded-xl px-4 py-2.5 text-xs font-black transition',
+   651→                        edKind === o.k
+   652→                          ? 'bg-[#0e7a4a] text-white shadow-md'
+   653→                          : 'border border-border bg-card text-foreground/70 hover:border-[#c9a227]/60'
+   654→                      )}
+   655→                    >
+   656→                      {o.label}
+   657→                    </button>
+   658→                  ))}
+   659→                </div>
+   660→              </Labeled>
+   661→            </div>
+   662→            <div className="space-y-3">
+   663→              <Labeled label="ساعت کار *" hint="بین ۰٫۵ تا ۱۶ — مثلاً ۷٫۵">
+   664→                <input
+   665→                  type="number"
+   666→                  dir="ltr"
+   667→                  min={0.5}
+   668→                  max={16}
+   669→                  step={0.5}
+   670→                  value={edHours}
+   671→                  onChange={(e) => setEdHours(e.target.value === '' ? '' : Number(e.target.value))}
+   672→                  placeholder="۷٫۵"
+   673→                  className="w-full rounded-xl border border-input bg-white p-3 text-center text-sm font-black tabular-nums"
+   674→                />
+   675→              </Labeled>
+   676→              <Labeled label="یادداشت">
+   677→                <input
+   678→                  value={edNote}
+   679→                  onChange={(e) => setEdNote(e.target.value)}
+   680→                  placeholder="مثلاً: شیفت عصر جمعه — پیک فروش"
+   681→                  className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm"
+   682→                />
+   683→              </Labeled>
+   684→              <button
+   685→                onClick={submitHours}
+   686→                disabled={busy}
+   687→                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#c9a227] py-3.5 text-sm font-extrabold text-white shadow-md transition hover:brightness-105 disabled:opacity-40"
+   688→              >
+   689→                <Clock size={16} /> {busy ? '…' : 'ثبت ساعت کار'}
+   690→              </button>
+   691→            </div>
+   692→          </div>
+   693→
+   694→          {/* recent logs */}
+   695→          {data.recent.length > 0 && (
+   696→            <div className="mt-4">
+   697→              <p className="mb-2 text-xs font-bold text-muted-foreground">۱۴ رکورد اخیر</p>
+   698→              <div className="scroll-gold max-h-[38vh] space-y-1.5 overflow-y-auto pl-1">
+   699→                {data.recent.map((l) => (
+   700→                  <div key={l.id} className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 px-3 py-2">
+   701→                    <div className="flex min-w-0 items-center gap-2">
+   702→                      <Avatar name={l.userName} color="#0e7a4a" size={26} />
+   703→                      <div className="min-w-0">
+   704→                        <p className="truncate text-[11px] font-bold">
+   705→                          {l.userName} — {formatJalaliShort(l.forDate)} — {fa1(l.hours)} ساعت
+   706→                          {l.kind === 'OVERTIME' && <span className="mr-1 text-[10px] font-black text-[#c96f4a]">(اضافه‌کار)</span>}
+   707→                        </p>
+   708→                        {l.note && <p className="truncate text-[10px] text-muted-foreground">{l.note}</p>}
+   709→                      </div>
+   710→                    </div>
+   711→                    <button
+   712→                      onClick={() => removeLog(l.id)}
+   713→                      disabled={busy}
+   714→                      title="حذف رکورد"
+   715→                      className="rounded-lg p-1.5 text-[#b3372f] transition hover:bg-[#b3372f]/10 disabled:opacity-40"
+   716→                    >
+   717→                      <Trash2 size={14} />
+   718→                    </button>
+   719→                  </div>
+   720→                ))}
+   721→              </div>
+   722→            </div>
+   723→          )}
+   724→        </SectionCard>
+   725→      )}
+   726→
+   727→      {/* ── target editor (managers) ── */}
+   728→      {data.canEdit && (
+   729→        <SectionCard title="هدف بهره‌وری" subtitle="مبنای مقایسهٔ روزها و محاسبهٔ صندوق پاداش" icon={<Target size={18} />}>
+   730→          <div className="flex flex-wrap items-end gap-3">
+   731→            <Labeled label="هدف SPLH (تومان بر ساعت)">
+   732→              <FaPriceInput
+   733→                value={targetDraft}
+   734→                onChange={setTargetDraft}
+   735→                ariaLabel="هدف SPLH"
+   736→                className="w-44 rounded-xl border border-input bg-white p-2.5"
+   737→              />
+   738→            </Labeled>
+   739→            <button
+   740→              onClick={saveTarget}
+   741→              disabled={busy}
+   742→              className="rounded-xl bg-[#0e7a4a] px-5 py-2.5 text-xs font-extrabold text-white shadow-md transition hover:brightness-110 disabled:opacity-40"
+   743→            >
+   744→              ذخیره هدف
+   745→            </button>
+   746→            <p className="text-[11px] text-muted-foreground">پیش‌فرض سامانه: {faMoney(SPLH_DEFAULT_TARGET)} تومان/ساعت</p>
+   747→          </div>
+   748→        </SectionCard>
+   749→      )}
+   750→
+   751→      {/* ── formula & science card ── */}
+   752→      <SectionCard
+   753→        title="فرمول و مبانی علمی SPLH"
+   754→        subtitle="Sales Per Labor Hour — شاخص استاندارد سنجش بهره‌وری نیروی کار در خرده‌فروشی"
+   755→        icon={<Info size={18} />}
+   756→      >
+   757→        <div className="grid gap-3 lg:grid-cols-2">
+   758→          <div className="space-y-2 rounded-xl bg-muted/40 p-4">
+   759→            <KeyValue k="فرمول" v="SPLH = فروش ÷ ساعت کار" />
+   760→            <KeyValue k="مبنای فروش" v="فروش ثبت‌شده در سامانه (پیش‌فاکتورها)" />
+   761→            <KeyValue k="مبنای ساعت" v="جمع ساعت عادی + اضافه‌کار ثبت‌شده" />
+   762→          </div>
+   763→          <div className="space-y-2 rounded-xl border border-[#c9a227]/40 bg-[#fdf6dd]/60 p-4 text-xs leading-6 text-foreground/90">
+   764→            <p>
+   765→              <b className="text-[#8a6d10]">کاربردها:</b> برنامه‌ریزی شیفت، سنجش اثر چیدمان و کمپین‌ها
+   766→            </p>
+   767→            <p className="text-[#b3372f]">
+   768→              <b>هشدار اخلاقی:</b> شاخص برای بهبود فرآیند است، نه کنترل فردی — به‌عنوان ابزار توانمندسازی تیم استفاده شود
+   769→            </p>
+   770→            <p className="text-muted-foreground">
+   771→              <b>شفافیت داده:</b> تا زمان اتصال خروجی صندوق (POS)، مبنای فروش همان پیش‌فاکتورهای ثبت‌شده در سامانه است.
+   772→            </p>
+   773→          </div>
+   774→        </div>
+   775→
+   776→        {/* bonus pool model */}
+   777→        <div className="mt-3 rounded-xl border border-[#0e7a4a]/30 bg-[#0e7a4a]/5 p-4">
+   778→          <p className="text-xs font-black text-[#0e7a4a]">صندوق پاداش بهره‌وری — مدل محاسبه</p>
+   779→          <p className="mt-2 text-center text-sm font-extrabold leading-7 text-foreground">
+   780→            صندوق پاداش بهره‌وری = Σ روزهای بالای هدف × (SPLH − هدف) × ساعت همان روز × ضریب ۰٫۵٪
+   781→          </p>
+   782→          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+   783→            <span className="text-[11px] text-muted-foreground">
+   784→              برآورد برای {faNum(t.aboveTargetDays)} روز بالای هدف در {faNum(days)} روز گذشته
+   785→            </span>
+   786→            <span className="text-lg font-black text-[#8a6d10]">{faMoney(bonusPool)} تومان</span>
+   787→          </div>
+   788→        </div>
+   789→      </SectionCard>
+   790→    </div>
+   791→  )
+   792→}
+   793→

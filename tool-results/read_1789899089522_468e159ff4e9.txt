@@ -1,0 +1,1057 @@
+     1→@import "tailwindcss";
+     2→@import "tw-animate-css";
+     3→
+     4→@custom-variant dark (&:is(.dark *));
+     5→
+     6→@theme inline {
+     7→  --color-background: var(--background);
+     8→  --color-foreground: var(--foreground);
+     9→  --font-sans: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
+    10→  --color-sidebar-ring: var(--sidebar-ring);
+    11→  --color-sidebar-border: var(--sidebar-border);
+    12→  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    13→  --color-sidebar-accent: var(--sidebar-accent);
+    14→  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    15→  --color-sidebar-primary: var(--sidebar-primary);
+    16→  --color-sidebar-foreground: var(--sidebar-foreground);
+    17→  --color-sidebar: var(--sidebar);
+    18→  --color-chart-5: var(--chart-5);
+    19→  --color-chart-4: var(--chart-4);
+    20→  --color-chart-3: var(--chart-3);
+    21→  --color-chart-2: var(--chart-2);
+    22→  --color-chart-1: var(--chart-1);
+    23→  --color-ring: var(--ring);
+    24→  --color-input: var(--input);
+    25→  --color-border: var(--border);
+    26→  --color-destructive: var(--destructive);
+    27→  --color-accent-foreground: var(--accent-foreground);
+    28→  --color-accent: var(--accent);
+    29→  --color-muted-foreground: var(--muted-foreground);
+    30→  --color-muted: var(--muted);
+    31→  --color-secondary-foreground: var(--secondary-foreground);
+    32→  --color-secondary: var(--secondary);
+    33→  --color-primary-foreground: var(--primary-foreground);
+    34→  --color-primary: var(--primary);
+    35→  --color-popover-foreground: var(--popover-foreground);
+    36→  --color-popover: var(--popover);
+    37→  --color-card-foreground: var(--card-foreground);
+    38→  --color-card: var(--card);
+    39→  --color-gold: var(--gold);
+    40→  --color-pistachio: var(--pistachio);
+    41→  --color-olive: var(--olive);
+    42→  --color-terracotta: var(--terracotta);
+    43→  --radius-sm: calc(var(--radius) - 4px);
+    44→  --radius-md: calc(var(--radius) - 2px);
+    45→  --radius-lg: var(--radius);
+    46→  --radius-xl: calc(var(--radius) + 4px);
+    47→}
+    48→
+    49→:root {
+    50→  --radius: 0.8rem;
+    51→  /* Hyper Zeytoon — Kerman pistachio & gold palette */
+    52→  --background: #faf7ee;
+    53→  --foreground: #1c2a22;
+    54→  --card: #fffdf6;
+    55→  --card-foreground: #1c2a22;
+    56→  --popover: #fffdf6;
+    57→  --popover-foreground: #1c2a22;
+    58→  --primary: #0e7a4a;
+    59→  --primary-foreground: #f7fdf9;
+    60→  --secondary: #e9f0e4;
+    61→  --secondary-foreground: #24402f;
+    62→  --muted: #f1ecdd;
+    63→  --muted-foreground: #6d7a6e;
+    64→  --accent: #f5eccf;
+    65→  --accent-foreground: #6b5310;
+    66→  --destructive: #b3372f;
+    67→  --border: #e4dcc4;
+    68→  --input: #ddd4b8;
+    69→  --ring: #c9a227;
+    70→  --gold: #c9a227;
+    71→  --pistachio: #93c572;
+    72→  --olive: #77934a;
+    73→  --terracotta: #c96f4a;
+    74→  --chart-1: #0e7a4a;
+    75→  --chart-2: #c9a227;
+    76→  --chart-3: #c96f4a;
+    77→  --chart-4: #77934a;
+    78→  --chart-5: #8a5a2b;
+    79→  --sidebar: #0b2e20;
+    80→  --sidebar-foreground: #e9f0e4;
+    81→  --sidebar-primary: #c9a227;
+    82→  --sidebar-primary-foreground: #0b2e20;
+    83→  --sidebar-accent: #143d2b;
+    84→  --sidebar-accent-foreground: #f3ead0;
+    85→  --sidebar-border: #1d5238;
+    86→  --sidebar-ring: #c9a227;
+    87→}
+    88→
+    89→@layer base {
+    90→  * {
+    91→    @apply border-border outline-ring/50;
+    92→  }
+    93→  body {
+    94→    @apply bg-background text-foreground;
+    95→    font-family: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
+    96→  }
+    97→  ::selection {
+    98→    background: rgba(201, 162, 39, 0.35);
+    99→  }
+   100→}
+   101→
+   102→/* ─── Kerman pattern backgrounds (boteh/paisley + girih star) ─── */
+   103→
+   104→.pattern-paisley {
+   105→  background-color: transparent;
+   106→  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1.5' opacity='0.16'%3E%3Cpath d='M70 22 C92 34 104 56 98 78 C92 100 70 112 52 106 C36 101 28 84 36 70 C43 58 58 56 64 66 C69 74 63 84 54 82'/%3E%3Ccircle cx='70' cy='70' r='3.5'/%3E%3Cpath d='M70 92 C70 100 64 106 56 106'/%3E%3C/g%3E%3Cg fill='none' stroke='%230e7a4a' stroke-width='1.2' opacity='0.10'%3E%3Cpath d='M14 112 C26 118 32 128 28 138 M126 14 C114 20 108 30 112 40'/%3E%3C/g%3E%3C/svg%3E");
+   107→  background-size: 140px 140px;
+   108→}
+   109→
+   110→.pattern-girih {
+   111→  background-color: #0b2e20;
+   112→  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1' opacity='0.14'%3E%3Cpath d='M48 6 L58 26 L80 22 L74 44 L92 56 L74 68 L80 90 L58 86 L48 106 L38 86 L16 90 L22 68 L4 56 L22 44 L16 22 L38 26 Z'/%3E%3Ccircle cx='48' cy='56' r='10'/%3E%3Cpath d='M48 46 L48 66 M38 56 L58 56'/%3E%3C/g%3E%3C/svg%3E");
+   113→  background-size: 96px 96px;
+   114→}
+   115→
+   116→.pattern-sand {
+   117→  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%230e7a4a' stroke-width='1' opacity='0.07'%3E%3Cpath d='M0 30 Q15 15 30 30 T60 30'/%3E%3Cpath d='M0 45 Q15 30 30 45 T60 45'/%3E%3Cpath d='M0 15 Q15 0 30 15 T60 15'/%3E%3C/g%3E%3C/svg%3E");
+   118→  background-size: 60px 60px;
+   119→}
+   120→
+   121→/* ─── پترن پسته — الگوی بومی پسته (پوست‌گشایی دو نیمه) ─── */
+   122→.pattern-pistachio {
+   123→  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cg fill='none' stroke='%2377934a' stroke-width='1.3' opacity='0.18'%3E%3Cpath d='M44 16 C58 26 62 44 44 60 C26 44 30 26 44 16 Z'/%3E%3Cpath d='M44 20 L44 56'/%3E%3C/g%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1' opacity='0.14'%3E%3Ccircle cx='16' cy='72' r='4'/%3E%3Ccircle cx='72' cy='16' r='4'/%3E%3Cpath d='M8 40 C14 34 20 34 26 40 C20 46 14 46 8 40 Z'/%3E%3Cpath d='M62 60 C68 54 74 54 80 60 C74 66 68 66 62 60 Z'/%3E%3C/g%3E%3C/svg%3E");
+   124→  background-size: 88px 88px;
+   125→}
+   126→
+   127→/* ─── سرِ طاقی — قاب با سر‌در ایوانی ایرانی (برای کارت‌های مهم) ─── */
+   128→.arch-top {
+   129→  position: relative;
+   130→}
+   131→.arch-top::before {
+   132→  content: '';
+   133→  position: absolute;
+   134→  inset-inline: 0;
+   135→  top: -1px;
+   136→  height: 10px;
+   137→  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='10' viewBox='0 0 44 10'%3E%3Cpath d='M0 10 Q11 -6 22 10 Q33 -6 44 10' fill='none' stroke='%23c9a227' stroke-width='1.6' opacity='0.75'/%3E%3C/svg%3E");
+   138→  background-size: 44px 10px;
+   139→  background-repeat: repeat-x;
+   140→  pointer-events: none;
+   141→}
+   142→
+   143→/* ─── جداکننده ترنج — divider مرکب‌دار ─── */
+   144→.toranj-divider {
+   145→  display: flex;
+   146→  align-items: center;
+   147→  gap: 10px;
+   148→}
+   149→.toranj-divider::before,
+   150→.toranj-divider::after {
+   151→  content: '';
+   152→  flex: 1;
+   153→  height: 1px;
+   154→  background: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.55), transparent);
+   155→}
+   156→
+   157→/* ─── Luxurious glow cards ─── */
+   158→
+   159→.glow-card {
+   160→  position: relative;
+   161→  border: 1px solid var(--border);
+   162→  box-shadow:
+   163→    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+   164→    0 10px 26px -18px rgba(11, 46, 32, 0.45);
+   165→  transition: box-shadow 0.35s ease, transform 0.25s ease, border-color 0.35s ease;
+   166→}
+   167→.glow-card:hover {
+   168→  border-color: rgba(201, 162, 39, 0.55);
+   169→  box-shadow:
+   170→    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+   171→    0 0 0 1px rgba(201, 162, 39, 0.28),
+   172→    0 16px 36px -16px rgba(201, 162, 39, 0.4);
+   173→  transform: translateY(-2px);
+   174→}
+   175→
+   176→.gold-glow-border {
+   177→  position: relative;
+   178→  background: linear-gradient(var(--card), var(--card)) padding-box,
+   179→    linear-gradient(135deg, rgba(201, 162, 39, 0.7), rgba(14, 122, 74, 0.5), rgba(201, 162, 39, 0.2)) border-box;
+   180→  border: 1.5px solid transparent;
+   181→}
+   182→
+   183→.shimmer-line {
+   184→  background: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.85), transparent);
+   185→  background-size: 200% 100%;
+   186→  animation: shimmer 3.2s linear infinite;
+   187→}
+   188→@keyframes shimmer {
+   189→  0% { background-position: 200% 0; }
+   190→  100% { background-position: -200% 0; }
+   191→}
+   192→
+   193→.brand-shine {
+   194→  background: linear-gradient(100deg, #f3ead0 20%, #c9a227 40%, #fdf6dd 50%, #c9a227 60%, #f3ead0 80%);
+   195→  background-size: 200% auto;
+   196→  -webkit-background-clip: text;
+   197→  background-clip: text;
+   198→  color: transparent;
+   199→  animation: shine 5s linear infinite;
+   200→}
+   201→@keyframes shine {
+   202→  to { background-position: -200% center; }
+   203→}
+   204→
+   205→.pulse-dot {
+   206→  animation: pulseDot 1.6s ease-in-out infinite;
+   207→}
+   208→@keyframes pulseDot {
+   209→  0%, 100% { opacity: 1; transform: scale(1); }
+   210→  50% { opacity: 0.45; transform: scale(0.82); }
+   211→}
+   212→
+   213→.fade-in-up {
+   214→  animation: fadeInUp 0.45s ease both;
+   215→}
+   216→@keyframes fadeInUp {
+   217→  from { opacity: 0; transform: translateY(10px); }
+   218→  to { opacity: 1; transform: translateY(0); }
+   219→}
+   220→
+   221→/* ─── Scrollbars ─── */
+   222→.scroll-gold::-webkit-scrollbar {
+   223→  width: 8px;
+   224→  height: 8px;
+   225→}
+   226→.scroll-gold::-webkit-scrollbar-track {
+   227→  background: rgba(201, 162, 39, 0.06);
+   228→  border-radius: 8px;
+   229→}
+   230→.scroll-gold::-webkit-scrollbar-thumb {
+   231→  background: linear-gradient(180deg, rgba(201, 162, 39, 0.55), rgba(14, 122, 74, 0.45));
+   232→  border-radius: 8px;
+   233→}
+   234→.scroll-gold::-webkit-scrollbar-thumb:hover {
+   235→  background: rgba(201, 162, 39, 0.8);
+   236→}
+   237→
+   238→/* ─── Touch-friendly stepper buttons ─── */
+   239→.stepper-btn {
+   240→  @apply inline-flex items-center justify-center rounded-xl border border-input bg-white text-lg font-bold;
+   241→  width: 2.75rem;
+   242→  height: 2.75rem;
+   243→  transition: all 0.15s ease;
+   244→}
+   245→.stepper-btn:hover {
+   246→  background: var(--secondary);
+   247→  border-color: var(--primary);
+   248→  color: var(--primary);
+   249→}
+   250→.stepper-btn:active {
+   251→  transform: scale(0.92);
+   252→}
+   253→
+   254→/* ─── Print (PDF export via browser) ─── */
+   255→@media print {
+   256→  body * {
+   257→    visibility: hidden !important;
+   258→  }
+   259→  .print-area,
+   260→  .print-area * {
+   261→    visibility: visible !important;
+   262→  }
+   263→  .print-area {
+   264→    position: fixed !important;
+   265→    inset: 0 !important;
+   266→    background: white !important;
+   267→    padding: 24px !important;
+   268→    overflow: visible !important;
+   269→    max-height: none !important;
+   270→  }
+   271→  .no-print {
+   272→    display: none !important;
+   273→  }
+   274→  /* expand scrollable lists fully on paper */
+   275→  .print-area .scroll-gold {
+   276→    max-height: none !important;
+   277→    overflow: visible !important;
+   278→  }
+   279→}
+   280→
+   281→/* number inputs without spinners */
+   282→input[type="number"]::-webkit-outer-spin-button,
+   283→input[type="number"]::-webkit-inner-spin-button {
+   284→  -webkit-appearance: none;
+   285→  margin: 0;
+   286→}
+   287→input[type="number"] {
+   288→  -moz-appearance: textfield;
+   289→  appearance: textfield;
+   290→}
+   291→
+   292→/* hide arrows on old firefox */
+   293→.rtl-flip:dir(rtl) {
+   294→  transform: scaleX(-1);
+   295→}
+   296→
+   297→/* ─── Luxe tables: zebra + hover ─── */
+   298→.table-luxe thead th {
+   299→  font-weight: 800;
+   300→}
+   301→.table-luxe tbody tr:nth-child(even) {
+   302→  background: rgba(201, 162, 39, 0.045);
+   303→}
+   304→.table-luxe tbody tr {
+   305→  transition: background 0.15s ease;
+   306→}
+   307→.table-luxe tbody tr:hover {
+   308→  background: rgba(14, 122, 74, 0.07);
+   309→}
+   310→
+   311→/* ─── Sidebar group divider ─── */
+   312→.sidebar-divider {
+   313→  height: 1px;
+   314→  background: linear-gradient(to left, transparent, rgba(201, 162, 39, 0.4), transparent);
+   315→}
+   316→
+   317→/* ─── Ornamental section divider (Kerman tile motif) ─── */
+   318→.ornament-divider {
+   319→  display: flex;
+   320→  align-items: center;
+   321→  gap: 12px;
+   322→}
+   323→.ornament-divider::before,
+   324→.ornament-divider::after {
+   325→  content: '';
+   326→  flex: 1;
+   327→  height: 1px;
+   328→  background: linear-gradient(to left, transparent, rgba(201, 162, 39, 0.55), transparent);
+   329→}
+   330→.ornament-diamond {
+   331→  width: 9px;
+   332→  height: 9px;
+   333→  transform: rotate(45deg);
+   334→  background: linear-gradient(135deg, #c9a227, #0e7a4a);
+   335→  border-radius: 2px;
+   336→  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18);
+   337→}
+   338→
+   339→/* ─── Morning briefing sheet (printable A4) ─── */
+   340→.briefing-sheet {
+   341→  border: 1.5px solid rgba(201, 162, 39, 0.55);
+   342→  background:
+   343→    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='0.8' opacity='0.05'%3E%3Cpath d='M40 8 L46 22 L61 20 L52 32 L61 44 L46 42 L40 56 L34 42 L19 44 L28 32 L19 20 L34 22 Z'/%3E%3C/g%3E%3C/svg%3E"),
+   344→    linear-gradient(180deg, #fffdf6, #fdfaf1);
+   345→  background-size: 80px 80px, auto;
+   346→}
+   347→@media print {
+   348→  .briefing-sheet {
+   349→    box-shadow: none !important;
+   350→    border: none !important;
+   351→  }
+   352→  * {
+   353→    -webkit-print-color-adjust: exact !important;
+   354→    print-color-adjust: exact !important;
+   355→  }
+   356→}
+   357→
+   358→/* ─── Notification item slide ─── */
+   359→.notif-item {
+   360→  animation: notifIn 0.3s ease both;
+   361→}
+   362→@keyframes notifIn {
+   363→  from { opacity: 0; transform: translateX(14px); }
+   364→  to { opacity: 1; transform: translateX(0); }
+   365→}
+   366→
+   367→/* ─── Shelf label sheet (قفسه لیبل) — 24up A4 (70×35mm) ─── */
+   368→.label-sheet {
+   369→  display: grid;
+   370→  grid-template-columns: repeat(3, 1fr);
+   371→  gap: 6px;
+   372→  background: repeating-linear-gradient(
+   373→    45deg,
+   374→    transparent,
+   375→    transparent 14px,
+   376→    rgba(201, 162, 39, 0.05) 14px,
+   377→    rgba(201, 162, 39, 0.05) 15px
+   378→  );
+   379→  padding: 6px;
+   380→  border-radius: 10px;
+   381→}
+   382→.shelf-label {
+   383→  display: flex;
+   384→  flex-direction: column;
+   385→  justify-content: space-between;
+   386→  min-height: 92px;
+   387→  border: 1px dashed rgba(14, 122, 74, 0.4);
+   388→  border-radius: 6px;
+   389→  background: white;
+   390→  padding: 6px 8px;
+   391→  direction: rtl;
+   392→}
+   393→.shelf-label-barcode svg {
+   394→  display: block;
+   395→  max-width: 100%;
+   396→}
+   397→@media print {
+   398→  .label-sheet {
+   399→    grid-template-columns: repeat(3, 1fr);
+   400→    gap: 2mm;
+   401→    background: none !important;
+   402→    padding: 0;
+   403→  }
+   404→  .shelf-label {
+   405→    border: 0.4mm dashed #999;
+   406→    min-height: 33mm;
+   407→    page-break-inside: avoid;
+   408→    break-inside: avoid;
+   409→  }
+   410→}
+   411→
+   412→/* ─── Micro-interactions: pressable buttons lift + settle ─── */
+   413→button:not([disabled]),
+   414→[role='button']:not([disabled]) {
+   415→  transition-property: transform, box-shadow, background-color, border-color, color, opacity;
+   416→  transition-duration: 0.18s;
+   417→  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+   418→}
+   419→button:not([disabled]):active {
+   420→  transform: scale(0.97);
+   421→}
+   422→@media (prefers-reduced-motion: reduce) {
+   423→  button:not([disabled]):active {
+   424→    transform: none;
+   425→  }
+   426→}
+   427→
+   428→/* ─── Glowing pulse for live status dots ─── */
+   429→.glow-dot {
+   430→  box-shadow: 0 0 0 0 rgba(14, 122, 74, 0.5);
+   431→  animation: glowPulse 2.2s ease-out infinite;
+   432→}
+   433→@keyframes glowPulse {
+   434→  0% { box-shadow: 0 0 0 0 rgba(14, 122, 74, 0.45); }
+   435→  70% { box-shadow: 0 0 0 7px rgba(14, 122, 74, 0); }
+   436→  100% { box-shadow: 0 0 0 0 rgba(14, 122, 74, 0); }
+   437→}
+   438→.notif-item:nth-child(2) { animation-delay: 0.04s; }
+   439→.notif-item:nth-child(3) { animation-delay: 0.08s; }
+   440→.notif-item:nth-child(4) { animation-delay: 0.12s; }
+   441→.notif-item:nth-child(5) { animation-delay: 0.16s; }
+   442→
+   443→/* ─── Corner ornament for hero cards ─── */
+   444→.hero-ornament {
+   445→  position: absolute;
+   446→  pointer-events: none;
+   447→  opacity: 0.5;
+   448→}
+   449→.hero-ornament.tl { top: 0; left: 0; }
+   450→.hero-ornament.br { bottom: 0; right: 0; transform: rotate(180deg); }
+   451→
+   452→/* ─── Dark emerald hero (paisley baked in) ───
+   453→   Custom unlayered classes beat Tailwind layered utilities, so hero surfaces
+   454→   must carry their own complete background here (defined AFTER gold-glow-border
+   455→   so this shorthand wins). Never rely on bg-gradient-* utilities next to
+   456→   .pattern-* / .gold-glow-border. */
+   457→.hero-emerald {
+   458→  background:
+   459→    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1.5' opacity='0.16'%3E%3Cpath d='M70 22 C92 34 104 56 98 78 C92 100 70 112 52 106 C36 101 28 84 36 70 C43 58 58 56 64 66 C69 74 63 84 54 82'/%3E%3Ccircle cx='70' cy='70' r='3.5'/%3E%3Cpath d='M70 92 C70 100 64 106 56 106'/%3E%3C/g%3E%3Cg fill='none' stroke='%2393c572' stroke-width='1.2' opacity='0.10'%3E%3Cpath d='M14 112 C26 118 32 128 28 138 M126 14 C114 20 108 30 112 40'/%3E%3C/g%3E%3C/svg%3E"),
+   460→    linear-gradient(to left, #0b2e20, #11402c 52%, #0e7a4a);
+   461→  background-size: 140px 140px, auto;
+   462→}
+   463→
+   464→/* ─── Olive branch decoration for empty states ─── */
+   465→.olive-branch {
+   466→  position: absolute;
+   467→  inset-inline-end: -14px;
+   468→  bottom: -12px;
+   469→  opacity: 0.14;
+   470→  pointer-events: none;
+   471→}
+   472→
+   473→/* ─── Respect motion preferences (a11y) ─── */
+   474→@media (prefers-reduced-motion: reduce) {
+   475→  .shimmer-line,
+   476→  .brand-shine,
+   477→  .pulse-dot,
+   478→  .fade-in-up {
+   479→    animation: none !important;
+   480→  }
+   481→  .glow-card,
+   482→  .stepper-btn {
+   483→    transition: none !important;
+   484→  }
+   485→}
+   486→
+   487→/* nicer focus visibility for keyboard users */
+   488→:focus-visible {
+   489→  outline: 2px solid rgba(201, 162, 39, 0.7);
+   490→  outline-offset: 2px;
+   491→  border-radius: 6px;
+   492→}
+   493→
+   494→/* label-sheet v2 */
+   495→
+   496→/* ─── Round 5: reports & velocity polish ─── */
+   497→/* pulsing fire badge for hot shelf cells (a11y-safe) */
+   498→@keyframes fire-pulse {
+   499→  0%, 100% { transform: scale(1); }
+   500→  50% { transform: scale(1.18); }
+   501→}
+   502→.fire-pulse {
+   503→  animation: fire-pulse 2.4s ease-in-out infinite;
+   504→  transform-origin: center;
+   505→}
+   506→@media (prefers-reduced-motion: reduce) {
+   507→  .fire-pulse { animation: none !important; }
+   508→}
+   509→
+   510→/* report preview sticky header keeps the warm paper tone */
+   511→.table-luxe thead th {
+   512→  border-bottom: 2px solid rgba(201, 162, 39, 0.35);
+   513→}
+   514→.table-luxe tbody tr:nth-child(even) {
+   515→  background: rgba(250, 247, 238, 0.55);
+   516→}
+   517→.table-luxe tbody tr:hover {
+   518→  background: rgba(253, 246, 221, 0.55);
+   519→}
+   520→
+   521→/* archive timeline row entrance */
+   522→.fade-in-up .arch-row { animation-delay: calc(var(--arch-i, 0) * 40ms); }
+   523→
+   524→/* ─── Round 6: daily price-control board ─── */
+   525→
+   526→/* rows verified today glow softly emerald; freshly verified rows pop */
+   527→.row-verified {
+   528→  background: linear-gradient(135deg, rgba(14, 122, 74, 0.055), rgba(250, 247, 238, 0.4) 55%);
+   529→}
+   530→@keyframes verify-pop {
+   531→  0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(14, 122, 74, 0.35); }
+   532→  45% { transform: scale(1.012); box-shadow: 0 0 0 7px rgba(14, 122, 74, 0.16); }
+   533→  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(14, 122, 74, 0); }
+   534→}
+   535→.row-just-verified {
+   536→  animation: verify-pop 1.4s ease-out;
+   537→  border-color: rgba(14, 122, 74, 0.45) !important;
+   538→}
+   539→@media (prefers-reduced-motion: reduce) {
+   540→  .row-just-verified { animation: none !important; }
+   541→}
+   542→
+   543→/* edited printed-price input gets a gold pen-ready look */
+   544→input.edited-price {
+   545→  border-color: #c9a227 !important;
+   546→  background: #fdf6dd !important;
+   547→}
+   548→
+   549→/* printable daily sheet — walk-the-aisles paper */
+   550→.price-sheet { display: none; }
+   551→@media print {
+   552→  .price-sheet { display: block !important; }
+   553→}
+   554→.price-sheet {
+   555→  color: #1a1a1a;
+   556→  font-family: inherit;
+   557→}
+   558→.price-sheet .sheet-head {
+   559→  display: flex;
+   560→  align-items: center;
+   561→  gap: 14px;
+   562→  border-bottom: 3px double #0b2e20;
+   563→  padding-bottom: 10px;
+   564→  margin-bottom: 12px;
+   565→}
+   566→.price-sheet .sheet-logo {
+   567→  font-size: 34px;
+   568→  line-height: 1;
+   569→}
+   570→.price-sheet .sheet-head h3 {
+   571→  font-size: 17px;
+   572→  font-weight: 900;
+   573→  margin: 0;
+   574→}
+   575→.price-sheet .sheet-head p {
+   576→  margin: 2px 0 0;
+   577→  font-size: 11px;
+   578→  color: #444;
+   579→}
+   580→.price-sheet .sheet-meta {
+   581→  margin-inline-start: auto;
+   582→  display: flex;
+   583→  flex-direction: column;
+   584→  gap: 3px;
+   585→  font-size: 10.5px;
+   586→  font-weight: 700;
+   587→  color: #333;
+   588→  text-align: left;
+   589→}
+   590→.price-sheet .sheet-table {
+   591→  width: 100%;
+   592→  border-collapse: collapse;
+   593→  font-size: 11px;
+   594→}
+   595→.price-sheet .sheet-table th {
+   596→  background: #0b2e20;
+   597→  color: #fff;
+   598→  padding: 6px 8px;
+   599→  font-size: 10px;
+   600→  text-align: right;
+   601→}
+   602→.price-sheet .sheet-table td {
+   603→  border: 1px solid #bbb;
+   604→  padding: 6px 8px;
+   605→  text-align: right;
+   606→}
+   607→.price-sheet .sheet-table tr:nth-child(even) td {
+   608→  background: #f6f3ea;
+   609→}
+   610→.price-sheet .check-cell {
+   611→  width: 22px;
+   612→  border: 1.5px solid #333 !important;
+   613→}
+   614→.price-sheet .write-cell {
+   615→  border: 1.5px dashed #888 !important;
+   616→  background: #fffdf4;
+   617→}
+   618→.price-sheet .mono-cell {
+   619→  font-family: monospace;
+   620→  direction: ltr;
+   621→  text-align: left;
+   622→}
+   623→.price-sheet .sheet-foot {
+   624→  margin-top: 10px;
+   625→  font-size: 10.5px;
+   626→  color: #444;
+   627→  border-top: 1px solid #ccc;
+   628→  padding-top: 8px;
+   629→}
+   630→/* round6 */
+   631→
+   632→/* price sheet is portal'ed to body — while printing hide body's other children and let the sheet flow naturally */
+   633→@media print {
+   634→  .price-sheet { position: static !important; }
+   635→  body.printing-sheet > *:not(.price-sheet) { display: none !important; }
+   636→}
+   637→/* retrigger */
+   638→/* r6b */
+   639→
+   640→/* ═══════════ round 7 — command palette + a11y + micro-polish ═══════════ */
+   641→
+   642→/* Persian-friendly text selection (gold olive tint) */
+   643→::selection {
+   644→  background: rgba(201, 162, 39, 0.32);
+   645→  color: #14532d;
+   646→}
+   647→
+   648→/* accessible keyboard focus — gold ring everywhere, only for keyboard users */
+   649→:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+   650→  outline: 2.5px solid rgba(201, 162, 39, 0.75);
+   651→  outline-offset: 2px;
+   652→  border-radius: 0.65rem;
+   653→}
+   654→
+   655→/* kbd chips (palette hints) */
+   656→kbd {
+   657→  font-family: inherit;
+   658→  letter-spacing: 0.02em;
+   659→}
+   660→
+   661→/* palette entrance */
+   662→@keyframes palette-pop {
+   663→  from { opacity: 0; transform: translateY(-10px) scale(0.975); }
+   664→  to   { opacity: 1; transform: translateY(0) scale(1); }
+   665→}
+   666→@keyframes palette-backdrop {
+   667→  from { opacity: 0; }
+   668→  to   { opacity: 1; }
+   669→}
+   670→.palette-pop { animation: palette-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+   671→.palette-backdrop { animation: palette-backdrop 0.15s ease-out; }
+   672→
+   673→/* muted-notif bell gentle sway (reduced-motion safe) */
+   674→@keyframes bell-mute-pulse {
+   675→  0%, 100% { transform: scale(1); }
+   676→  50% { transform: scale(1.08); }
+   677→}
+   678→.bell-muted { animation: bell-mute-pulse 2.4s ease-in-out infinite; }
+   679→
+   680→/* snooze banner dashed shimmer on hover */
+   681→button:hover.border-dashed.border-\[\#c9a227\]\/50 {
+   682→  background-image: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.08), transparent);
+   683→  background-size: 200% 100%;
+   684→  animation: dash-shimmer 1.2s linear infinite;
+   685→}
+   686→@keyframes dash-shimmer {
+   687→  from { background-position: 200% 0; }
+   688→  to   { background-position: -200% 0; }
+   689→}
+   690→
+   691→@media (prefers-reduced-motion: reduce) {
+   692→  .palette-pop, .palette-backdrop, .bell-muted { animation: none; }
+   693→}
+   694→/* r7 */
+   695→
+   696→/* ═══════════ round 8 — shelf labels (لیبل قفسه) + cost sparkline + streak ═══════════ */
+   697→
+   698→/* row picked for label printing — warm gold wash from the start edge */
+   699→.row-picked {
+   700→  background-image: linear-gradient(90deg, rgba(201, 162, 39, 0.08), transparent 55%);
+   701→}
+   702→
+   703→/* shelf-label sheet (PORTAL variant — PriceCheck): hidden on screen; while printing (body.printing-labels) it is the ONLY flow content.
+   704→   Scoped to .label-portal so the Products-modal sheet (which IS a grid) keeps its own layout. */
+   705→.label-portal { display: none; }
+   706→@media print {
+   707→  .label-portal {
+   708→    display: block !important;
+   709→    position: static !important;
+   710→    max-height: none !important;
+   711→    max-width: none !important;
+   712→    margin: 0 !important;
+   713→    overflow: visible !important;
+   714→    background: none !important;
+   715→    border: none !important;
+   716→    box-shadow: none !important;
+   717→    padding: 0 !important;
+   718→  }
+   719→  body.printing-labels > *:not(.label-portal) { display: none !important; }
+   720→}
+   721→.label-guide {
+   722→  display: flex;
+   723→  justify-content: space-between;
+   724→  gap: 8px;
+   725→  font-size: 9.5px;
+   726→  font-weight: 700;
+   727→  color: #555;
+   728→  border-bottom: 1.5px dashed #b5ab8d;
+   729→  padding-bottom: 6px;
+   730→  margin-bottom: 10px;
+   731→}
+   732→@media print {
+   733→  .label-guide { font-size: 9px; }
+   734→}
+   735→.label-grid {
+   736→  display: grid;
+   737→  grid-template-columns: repeat(3, 1fr);
+   738→}
+   739→.label-card {
+   740→  border: 1px dashed #9a927a; /* scissor cut line */
+   741→  margin: -0.5px;             /* collapse shared cut lines */
+   742→  padding: 5px 7px 4px;
+   743→  height: 36mm;
+   744→  display: flex;
+   745→  flex-direction: column;
+   746→  align-items: center;
+   747→  text-align: center;
+   748→  overflow: hidden;
+   749→  page-break-inside: avoid;
+   750→  border-radius: 4px;
+   751→}
+   752→.label-brand {
+   753→  align-self: stretch;
+   754→  background: #0b2e20;
+   755→  color: #e9c64a;
+   756→  font-size: 8.5px;
+   757→  font-weight: 900;
+   758→  padding: 1.5px 0 2.5px;
+   759→  border-radius: 3px;
+   760→  margin-bottom: 3px;
+   761→  letter-spacing: 0.02em;
+   762→}
+   763→.label-name {
+   764→  font-size: 10px;
+   765→  font-weight: 800;
+   766→  color: #141414;
+   767→  line-height: 1.3;
+   768→  margin: 0;
+   769→  display: -webkit-box;
+   770→  -webkit-line-clamp: 2;
+   771→  -webkit-box-orient: vertical;
+   772→  overflow: hidden;
+   773→}
+   774→.label-price {
+   775→  font-size: 16.5px;
+   776→  font-weight: 900;
+   777→  color: #0b2e20;
+   778→  margin: 2.5px 0 1px;
+   779→  line-height: 1.1;
+   780→}
+   781→.label-price small {
+   782→  font-size: 8.5px;
+   783→  font-weight: 700;
+   784→  color: #4a4a4a;
+   785→}
+   786→.label-bc-wrap {
+   787→  margin-top: auto;
+   788→  display: flex;
+   789→  flex-direction: column;
+   790→  align-items: center;
+   791→  gap: 1px;
+   792→}
+   793→.label-bc { display: block; height: 24px; }
+   794→.label-bcnum {
+   795→  font-family: monospace;
+   796→  font-size: 7.5px;
+   797→  color: #222;
+   798→  letter-spacing: 0.08em;
+   799→}
+   800→.label-no-bc { font-size: 8px; font-weight: 700; color: #999; }
+   801→
+   802→/* screen preview — paper-like board, centered + capped so it never dominates the page (portal variant only) */
+   803→@media screen {
+   804→  .label-portal {
+   805→    display: block;
+   806→    position: relative;
+   807→    max-height: 430px;
+   808→    max-width: 660px;
+   809→    margin: 10px auto;
+   810→    overflow-y: auto;
+   811→    background: #f6f3ea;
+   812→    border: 1.5px dashed rgba(201, 162, 39, 0.55);
+   813→    border-radius: 1rem;
+   814→    padding: 12px;
+   815→    box-shadow: 0 10px 30px rgba(11, 46, 32, 0.14);
+   816→  }
+   817→  .label-portal .label-card { background: #fff; transition: transform 0.18s ease, box-shadow 0.18s ease; }
+   818→  .label-portal .label-card:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(11, 46, 32, 0.18); }
+   819→}
+   820→
+   821→/* ═══════════ round 9 — desktop notifs switch + picked chips + scan pulse + paper texture ═══════════ */
+   822→
+   823→/* gold switch for اعلان دسکتاپ */
+   824→.desk-switch { flex: none; cursor: pointer; }
+   825→.desk-switch[aria-checked='true'] { box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.22), inset 0 1px 2px rgba(255, 255, 255, 0.35); }
+   826→.desk-switch:hover { filter: brightness(1.05); }
+   827→.desk-knob { transition: right 0.18s cubic-bezier(0.34, 1.56, 0.64, 1); }
+   828→
+   829→/* picked label chip — pop-in + soft gold glow */
+   830→.picked-chip {
+   831→  box-shadow: 0 1px 4px rgba(201, 162, 39, 0.25);
+   832→  animation: chip-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+   833→}
+   834→@keyframes chip-pop {
+   835→  from { opacity: 0; transform: scale(0.82); }
+   836→  to { opacity: 1; transform: scale(1); }
+   837→}
+   838→
+   839→/* scan button — soft emerald radar pulse inviting the user to scan */
+   840→.scan-pulse { position: relative; }
+   841→.scan-pulse::after {
+   842→  content: '';
+   843→  position: absolute;
+   844→  inset: -2px;
+   845→  border-radius: 999px;
+   846→  border: 1.5px solid rgba(14, 122, 74, 0.5);
+   847→  animation: scan-radar 2.6s ease-out infinite;
+   848→  pointer-events: none;
+   849→}
+   850→@keyframes scan-radar {
+   851→  0% { opacity: 0.7; transform: scale(1); }
+   852→  70% { opacity: 0; transform: scale(1.28); }
+   853→  100% { opacity: 0; transform: scale(1.28); }
+   854→}
+   855→@media (prefers-reduced-motion: reduce) {
+   856→  .scan-pulse::after { animation: none; }
+   857→  .picked-chip { animation: none; }
+   858→}
+   859→
+   860→/* paper texture for the on-screen label preview — faint fiber lines (portal variant) */
+   861→@media screen {
+   862→  .label-portal {
+   863→    background-image: repeating-linear-gradient(0deg, rgba(11, 46, 32, 0.016) 0 1px, transparent 1px 3px),
+   864→      repeating-linear-gradient(90deg, rgba(201, 162, 39, 0.014) 0 1px, transparent 1px 4px);
+   865→  }
+   866→}
+   867→/* r9 */
+   868→
+   869→/* ───────────────── round 10 — FaPriceInput + Holoo ack wizard ───────────────── */
+   870→
+   871→/* Persian-digit numeric input — gold focus ring, monospaced tabular digits */
+   872→.fa-price-input {
+   873→  background-image: linear-gradient(180deg, rgba(201, 162, 39, 0.045), transparent 55%);
+   874→}
+   875→.fa-price-input:focus {
+   876→  border-color: #c9a227 !important;
+   877→  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18);
+   878→  background-color: #fffdf6;
+   879→}
+   880→.fa-price-input:disabled {
+   881→  cursor: not-allowed;
+   882→}
+   883→.fa-price-input::placeholder {
+   884→  font-weight: 700;
+   885→  opacity: 0.55;
+   886→}
+   887→
+   888→/* Holoo ack wizard — upload zone shimmer on the dashed border */
+   889→@keyframes ack-dash {
+   890→  to { background-position: 28px 0; }
+   891→}
+   892→.ack-upload {
+   893→  background-image: linear-gradient(90deg, rgba(15, 118, 110, 0.16) 0 8px, transparent 8px 16px);
+   894→  background-size: 28px 2px;
+   895→  background-repeat: repeat-x;
+   896→  background-position: 0 100%;
+   897→  animation: ack-dash 1.1s linear infinite;
+   898→}
+   899→/* r10 */
+   900→
+   901→/* ───────────────── round 11 — quick-label button + ack checkbox polish ───────────────── */
+   902→
+   903→/* quick label reprint button (product detail) — gold sheen sweep on hover */
+   904→.quick-label-btn {
+   905→  position: relative;
+   906→  overflow: hidden;
+   907→}
+   908→.quick-label-btn::after {
+   909→  content: '';
+   910→  position: absolute;
+   911→  inset: 0;
+   912→  background: linear-gradient(115deg, transparent 30%, rgba(201, 162, 39, 0.22) 50%, transparent 70%);
+   913→  transform: translateX(130%);
+   914→  transition: transform 0.55s ease;
+   915→  pointer-events: none;
+   916→}
+   917→.quick-label-btn:hover::after {
+   918→  transform: translateX(-130%);
+   919→}
+   920→
+   921→/* ack wizard checkbox — pop when checked */
+   922→.ack-check[aria-checked='true'] {
+   923→  animation: chip-pop 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+   924→}
+   925→
+   926→/* cheque split sum mismatch hint */
+   927→.split-sum-ok { color: #0e7a4a; }
+   928→.split-sum-bad { color: #b3372f; font-weight: 900; }
+   929→@media (prefers-reduced-motion: reduce) {
+   930→  .quick-label-btn::after { transition: none; transform: none; }
+   931→  .ack-check[aria-checked='true'] { animation: none; }
+   932→}
+   933→/* r11 */
+   934→
+   935→/* ══════════════════════════════════════════════════════════════════
+   936→   تم شب زیتون (Dark Theme) — سبز عمیق + طلایی، هویت برند حفظ می‌شود
+   937→   فعال‌سازی: next-themes با attribute="class" → html.dark
+   938→   ══════════════════════════════════════════════════════════════════ */
+   939→
+   940→html.dark {
+   941→  --background: #0d1a14;
+   942→  --foreground: #e6efe7;
+   943→  --card: #12241b;
+   944→  --card-foreground: #e6efe7;
+   945→  --popover: #14281e;
+   946→  --popover-foreground: #e6efe7;
+   947→  --primary: #17a05f;
+   948→  --primary-foreground: #f7fdf9;
+   949→  --secondary: #1a2f23;
+   950→  --secondary-foreground: #cfe3d4;
+   951→  --muted: #1a2f23;
+   952→  --muted-foreground: #9cb3a2;
+   953→  --accent: #2a2413;
+   954→  --accent-foreground: #dcbf6d;
+   955→  --destructive: #d0524a;
+   956→  --border: #25402f;
+   957→  --input: #2c4a37;
+   958→  --ring: #c9a227;
+   959→}
+   960→
+   961→html.dark body {
+   962→  background-color: #0d1a14;
+   963→  color: #e6efe7;
+   964→}
+   965→
+   966→/* سطوح کرم/سفید پرکاربرد در ویوها — بازنویسی برای شب */
+   967→html.dark .bg-white { background-color: #14281e; }
+   968→html.dark .bg-white\/60 { background-color: rgba(18, 36, 27, 0.62); }
+   969→html.dark .bg-white\/70 { background-color: rgba(18, 36, 27, 0.72); }
+   970→html.dark .bg-white\/75 { background-color: rgba(18, 36, 27, 0.78); }
+   971→html.dark .bg-white\/80 { background-color: rgba(18, 36, 27, 0.82); }
+   972→html.dark .bg-white\/85 { background-color: rgba(18, 36, 27, 0.88); }
+   973→html.dark .bg-white\/90 { background-color: rgba(18, 36, 27, 0.92); }
+   974→html.dark .bg-white\/95 { background-color: rgba(18, 36, 27, 0.95); }
+   975→
+   976→/* نوار بالای کرم */
+   977→html.dark header.sticky {
+   978→  background-color: rgba(11, 26, 19, 0.92);
+   979→  border-bottom-color: rgba(37, 64, 47, 0.9);
+   980→}
+   981→
+   982→/* زنگ‌های طلایی روشن روی تیره */
+   983→html.dark .bg-\[\#fdf6dd\] { background-color: #26200f; }
+   984→html.dark .bg-\[\#fdf6dd\]\/40 { background-color: rgba(38, 32, 15, 0.45); }
+   985→html.dark .bg-\[\#fdf6dd\]\/50 { background-color: rgba(38, 32, 15, 0.55); }
+   986→html.dark .bg-\[\#fdf6dd\]\/60 { background-color: rgba(38, 32, 15, 0.62); }
+   987→html.dark .bg-\[\#fdf6dd\]\/70 { background-color: rgba(38, 32, 15, 0.7); }
+   988→html.dark .bg-\[\#fffdf6\] { background-color: #14281e; }
+   989→html.dark .bg-\[\#f7efe2\] { background-color: #14281e; }
+   990→html.dark .from-\[\#f7efe2\] { --tw-gradient-from: #14281e; }
+   991→html.dark .to-\[\#fdf6dd\] { --tw-gradient-to: #1a2f23; }
+   992→
+   993→/* قفسهٔ چوبی آرشیو در شب */
+   994→html.dark .bg-gradient-to-b.from-\[\#f7efe2\].to-\[\#fdf6dd\] {
+   995→  background-image: linear-gradient(to bottom, #16291f, #1a2f23);
+   996→}
+   997→
+   998→/* متن‌های قهوه‌ای تیره روی زمینهٔ طلایی تیره — روشن‌تر شوند */
+   999→html.dark .text-\[\#8a5a2b\] { color: #d8a765; }
+  1000→html.dark .text-\[\#8a6d10\] { color: #d8bd6a; }
+  1001→html.dark .text-\[\#5c7236\] { color: #b4cf8f; }
+  1002→
+  1003→/* کپی‌های سفید روی کارت‌های روشن */
+  1004→html.dark .text-foreground\/85 { color: rgba(230, 239, 231, 0.85); }
+  1005→html.dark .text-foreground\/80 { color: rgba(230, 239, 231, 0.8); }
+  1006→
+  1007→/* glow-card در شب */
+  1008→html.dark .glow-card {
+  1009→  box-shadow:
+  1010→    inset 0 1px 0 rgba(201, 162, 39, 0.08),
+  1011→    0 10px 26px -18px rgba(0, 0, 0, 0.7);
+  1012→}
+  1013→html.dark .glow-card:hover {
+  1014→  box-shadow:
+  1015→    inset 0 1px 0 rgba(201, 162, 39, 0.08),
+  1016→    0 0 0 1px rgba(201, 162, 39, 0.3),
+  1017→    0 16px 36px -16px rgba(201, 162, 39, 0.22);
+  1018→}
+  1019→
+  1020→/* پترن شنی پس‌زمینه — سبز روشن روی تیره */
+  1021→html.dark .pattern-sand {
+  1022→  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%2393c572' stroke-width='1' opacity='0.06'%3E%3Cpath d='M0 30 Q15 15 30 30 T60 30'/%3E%3Cpath d='M0 45 Q15 30 30 45 T60 45'/%3E%3Cpath d='M0 15 Q15 0 30 15 T60 15'/%3E%3C/g%3E%3C/svg%3E");
+  1023→}
+  1024→
+  1025→/* تقویم و ورودی‌ها */
+  1026→html.dark input, html.dark select, html.dark textarea {
+  1027→  background-color: rgba(18, 36, 27, 0.9);
+  1028→  color: #e6efe7;
+  1029→  border-color: #2c4a37;
+  1030→}
+  1031→html.dark input::placeholder, html.dark textarea::placeholder { color: #7d9384; }
+  1032→
+  1033→/* توست و مودال‌ها تیره‌اندکی روشن‌تر */
+  1034→html.dark [role="dialog"], html.dark [data-slot="dialog-content"], html.dark [data-slot="sheet-content"] {
+  1035→  background-color: #14281e;
+  1036→}
+  1037→
+  1038→/* ── round-14: customization & calendar ── */
+  1039→/* متغیر اندازهٔ اعداد تقویم — ThemeLangBar آن را روی html تنظیم می‌کند (sm=11 base=13 lg=15 xl=18) */
+  1040→:root {
+  1041→  --cal-font: 13px;
+  1042→}
+  1043→
+  1044→/* تراکم جمع‌وجور: کارت‌های glow-card فشرده‌تر می‌شوند (قاعدهٔ بدون لایه بر utilities تایلند مقدم است) */
+  1045→[data-density='compact'] .glow-card {
+  1046→  padding: 0.8rem;
+  1047→}
+  1048→[data-density='compact'] .glow-card.p-4,
+  1049→[data-density='compact'] .glow-card.sm\:p-6 {
+  1050→  padding: 0.8rem;
+  1051→}
+  1052→
+  1053→/* اسکرول‌بار باریک‌تر در تراکم جمع‌وجور */
+  1054→[data-density='compact'] .scroll-gold {
+  1055→  scrollbar-width: thin;
+  1056→}
+  1057→

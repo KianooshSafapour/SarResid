@@ -1,0 +1,643 @@
+    23→    23→  if (mode === 'new') return <NewOrderWizard ctx={ctx} onDone={(id) => ctx.navigate('orders', id)} />
+    24→    24→  if (mode === 'detail') return <OrderDetail ctx={ctx} orderId={ctx.param} onBack={() => ctx.navigate('orders')} />
+    25→    25→  return <OrdersList ctx={ctx} onOpen={(id) => ctx.navigate('orders', id)} />
+    26→    26→}
+    27→    27→
+    28→    28→/* ───────────────────────── List ───────────────────────── */
+    29→    29→
+    30→    30→function OrdersList({ ctx, onOpen }: { ctx: AppCtx; onOpen: (id: string) => void }) {
+    31→    31→  const [orders, setOrders] = useState<OrderRow[]>([])
+    32→    32→  const [status, setStatus] = useState('')
+    33→    33→  const [q, setQ] = useState('')
+    34→    34→  const [loading, setLoading] = useState(true)
+    35→    35→
+    36→    36→  const load = () => api<{ orders: OrderRow[] }>('/api/orders').then((d) => setOrders(d.orders)).finally(() => setLoading(false))
+    37→    37→  useEffect(() => { load() }, [])
+    38→    38→
+    39→    39→  const filtered = useMemo(
+    40→    40→    () => orders.filter((o) => (!status || o.status === status) && (!q || o.code.includes(q) || o.providerName.includes(q))),
+    41→    41→    [orders, status, q]
+    42→    42→  )
+    43→    43→
+    44→    44→  const canCreate = ['GM', 'PM', 'OM'].includes(ctx.user!.role)
+    45→    45→
+    46→    46→  return (
+    47→    47→    <div className="space-y-4">
+    48→    48→      <SectionCard
+    49→    49→        title="سفارش‌های تأمین‌کننده"
+    50→    50→        subtitle="از ثبت تا تحویل، تأیید انبار و حسابداری — همه در یک مسیر شفاف"
+    51→    51→        icon={<ClipboardList size={18} />}
+    52→    52→        actions={
+    53→    53→          canCreate && (
+    54→    54→            <button onClick={() => ctx.navigate('orders', 'new')} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-4 py-2.5 text-xs font-extrabold text-white shadow-lg transition hover:shadow-xl">
+    55→    55→              <Plus size={15} /> سفارش جدید
+    56→    56→            </button>
+    57→    57→          )
+    58→    58→        }
+    59→    59→      >
+    60→    60→        <div className="mb-4 flex flex-wrap items-center gap-2">
+    61→    61→          <SearchInput value={q} onChange={setQ} placeholder="جستجوی کد سفارش یا تأمین‌کننده…" className="w-full sm:w-72" />
+    62→    62→          <div className="flex flex-wrap gap-1.5">
+    63→    63→            <FilterChip active={!status} label="همه" onClick={() => setStatus('')} />
+    64→    64→            {['DRAFT', 'SUBMITTED', 'APPROVED', 'RECEIVING', 'RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE', 'CANCELLED'].map((s) => (
+    65→    65→              <FilterChip key={s} active={status === s} label={ORDER_STATUSES[s].label} color={ORDER_STATUSES[s].color} onClick={() => setStatus(s)} />
+    66→    66→            ))}
+    67→    67→          </div>
+    68→    68→        </div>
+    69→    69→
+    70→    70→        {loading ? (
+    71→    71→          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 animate-pulse rounded-xl bg-muted" />)}</div>
+    72→    72→        ) : filtered.length === 0 ? (
+    73→    73→          <EmptyState emoji="📦" title="سفارشی یافت نشد" hint="با دکمه «سفارش جدید» اولین سفارش را ثبت کنید" />
+    74→    74→        ) : (
+    75→    75→          <div className="grid gap-2.5">
+    76→    76→            {filtered.map((o) => {
+    77→    77→              const st = ORDER_STATUSES[o.status]
+    78→    78→              return (
+    79→    79→                <button key={o.id} onClick={() => onOpen(o.id)} className="glow-card group rounded-2xl bg-white/70 p-3.5 text-right sm:p-4">
+    80→    80→                  <div className="flex flex-wrap items-center gap-3">
+    81→    81→                    <span className="flex h-11 w-11 items-center justify-center rounded-xl text-xl" style={{ background: st.bg }}>🚚</span>
+    82→    82→                    <div className="min-w-0 flex-1">
+    83→    83→                      <div className="flex flex-wrap items-center gap-2">
+    84→    84→                        <span className="text-sm font-black">{o.code}</span>
+    85→    85→                        <Pill label={st.label} color={st.color} bg={st.bg} />
+    86→    86→                        {o.isOverdue && <Pill label="سرآمده ⚠️" color="#b3372f" bg="#fee2e2" />}
+    87→    87→                        {o.payMethod === 'CHEQUE' && <Pill label="چکی" color="#8a6d10" bg="#fdf6dd" />}
+    88→    88→                      </div>
+    89→    89→                      <p className="mt-0.5 text-xs text-muted-foreground">
+    90→    90→                        {o.providerName} • {faNum(o.itemsCount)} قلم • ثبت: {o.createdByName} • تحویل: {formatJalaliFull(o.deliveryDate)}
+    91→    91→                      </p>
+    92→    92→                    </div>
+    93→    93→                    <span className="text-sm font-black text-[#8a6d10]">{faMoney(o.totalAmount)}</span>
+    94→    94→                  </div>
+    95→    95→                </button>
+    96→    96→              )
+    97→    97→            })}
+    98→    98→          </div>
+    99→    99→        )}
+   100→   100→      </SectionCard>
+   101→   101→    </div>
+   102→   102→  )
+   103→   103→}
+   104→   104→
+   105→   105→function FilterChip({ active, label, onClick, color }: { active: boolean; label: string; onClick: () => void; color?: string }) {
+   106→   106→  return (
+   107→   107→    <button
+   108→   108→      onClick={onClick}
+   109→   109→      className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', active ? 'border-transparent text-white shadow' : 'border-border bg-card text-foreground/70 hover:bg-secondary')}
+   110→   110→      style={active ? { background: color || '#0e7a4a' } : {}}
+   111→   111→    >
+   112→   112→      {label}
+   113→   113→    </button>
+   114→   114→  )
+   115→   115→}
+   116→   116→
+   117→   117→/* ───────────────────────── Create wizard ───────────────────────── */
+   118→   118→
+   119→   119→function NewOrderWizard({ ctx, onDone }: { ctx: AppCtx; onDone: (id: string) => void }) {
+   120→   120→  const holidays = useHolidays()
+   121→   121→  const [step, setStep] = useState(1)
+   122→   122→  const [providers, setProviders] = useState<Provider[]>([])
+   123→   123→  const [products, setProducts] = useState<Product[]>([])
+   124→   124→  const [providerId, setProviderId] = useState('')
+   125→   125→  const [company, setCompany] = useState('')
+   126→   126→  const [draft, setDraft] = useState<Record<string, number>>({})
+   127→   127→  const [deliveryDate, setDeliveryDate] = useState('')
+   128→   128→  const [payMethod, setPayMethod] = useState('CASH')
+   129→   129→  const [notes, setNotes] = useState('')
+   130→   130→  const [detailFor, setDetailFor] = useState<Product | null>(null)
+   131→   131→  const [busy, setBusy] = useState(false)
+   132→   132→  const [margins, setMargins] = useState<Record<string, { marginPct: number; buyPrice: number; sellPrice: number; orderCode: string; at: string }>>({})
+   133→   133→
+   134→   134→  function add(days: number) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10) }
+   135→   135→
+   136→   136→  useEffect(() => {
+   137→   137→    api<{ providers: Provider[] }>('/api/providers').then((d) => setProviders(d.providers))
+   138→   138→    api<{ products: Product[] }>('/api/products').then((d) => setProducts(d.products))
+   139→   139→    setDeliveryDate(add(1))
+   140→   140→  }, [])
+   141→   141→
+   142→   142→  // حاشیه سود آخرین خریدها از همین تأمین‌کننده — «همان کالا از منابع مختلف، حاشیهٔ هر منبع»
+   143→   143→  useEffect(() => {
+   144→   144→    if (!providerId) { setMargins({}); return }
+   145→   145→    api<{ margins: Record<string, { marginPct: number; buyPrice: number; sellPrice: number; orderCode: string; at: string }> }>(`/api/orders/margins?providerId=${providerId}`)
+   146→   146→      .then((d) => setMargins(d.margins || {}))
+   147→   147→      .catch(() => setMargins({}))
+   148→   148→  }, [providerId])
+   149→   149→
+   150→   150→  const marginTone = (pct: number) => (pct < 10 ? { c: '#b3372f', l: 'کم' } : pct < 25 ? { c: '#a16207', l: 'متوسط' } : { c: '#166534', l: 'خوب' })
+   151→   151→
+   152→   152→  const provider = providers.find((p) => p.id === providerId)
+   153→   153→  const isGM = ctx.user!.role === 'GM' || ctx.user!.role === 'OM'
+   154→   154→  const prodsOfCompany = useMemo(() => {
+   155→   155→    if (!provider) return []
+   156→   156→    return products.filter((p) => p.providerId === providerId && (!company || p.brand === company))
+   157→   157→  }, [products, provider, company, providerId])
+   158→   158→  const draftItems: DraftItem[] = Object.entries(draft).filter(([, q]) => q > 0).map(([pid, qty]) => {
+   159→   159→    const p = products.find((x) => x.id === pid)!
+   160→   160→    return { productId: pid, name: p.name, qty, unitBuyPrice: p.buyPrice }
+   161→   161→  })
+   162→   162→  const total = draftItems.reduce((s, i) => s + i.qty * i.unitBuyPrice, 0)
+   163→   163→
+   164→   164→  const submit = async (approve: boolean) => {
+   165→   165→    if (!provider || draftItems.length === 0 || !deliveryDate) return
+   166→   166→    setBusy(true)
+   167→   167→    try {
+   168→   168→      const res = await api<{ order: any }>('/api/orders', {
+   169→   169→        method: 'POST',
+   170→   170→        body: {
+   171→   171→          providerId, providerName: provider.name,
+   172→   172→          items: draftItems,
+   173→   173→          deliveryDate, payMethod, notes,
+   174→   174→          status: approve ? 'APPROVED' : 'SUBMITTED',
+   175→   175→        },
+   176→   176→      })
+   177→   177→      toast.success(approve ? 'سفارش ثبت و تأیید شد ✅' : 'سفارش ثبت شد — در انتظار تأیید مدیر کل')
+   178→   178→      onDone(res.order.id)
+   179→   179→    } catch (e: any) {
+   180→   180→      toast.error(e.message)
+   181→   181→    } finally { setBusy(false) }
+   182→   182→  }
+   183→   183→
+   184→   184→  return (
+   185→   185→    <div className="space-y-4">
+   186→   186→      {/* steps */}
+   187→   187→      <div className="flex items-center gap-2 rounded-2xl border border-border bg-card p-3">
+   188→   188→        {[1, 2, 3, 4].map((s) => (
+   189→   189→          <div key={s} className="flex flex-1 items-center gap-2">
+   190→   190→            <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black', step >= s ? 'bg-primary text-white' : 'bg-muted text-muted-foreground')}>{faNum(s)}</span>
+   191→   191→            <span className={cn('hidden text-xs font-bold sm:block', step >= s ? 'text-foreground' : 'text-muted-foreground')}>
+   192→   192→              {s === 1 ? 'تأمین‌کننده' : s === 2 ? 'انتخاب کالا' : s === 3 ? 'زمان و پرداخت' : 'بازبینی و ثبت'}
+   193→   193→            </span>
+   194→   194→            {s < 4 && <span className={cn('h-0.5 flex-1 rounded', step > s ? 'bg-primary' : 'bg-border')} />}
+   195→   195→          </div>
+   196→   196→        ))}
+   197→   197→      </div>
+   198→   198→
+   199→   199→      {step === 1 && (
+   200→   200→        <SectionCard title="انتخاب تأمین‌کننده / ویزیتور" subtitle="شرکت‌هایی که هر پخش‌کننده کار می‌کند را ببینید" icon={<Plus size={18} />}>
+   201→   201→          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+   202→   202→            {providers.map((p) => (
+   203→   203→              <button key={p.id} onClick={() => { setProviderId(p.id); setCompany(''); setStep(2) }}
+   204→   204→                className={cn('glow-card rounded-2xl bg-white/70 p-4 text-right', providerId === p.id && 'ring-2 ring-primary')}>
+   205→   205→                <div className="flex items-center justify-between">
+   206→   206→                  <span className="text-sm font-black">{p.name}</span>
+   207→   207→                  <Pill label={p.type === 'DIRECT' ? 'کارخانه' : p.type === 'VISITOR' ? 'ویزیتور' : 'پخش'} color={p.type === 'DIRECT' ? '#0e7a4a' : p.type === 'VISITOR' ? '#c96f4a' : '#8a6d10'} />
+   208→   208→                </div>
+   209→   209→                <p className="mt-1 text-xs text-muted-foreground">{p.personName} • {faNum(p.phone)}</p>
+   210→   210→                <div className="mt-2 flex flex-wrap gap-1">
+   211→   211→                  {p.companyNames.map((c) => <Pill key={c} label={c} color="#0e7a4a" className="!bg-secondary" />)}
+   212→   212→                </div>
+   213→   213→              </button>
+   214→   214→            ))}
+   215→   215→          </div>
+   216→   216→        </SectionCard>
+   217→   217→      )}
+   218→   218→
+   219→   219→      {step === 2 && provider && (
+   220→   220→        <SectionCard
+   221→   221→          title={`کالاهای ${provider.name}`}
+   222→   222→          subtitle="روی دکمه + بزنید تا به سفارش اضافه شود — رنگ نشانگر، وضعیت انبار است"
+   223→   223→          icon={<Plus size={18} />}
+   224→   224→          actions={<button onClick={() => setStep(1)} className="rounded-lg border px-3 py-1.5 text-xs font-bold">← تغییر تأمین‌کننده</button>}
+   225→   225→        >
+   226→   226→          {provider.companyNames.length > 1 && (
+   227→   227→            <div className="mb-3 flex flex-wrap gap-1.5">
+   228→   228→              <FilterChip active={!company} label="همه شرکت‌ها" onClick={() => setCompany('')} />
+   229→   229→              {provider.companyNames.map((c) => <FilterChip key={c} active={company === c} label={c} onClick={() => setCompany(c)} />)}
+   230→   230→            </div>
+   231→   231→          )}
+   232→   232→          <div className="scroll-gold grid max-h-[52vh] grid-cols-2 gap-3 overflow-y-auto pl-1 sm:grid-cols-3 lg:grid-cols-4">
+   233→   233→            {prodsOfCompany.map((p) => {
+   234→   234→              const st = stockStatus(p.stock, p.reorderLevel)
+   235→   235→              const qty = draft[p.id] || 0
+   236→   236→              return (
+   237→   237→                <div key={p.id} className="glow-card relative flex flex-col rounded-2xl bg-white/80 p-3">
+   238→   238→                  <button onClick={() => setDetailFor(p)} className="mb-2 flex h-20 items-center justify-center rounded-xl bg-gradient-to-br from-secondary to-muted text-3xl">
+   239→   239→                    {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="h-full w-full rounded-xl object-cover" /> : CATEGORY_EMOJI[p.category] || '📦'}
+   240→   240→                  </button>
+   241→   241→                  <p className="line-clamp-2 min-h-9 text-xs font-extrabold leading-4">{p.name}</p>
+   242→   242→                  {margins[p.id] && margins[p.id].marginPct >= 0 && (() => { const t = marginTone(margins[p.id].marginPct); return (
+   243→   243→                    <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black" style={{ background: `${t.c}18`, color: t.c }} title={`آخرین خرید از همین تأمین‌کننده — سفارش ${margins[p.id].orderCode}`}>
+   244→   244→                      حاشیه اخیر: {faNum(margins[p.id].marginPct)}٪ ({t.l})
+   245→   245→                    </span>
+   246→   246→                  ) })()}
+   247→   247→                  <div className="mt-1 flex items-center justify-between text-[10px]">
+   248→   248→                    <span className="text-muted-foreground">{p.brand}</span>
+   249→   249→                    <span className="font-black" style={{ color: st.color }}>{st.label} {faNum(p.stock)}</span>
+   250→   250→                  </div>
+   251→   251→                  <div className="mt-2 flex items-center justify-between">
+   252→   252→                    <span className="text-[11px] font-bold text-[#8a6d10]">{faMoney(p.buyPrice)}</span>
+   253→   253→                    <div className="flex items-center gap-1">
+   254→   254→                      {qty > 0 && (
+   255→   255→                        <>
+   256→   256→                          <button className="stepper-btn !h-8 !w-8 !text-base" onClick={() => setDraft((d) => ({ ...d, [p.id]: Math.max(0, (d[p.id] || 0) - 1) }))}>−</button>
+   257→   257→                          <span className="w-8 text-center text-sm font-black">{faNum(qty)}</span>
+   258→   258→                        </>
+   259→   259→                      )}
+   260→   260→                      <button className="stepper-btn !h-8 !w-8 !text-base !border-primary !bg-primary !text-white" onClick={() => setDraft((d) => ({ ...d, [p.id]: (d[p.id] || 0) + 1 }))}>+</button>
+   261→   261→                    </div>
+   262→   262→                  </div>
+   263→   263→                  <button onClick={() => setDetailFor(p)} className="mt-1.5 rounded-lg bg-muted/70 py-1 text-[10px] font-bold text-muted-foreground hover:bg-muted">
+   264→   264→                    📊 سفارش و فروش ماه اخیر
+   265→   265→                  </button>
+   266→   266→                </div>
+   267→   267→              )
+   268→   268→            })}
+   269→   269→          </div>
+   270→   270→          <div className="mt-4 flex items-center justify-between rounded-xl bg-secondary/60 p-3">
+   271→   271→            <span className="text-xs font-bold">{faNum(draftItems.length)} قلم انتخاب شده</span>
+   272→   272→            <button disabled={!draftItems.length} onClick={() => setStep(3)} className="rounded-xl bg-primary px-6 py-2.5 text-xs font-extrabold text-white disabled:opacity-40">
+   273→   273→              ادامه →
+   274→   274→            </button>
+   275→   275→          </div>
+   276→   276→        </SectionCard>
+   277→   277→      )}
+   278→   278→
+   279→   279→      {step === 3 && (
+   280→   280→        <SectionCard title="زمان تحویل و روش پرداخت" subtitle="تقویم شمسی با نشان‌دادن تعطیلات رسمی" icon={<Plus size={18} />}>
+   281→   281→          <div className="grid gap-4 sm:grid-cols-2">
+   282→   282→            <Labeled label="تاریخ تحویل مورد انتظار">
+   283→   283→              <JalaliDatePicker value={deliveryDate} onChange={setDeliveryDate} holidays={holidays} minDate={todayIso()} warnHoliday />
+   284→   284→            </Labeled>
+   285→   285→            <Labeled label="روش پرداخت">
+   286→   286→              <div className="grid grid-cols-2 gap-2">
+   287→   287→                {[['CASH', 'نقدی هنگام تحویل 💵'], ['CHEQUE', 'چک 🧾']].map(([v, l]) => (
+   288→   288→                  <button key={v} onClick={() => setPayMethod(v)} className={cn('rounded-xl border p-3 text-xs font-bold transition', payMethod === v ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card hover:bg-secondary')}>
+   289→   289→                    {l}
+   290→   290→                  </button>
+   291→   291→                ))}
+   292→   292→              </div>
+   293→   293→            </Labeled>
+   294→   294→          </div>
+   295→   295→          <div className="mt-4">
+   296→   296→            <Labeled label="یادداشت سفارش (اختیاری)">
+   297→   297→              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm outline-none focus:border-primary" placeholder="مثلاً: تحویل قبل ساعت ۹ صبح" />
+   298→   298→            </Labeled>
+   299→   299→          </div>
+   300→   300→          <div className="mt-4 flex justify-between">
+   301→   301→            <button onClick={() => setStep(2)} className="rounded-xl border px-5 py-2.5 text-xs font-bold">→ بازگشت</button>
+   302→   302→            <button disabled={!deliveryDate} onClick={() => setStep(4)} className="rounded-xl bg-primary px-6 py-2.5 text-xs font-extrabold text-white disabled:opacity-40">بازبینی نهایی ←</button>
+   303→   303→          </div>
+   304→   304→        </SectionCard>
+   305→   305→      )}
+   306→   306→
+   307→   307→      {step === 4 && (
+   308→   308→        <SectionCard title="بازبینی و ثبت سفارش" subtitle="قبل از ثبت، همه چیز را چک کنید" icon={<CheckCircle2 size={18} />}>
+   309→   309→          <div className="mb-4 grid gap-2 sm:grid-cols-3">
+   310→   310→            <KeyValue k="تأمین‌کننده" v={provider?.name} />
+   311→   311→            <KeyValue k="تاریخ تحویل" v={formatJalaliFull(deliveryDate)} />
+   312→   312→            <KeyValue k="مبلغ کل" v={`${faMoney(total)} تومان`} />
+   313→   313→          </div>
+   314→   314→          <ul className="scroll-gold mb-4 max-h-56 space-y-1.5 overflow-y-auto">
+   315→   315→            {draftItems.map((i) => (
+   316→   316→              <li key={i.productId} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
+   317→   317→                <span className="font-bold">{i.name}</span>
+   318→   318→                <span>{faNum(i.qty)} × {faMoney(i.unitBuyPrice)} = <b>{faMoney(i.qty * i.unitBuyPrice)}</b></span>
+   319→   319→              </li>
+   320→   320→            ))}
+   321→   321→          </ul>
+   322→   322→          <div className="flex flex-wrap justify-between gap-2">
+   323→   323→            <button onClick={() => setStep(3)} className="rounded-xl border px-5 py-2.5 text-xs font-bold">→ بازگشت</button>
+   324→   324→            <div className="flex gap-2">
+   325→   325→              <button disabled={busy} onClick={() => submit(false)} className="rounded-xl border border-primary bg-secondary px-5 py-2.5 text-xs font-extrabold text-primary">
+   326→   326→                ثبت و ارسال برای تأیید {isGM ? '' : '(مدیر کل)'}
+   327→   327→              </button>
+   328→   328→              {isGM && (
+   329→   329→                <button disabled={busy} onClick={() => submit(true)} className="rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg">
+   330→   330→                  ثبت و تأیید نهایی ✅
+   331→   331→                </button>
+   332→   332→              )}
+   333→   333→            </div>
+   334→   334→          </div>
+   335→   335→        </SectionCard>
+   336→   336→      )}
+   337→   337→
+   338→   338→      {/* product history modal */}
+   339→   339→      {detailFor && <ProductHistoryModal product={detailFor} onClose={() => setDetailFor(null)} onOrder={(q) => { setDraft((d) => ({ ...d, [detailFor.id]: (d[detailFor.id] || 0) + q })); setDetailFor(null) }} />}
+   340→   340→    </div>
+   341→   341→  )
+   342→   342→}
+   343→   343→
+   344→   344→function ProductHistoryModal({ product, onClose, onOrder }: { product: Product; onClose: () => void; onOrder: (q: number) => void }) {
+   345→   345→  const [history, setHistory] = useState<any>(null)
+   346→   346→  useEffect(() => {
+   347→   347→    api<{ history: any }>(`/api/products/${product.id}`).then((d) => setHistory(d.history)).catch(() => {})
+   348→   348→  }, [product.id])
+   349→   349→  return (
+   350→   350→    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+   351→   351→      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+   352→   352→      <div className="scroll-gold glow-card max-h-[80vh] w-full max-w-md overflow-y-auto rounded-2xl bg-card p-5">
+   353→   353→        <div className="mb-3 flex items-start justify-between">
+   354→   354→          <h3 className="text-sm font-black">{product.name}</h3>
+   355→   355→          <button onClick={onClose}><X size={18} /></button>
+   356→   356→        </div>
+   357→   357→        {history ? (
+   358→   358→          <>
+   359→   359→            <div className="mb-3 grid grid-cols-2 gap-2">
+   360→   360→              <KeyValue k="سفارش ماه اخیر" v={`${faNum(history.orderedLastMonth)} عدد`} />
+   361→   361→              <KeyValue k="تعداد سفارش" v={`${faNum(history.ordersLastMonth)} بار`} />
+   362→   362→              <KeyValue k="قیمت فروش فعلی" v={`${faMoney(product.sellPrice)} تومان`} />
+   363→   363→              <KeyValue k="موجودی" v={faNum(product.stock)} />
+   364→   364→            </div>
+   365→   365→            <p className="mb-2 text-xs font-black text-muted-foreground">آخرین سفارش‌ها:</p>
+   366→   366→            {history.lastOrders.length === 0 ? (
+   367→   367→              <p className="text-xs text-muted-foreground">در ماه اخیر سفارشی ثبت نشده</p>
+   368→   368→            ) : (
+   369→   369→              <ul className="mb-4 space-y-1">
+   370→   370→                {history.lastOrders.map((o: any, i: number) => (
+   371→   371→                  <li key={i} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-1.5 text-[11px]">
+   372→   372→                    <span className="font-bold">{o.code}</span>
+   373→   373→                    <span>{faNum(o.qty)} عدد</span>
+   374→   374→                    <span className="text-muted-foreground">{formatJalaliShort(o.at)}</span>
+   375→   375→                  </li>
+   376→   376→                ))}
+   377→   377→              </ul>
+   378→   378→            )}
+   379→   379→          </>
+   380→   380→        ) : (
+   381→   381→          <div className="py-6 text-center text-xs text-muted-foreground">در حال بارگذاری…</div>
+   382→   382→        )}
+   383→   383→        <div className="flex gap-2">
+   384→   384→          <button onClick={() => onOrder(1)} className="flex-1 rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">+ افزودن ۱ عدد به سفارش</button>
+   385→   385→          <button onClick={() => onOrder(6)} className="rounded-xl bg-secondary px-4 py-2.5 text-xs font-extrabold text-primary">+{faNum(6)}</button>
+   386→   386→          <button onClick={() => onOrder(12)} className="rounded-xl bg-secondary px-4 py-2.5 text-xs font-extrabold text-primary">+{faNum(12)}</button>
+   387→   387→        </div>
+   388→   388→      </div>
+   389→   389→    </div>
+   390→   390→  )
+   391→   391→}
+   392→   392→
+   393→   393→/* ───────────────────────── Detail + workflow ───────────────────────── */
+   394→   394→
+   395→   395→function OrderDetail({ ctx, orderId, onBack }: { ctx: AppCtx; orderId: string; onBack: () => void }) {
+   396→   396→  const holidays = useHolidays()
+   397→   397→  const [order, setOrder] = useState<any>(null)
+   398→   398→  const [items, setItems] = useState<any[]>([])
+   399→   399→  const [editOpen, setEditOpen] = useState(false)
+   400→   400→  const [sheetOpen, setSheetOpen] = useState(false)
+   401→   401→  const [corrOpen, setCorrOpen] = useState(false)
+   402→   402→  const [corrTitle, setCorrTitle] = useState('')
+   403→   403→  const [corrDetail, setCorrDetail] = useState('')
+   404→   404→  const [editDate, setEditDate] = useState('')
+   405→   405→  const [editNotes, setEditNotes] = useState('')
+   406→   406→
+   407→   407→  const load = () =>
+   408→   408→    api<{ order: any; items: any[] }>(`/api/orders/${orderId}`).then((d) => {
+   409→   409→      setOrder(d.order)
+   410→   410→      setItems(d.items)
+   411→   411→    })
+   412→   412→  useEffect(() => { load() }, [orderId])
+   413→   413→
+   414→   414→  if (!order) return <div className="py-16 text-center text-sm text-muted-foreground">در حال بارگذاری…</div>
+   415→   415→
+   416→   416→  const st = ORDER_STATUSES[order.status]
+   417→   417→  const role = ctx.user!.role
+   418→   418→  const act = async (body: any, successMsg: string) => {
+   419→   419→    try {
+   420→   420→      await api(`/api/orders/${orderId}`, { method: 'PATCH', body })
+   421→   421→      toast.success(successMsg)
+   422→   422→      await load()
+   423→   423→      ctx.refreshNotifications()
+   424→   424→    } catch (e: any) { toast.error(e.message) }
+   425→   425→  }
+   426→   426→
+   427→   427→  const canApprove = order.status === 'SUBMITTED' && ['GM', 'OM'].includes(role)
+   428→   428→  const canSubmitDraft = order.status === 'DRAFT' && ['GM', 'PM', 'OM'].includes(role)
+   429→   429→  const canReceive = ['APPROVED', 'RECEIVING'].includes(order.status) && ['GM', 'OM', 'SK'].includes(role) || (['APPROVED', 'RECEIVING'].includes(order.status) && ctx.user!.secondaryRoles.includes('RECEIVER'))
+   430→   430→  const canVerify = order.status === 'RECEIVED' && ['SK', 'GM', 'OM'].includes(role)
+   431→   431→  const canEdit = !['RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE', 'CANCELLED'].includes(order.status) && ['GM', 'PM', 'OM'].includes(role)
+   432→   432→  const canCancel = !['DONE', 'CANCELLED'].includes(order.status) && ['GM', 'OM'].includes(role)
+   433→   433→
+   434→   434→  return (
+   435→   435→    <div className="space-y-4">
+   436→   436→      <SectionCard
+   437→   437→        title={`${order.code} — ${order.providerName}`}
+   438→   438→        subtitle={`ثبت‌کننده: ${order.createdByName} • ${formatJalaliFull(order.createdAt)}`}
+   439→   439→        icon={<ClipboardList size={18} />}
+   440→   440→        actions={<button onClick={onBack} className="rounded-lg border px-3 py-1.5 text-xs font-bold">→ همه سفارش‌ها</button>}
+   441→   441→      >
+   442→   442→        {/* status pipeline */}
+   443→   443→        <div className="mb-5 flex flex-wrap items-center gap-1.5">
+   444→   444→          {ORDER_FLOW.map((s, i) => {
+   445→   445→            const idx = ORDER_FLOW.indexOf(order.status)
+   446→   446→            const done = idx >= 0 && i < idx
+   447→   447→            const current = order.status === s
+   448→   448→            return (
+   449→   449→              <div key={s} className="flex items-center gap-1.5">
+   450→   450→                <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-black', current ? 'text-white shadow' : done ? 'bg-[#0e7a4a]/15 text-[#0e7a4a]' : 'bg-muted text-muted-foreground')} style={current ? { background: ORDER_STATUSES[s].color } : {}}>
+   451→   451→                  {ORDER_STATUSES[s].label}
+   452→   452→                </span>
+   453→   453→                {i < ORDER_FLOW.length - 1 && <span className={cn('h-0.5 w-4 rounded', done ? 'bg-[#0e7a4a]' : 'bg-border')} />}
+   454→   454→              </div>
+   455→   455→            )
+   456→   456→          })}
+   457→   457→          {order.status === 'CANCELLED' && <Pill label="لغو شده" color="#b3372f" bg="#fee2e2" />}
+   458→   458→        </div>
+   459→   459→
+   460→   460→        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+   461→   461→          <KeyValue k="تاریخ تحویل" v={formatJalaliFull(order.deliveryDate)} />
+   462→   462→          <KeyValue k="مبلغ کل" v={`${faMoney(order.totalAmount)} تومان`} />
+   463→   463→          <KeyValue k="پرداخت" v={order.payMethod === 'CHEQUE' ? 'چک' : 'نقدی'} />
+   464→   464→          <KeyValue k="وضعیت" v={<Pill label={st.label} color={st.color} bg={st.bg} />} />
+   465→   465→        </div>
+   466→   466→
+   467→   467→        {order.isOverdue && (
+   468→   468→          <div className="mb-4 flex items-center gap-2 rounded-xl border border-[#b3372f]/30 bg-[#fee2e2]/60 p-3 text-xs font-bold text-[#b3372f]">
+   469→   469→            <AlertTriangle size={16} /> این سفارش از تاریخ تحویل گذشته و هنوز دریافت نشده — با تأمین‌کننده فالوآپ کنید.
+   470→   470→          </div>
+   471→   471→        )}
+   472→   472→        {order.notes && <p className="mb-4 rounded-xl bg-accent/60 p-3 text-xs">📝 {order.notes}</p>}
+   473→   473→
+   474→   474→        {/* items */}
+   475→   475→        <div className="overflow-x-auto">
+   476→   476→          <table className="w-full text-right text-xs table-luxe">
+   477→   477→            <thead>
+   478→   478→              <tr className="border-b border-border text-[10px] text-muted-foreground">
+   479→   479→                <th className="p-2">کالا</th>
+   480→   480→                <th className="p-2">بارکد</th>
+   481→   481→                <th className="p-2">سفارش</th>
+   482→   482→                <th className="p-2">قیمت واحد</th>
+   483→   483→                <th className="p-2">جمع</th>
+   484→   484→                <th className="p-2">دریافتی</th>
+   485→   485→              </tr>
+   486→   486→            </thead>
+   487→   487→            <tbody>
+   488→   488→              {items.map((it) => (
+   489→   489→                <tr key={it.id} className="border-b border-border/40">
+   490→   490→                  <td className="p-2 font-bold">{it.productName}</td>
+   491→   491→                  <td className="p-2 font-mono text-[10px] text-muted-foreground">{it.barcode ? faNum(it.barcode) : '—'}</td>
+   492→   492→                  <td className="p-2">{faNum(it.qty)}</td>
+   493→   493→                  <td className="p-2">{faMoney(it.unitBuyPrice)}</td>
+   494→   494→                  <td className="p-2 font-bold">{faMoney(it.qty * it.unitBuyPrice)}</td>
+   495→   495→                  <td className="p-2">
+   496→   496→                    {it.receivedQty != null ? (
+   497→   497→                      <Pill label={`${faNum(it.receivedQty)} / ${faNum(it.qty)}`} color={it.receivedQty < it.qty ? '#a16207' : '#166534'} />
+   498→   498→                    ) : it.status === 'REJECTED' ? <Pill label="رد شده" color="#b3372f" /> : it.status === 'SHORT' ? <Pill label="کسری" color="#a16207" /> : '—'}
+   499→   499→                  </td>
+   500→   500→                </tr>
+   501→   501→              ))}
+   502→   502→            </tbody>
+   503→   503→          </table>
+   504→   504→        </div>
+   505→   505→
+   506→   506→        {/* actions */}
+   507→   507→        <div className="mt-5 flex flex-wrap gap-2">
+   508→   508→          {canSubmitDraft && (
+   509→   509→            <button onClick={() => act({ action: 'submit' }, 'پیش‌نویس برای تأیید ارسال شد ✉️')} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#8a5a2b] to-[#a97436] px-4 py-2.5 text-xs font-extrabold text-white">
+   510→   510→              <Send size={14} /> ارسال پیش‌نویس برای تأیید
+   511→   511→            </button>
+   512→   512→          )}
+   513→   513→          {canApprove && (
+   514→   514→            <button onClick={() => act({ action: 'approve' }, 'سفارش تأیید و به تأمین‌کننده اطلاع داده شد ✅')} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-4 py-2.5 text-xs font-extrabold text-white">
+   515→   515→              <CheckCircle2 size={15} /> تأیید و ارسال به تأمین‌کننده
+   516→   516→            </button>
+   517→   517→          )}
+   518→   518→          {canReceive && (
+   519→   519→            <button onClick={() => ctx.navigate('receiving', order.id)} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#c96f4a] to-[#d98a5f] px-4 py-2.5 text-xs font-extrabold text-white">
+   520→   520→              🚚 دریافت مرسوله
+   521→   521→            </button>
+   522→   522→          )}
+   523→   523→          {canVerify && (
+   524→   524→            <button onClick={() => ctx.navigate('verify', order.id)} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#77934a] to-[#8fa85e] px-4 py-2.5 text-xs font-extrabold text-white">
+   525→   525→              <Warehouse size={15} /> تأیید انبار
+   526→   526→            </button>
+   527→   527→          )}
+   528→   528→          {canEdit && (
+   529→   529→            <button onClick={() => { setEditDate(order.deliveryDate); setEditNotes(order.notes); setEditOpen(true) }} className="flex items-center gap-1.5 rounded-xl border border-primary/50 bg-secondary px-4 py-2.5 text-xs font-extrabold text-primary">
+   530→   530→              <Pencil size={14} /> ویرایش سفارش
+   531→   531→            </button>
+   532→   532→          )}
+   533→   533→          {['RECEIVED', 'VERIFIED', 'ACCOUNTED', 'DONE'].includes(order.status) && ['GM', 'PM', 'OM', 'ACC'].includes(role) && (
+   534→   534→            <button onClick={() => setCorrOpen(true)} className="flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-extrabold text-muted-foreground">
+   535→   535→              <History size={14} /> ثبت اصلاحیه
+   536→   536→            </button>
+   537→   537→          )}
+   538→   538→          <button onClick={() => setSheetOpen(true)} className="flex items-center gap-1.5 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-4 py-2.5 text-xs font-extrabold text-[#8a6d10]">
+   539→   539→            <Printer size={14} /> چاپ برگ سفارش
+   540→   540→          </button>
+   541→   541→          {canCancel && (
+   542→   542→            <button onClick={() => act({ action: 'cancel', detail: 'لغو توسط ' + ctx.user!.name }, 'سفارش لغو شد')} className="flex items-center gap-1.5 rounded-xl border border-[#b3372f]/40 px-4 py-2.5 text-xs font-extrabold text-[#b3372f]">
+   543→   543→              <Ban size={14} /> لغو سفارش
+   544→   544→            </button>
+   545→   545→          )}
+   546→   546→        </div>
+   547→   547→      </SectionCard>
+   548→   548→
+   549→   549→      {/* history timeline */}
+   550→   550→      <SectionCard title="تاریخچه کامل سفارش" subtitle="هر تغییر با نام و زمان ثبت می‌شود — شفافیت کامل" icon={<History size={18} />}>
+   551→   551→        <ol className="relative space-y-3 border-r-2 border-dashed border-[#c9a227]/40 pr-5">
+   552→   552→          {order.history.map((h: any, i: number) => (
+   553→   553→            <li key={i} className="relative">
+   554→   554→              <span className="absolute -right-[27px] top-1 h-3.5 w-3.5 rounded-full border-2 border-[#c9a227] bg-card" />
+   555→   555→              <p className="text-xs font-extrabold">{h.action}</p>
+   556→   556→              {h.detail && <p className="text-[11px] text-muted-foreground">{h.detail}</p>}
+   557→   557→              <p className="text-[10px] text-muted-foreground">{h.userName} • {formatJalaliFull(h.at)} {new Date(h.at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</p>
+   558→   558→            </li>
+   559→   559→          ))}
+   560→   560→        </ol>
+   561→   561→      </SectionCard>
+   562→   562→
+   563→   563→      {/* provider order sheet print */}
+   564→   564→      {sheetOpen && (
+   565→   565→        <Modal title="برگ سفارش برای تأمین‌کننده" onClose={() => setSheetOpen(false)} wide>
+   566→   566→          <div className="print-area rounded-xl bg-white p-5 text-black" dir="rtl">
+   567→   567→            <div className="mb-3 flex items-center justify-between border-b-2 border-[#c9a227] pb-2">
+   568→   568→              <div>
+   569→   569→                <p className="text-base font-black">هایپر زیتون — برگ سفارش خرید</p>
+   570→   570→                <p className="text-[11px]">کرمان • سامانه مدیریت عملیات</p>
+   571→   571→              </div>
+   572→   572→              <div className="text-left text-[11px]">
+   573→   573→                <p>کد سفارش: <b>{order.code}</b></p>
+   574→   574→                <p>تأمین‌کننده: <b>{order.providerName}</b></p>
+   575→   575→                <p>تاریخ تحویل: <b>{formatJalaliFull(order.deliveryDate)}</b></p>
+   576→   576→              </div>
+   577→   577→            </div>
+   578→   578→            <table className="w-full text-right text-[11px]">
+   579→   579→              <thead>
+   580→   580→                <tr className="border-b border-gray-300">
+   581→   581→                  <th className="p-1.5">#</th><th className="p-1.5">کالا</th><th className="p-1.5">بارکد</th>
+   582→   582→                  <th className="p-1.5">تعداد</th><th className="p-1.5">قیمت واحد</th><th className="p-1.5">جمع</th>
+   583→   583→                </tr>
+   584→   584→              </thead>
+   585→   585→              <tbody>
+   586→   586→                {items.map((it: any, i: number) => (
+   587→   587→                  <tr key={it.id} className="border-b border-gray-200">
+   588→   588→                    <td className="p-1.5">{i + 1}</td>
+   589→   589→                    <td className="p-1.5">{it.productName}</td>
+   590→   590→                    <td className="p-1.5" dir="ltr">{it.barcode || '—'}</td>
+   591→   591→                    <td className="p-1.5 font-bold">{it.qty}</td>
+   592→   592→                    <td className="p-1.5">{it.unitBuyPrice.toLocaleString('en-US')}</td>
+   593→   593→                    <td className="p-1.5 font-bold">{(it.qty * it.unitBuyPrice).toLocaleString('en-US')}</td>
+   594→   594→                  </tr>
+   595→   595→                ))}
+   596→   596→              </tbody>
+   597→   597→            </table>
+   598→   598→            <div className="mt-3 flex justify-between border-t-2 border-[#c9a227] pt-2 text-xs font-bold">
+   599→   599→              <span>تعداد اقلام: {items.length}</span>
+   600→   600→              <span>مبلغ تقریبی: {order.totalAmount.toLocaleString('en-US')} تومان</span>
+   601→   601→            </div>
+   602→   602→            <p className="mt-3 text-[10px]">لطفاً تاریخ انقضای اقلام فاسدشدنی روی فاکتور درج شود. اقلام با برچسب قیمت اشتباه یا تاریخ کوتاه پذیرش نمی‌شود.</p>
+   603→   603→            <div className="mt-8 flex justify-between text-[10px]">
+   604→   604→              <span>امضای سفارش‌دهنده: ................</span>
+   605→   605→              <span>امضای تأمین‌کننده: ................</span>
+   606→   606→            </div>
+   607→   607→          </div>
+   608→   608→          <button onClick={() => window.print()} className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">
+   609→   609→            🖨️ چاپ یا ذخیره PDF برگ سفارش
+   610→   610→          </button>
+   611→   611→        </Modal>
+   612→   612→      )}
+   613→   613→
+   614→   614→      {/* edit modal */}
+   615→   615→      {editOpen && (
+   616→   616→        <Modal title="ویرایش سفارش" onClose={() => setEditOpen(false)}>
+   617→   617→          <Labeled label="تاریخ تحویل">
+   618→   618→            <JalaliDatePicker value={editDate} onChange={setEditDate} holidays={holidays} minDate={todayIso()} warnHoliday={false} />
+   619→   619→          </Labeled>
+   620→   620→          <Labeled label="یادداشت">
+   621→   621→            <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className="w-full rounded-xl border border-input p-3 text-sm" />
+   622→   622→          </Labeled>
+   623→   623→          <p className="rounded-lg bg-accent/60 p-2.5 text-[11px]">برای تغییر تعداد اقلام، پیش از دریافت مرسوله با پشتیبانی حسابداری هماهنگ کنید؛ یا پس از دریافت از «اصلاحیه» استفاده نمایید.</p>
+   624→   624→          <button onClick={async () => { await act({ action: 'edit', deliveryDate: editDate, notes: editNotes, detail: 'ویرایش تاریخ/یادداشت' }, 'سفارش ویرایش شد ✏️'); setEditOpen(false) }} className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">
+   625→   625→            ذخیره تغییرات
+   626→   626→          </button>
+   627→   627→        </Modal>
+   628→   628→      )}
+   629→   629→
+   630→   630→      {/* correction modal */}
+   631→   631→      {corrOpen && (
+   632→   632→        <Modal title="ثبت اصلاحیه (بدون تغییر تاریخچه)" onClose={() => setCorrOpen(false)}>
+   633→   633→          <Labeled label="عنوان اصلاحیه"><input value={corrTitle} onChange={(e) => setCorrTitle(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="مثلاً: اصلاح تعداد شیر پگاه" /></Labeled>
+   634→   634→          <Labeled label="توضیح"><textarea value={corrDetail} onChange={(e) => setCorrDetail(e.target.value)} rows={3} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   635→   635→          <button
+   636→   636→            onClick={async () => {
+   637→   637→              if (!corrTitle.trim()) return toast.error('عنوان اصلاحیه را بنویسید')
+   638→   638→              await act({ action: 'correct', title: corrTitle, detail: corrDetail }, 'اصلاحیه ثبت شد و در تاریخچه ماند 📜')
+   639→   639→              setCorrOpen(false); setCorrTitle(''); setCorrDetail('')
+   640→   640→            }}
+   641→   641→            className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white"
+   642→   642→          >
+   643→   643→            ثبت اصلاحیه
+   644→   644→          </button>
+   645→   645→        </Modal>
+   646→   646→      )}
+   647→   647→    </div>
+   648→   648→  )
+   649→   649→}
+   650→   650→
+   651→   651→export function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
+   652→   652→  return (
+   653→   653→    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+   654→   654→      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+   655→   655→      <div className={cn('scroll-gold glow-card max-h-[85vh] w-full overflow-y-auto rounded-2xl bg-card p-5', wide ? 'max-w-2xl' : 'max-w-md')}>
+   656→   656→        <div className="mb-4 flex items-center justify-between">
+   657→   657→          <h3 className="text-sm font-black">{title}</h3>
+   658→   658→          <button onClick={onClose} className="rounded-lg p-1 hover:bg-muted"><X size={18} /></button>
+   659→   659→        </div>
+   660→   660→        <div className="space-y-3">{children}</div>
+   661→   661→      </div>
+   662→   662→    </div>
+   663→   663→  )
+   664→   664→}
+   665→   665→

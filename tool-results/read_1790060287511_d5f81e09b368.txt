@@ -1,0 +1,1510 @@
+     1→'use client'
+     2→
+     3→/**
+     4→ * حقوق و دستمزد — هایپر زیتون (قانون کار ایران ۱۴۰۴)
+     5→ * ماهانه: کارکرد روزانه (اضافه‌کاری/جمعه‌کاری/شب‌کاری/غیبت) + اقلام متغیر + کسور + فیش قابل چاپ
+     6→ * سالانه: عیدی و سنوات با تناسب روزهای خدمت · تنظیمات: نرخ‌ها/سقف‌ها/جدول مالیات
+     7→ * واحد موتور: ریال — نمایش در جدول‌ها به «تومان» (تقسیم بر ۱۰) و فیش چاپی به «ریال».
+     8→ */
+     9→
+    10→import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+    11→import { toast } from 'sonner'
+    12→import { api } from '@/lib/client'
+    13→import {
+    14→  enDigits, faMoney, faNum, formatJalaliDateTime, formatJalaliShort,
+    15→  J_MONTHS, jalaliToIso, toJalaliParts, todayIso,
+    16→} from '@/lib/jalali'
+    17→import {
+    18→  EmptyState, Labeled, Pill, SectionCard, StatCard, FaPriceInput, type AppCtx,
+    19→} from '@/components/app/ui-bits'
+    20→import { Modal } from '@/components/views/Orders'
+    21→import { cn } from '@/lib/utils'
+    22→import {
+    23→  BadgeCheck, Banknote, CalendarDays, ChevronLeft, ChevronRight, Coins, Eye, FileDown, Landmark,
+    24→  Lock, Pencil, Percent, PiggyBank, Plus, Printer, RefreshCcw, Save, Settings2, Sparkles, Trash2, TrendingUp, Users, X,
+    25→} from 'lucide-react'
+    26→
+    27→const EMERALD = '#0e7a4a'
+    28→const GOLD = '#c9a227'
+    29→const ROSE = '#b3372f'
+    30→const OLIVE = '#77934a'
+    31→const SKY = '#2563eb'
+    32→const GRAY = '#6b7280'
+    33→
+    34→/* ── نمایش پول: موتور ریال است؛ faMoney تقسیم نمی‌کند → تومان = ریال ÷ ۱۰ ── */
+    35→const T = (rial: number | null | undefined) => faMoney((rial || 0) / 10) // تومان
+    36→const R = (rial: number | null | undefined) => faMoney(rial || 0) // ریال
+    37→/** مرز API برای ورودی‌های تنظیمات: تومان ×۱۰ = ریال (موتور ریال است) */
+    38→const TOR = (toman: number) => Math.round((toman || 0) * 10)
+    39→
+    40→type Profile = {
+    41→  baseSalary: number; housing: number; foodAllowance: number; maritalAllowance: number
+    42→  childAllowance: number; childCount: number; seniorityBase: number; overtimeDivisor: number
+    43→  includeBenefitsInOT: boolean
+    44→}
+    45→type DayRow = { forDate: string; otMinutes: number; holidayOtMinutes: number; nightMinutes: number; absence: string; dayKind: string; note: string }
+    46→type AdjustRow = { id: string; kind: string; amount: number; note: string; ownerOnly: boolean; createdByName: string; createdAt: string }
+    47→type Computed = {
+    48→  workDays: number; absentFullDays: number; absentHalfDays: number
+    49→  otHours: number; holidayOtHours: number; nightHours: number
+    50→  baseProrated: number; housing: number; foodAllowance: number; marital: number; childTotal: number
+    51→  hourlyBase: number; overtimePay: number; holidayOtPay: number; nightPay: number; seniorityAccrual: number
+    52→  rewards: number; commissions: number; fines: number; advances: number; other: number; gross: number
+    53→  insurableBase: number; insurance: number; tax: number; otherDeductions: number; net: number
+    54→  warnings: string[]
+    55→}
+    56→type Row = {
+    57→  id: string; name: string; personnelNo: string; jobTitle: string; nationalId: string
+    58→  bankCard: string; shaba: string; hireDate: string; active: boolean; childrenCount: number
+    59→  profile: Profile
+    60→  month: { id: string; status: string; payslipNo: string; confirmedByName: string; confirmedAt: string; paidAt: string; note: string; gross: number; net: number }
+    61→  days: DayRow[]
+    62→  adjusts: AdjustRow[]
+    63→  hiddenCommissionCount: number
+    64→  computed: Computed
+    65→}
+    66→type TaxCfg = { exempt: number; bands: Array<{ upTo: number | null; rate: number }> }
+    67→type PolicyCfg = { otRate: number; nightRate: number; holidayOtRate: number; otCapMinutes: number; insuranceRate: number; employerRate: number; insuranceIncludesOT: boolean; fineCapPct: number; roundTo: number }
+    68→/** جدول قانونی سال حقوقی (ریال) — از getStatutory در GET /api/payroll */
+    69→type StatutoryPub = {
+    70→  dailyMinWage: number; monthlyMinWage: number; hourlyMinWage: number
+    71→  housing: number; foodAllowance: number; maritalAllowance: number; childAllowance: number
+    72→  seniorityDaily: number; overtimeDivisor: number
+    73→  otherLevelsFormula: { factor: number; addend: number }
+    74→  newYearBonusMin: number; newYearBonusMax: number
+    75→  tax: TaxCfg
+    76→}
+    77→type Resp = {
+    78→  jy: number; jm: number; monthDays: number; employer: string
+    79→  isManager: boolean; isOwner: boolean; self: { personnelId: string } | null
+    80→  defaults: Partial<Profile>; policy: PolicyCfg; tax: TaxCfg
+    81→  statutory: StatutoryPub; salaryYear: number; positionBase: Record<string, number>
+    82→  viewer: { isManager: boolean; isOwner: boolean; canCommission: boolean; canSettings: boolean }
+    83→  personnel: Row[]; hint?: string
+    84→}
+    85→
+    86→type Yearly = {
+    87→  jy: number; yearDays: number; serviceDays: number; ratio: number; serviceFrom: string | null; serviceTo: string
+    88→  eydiRaw: number; eydiCap: number; eydi: number; seniority: number; total: number; partial: boolean
+    89→}
+    90→
+    91→const KIND_META: Record<string, { label: string; color: string }> = {
+    92→  REWARD: { label: 'تشویقی', color: EMERALD },
+    93→  FINE: { label: 'جریمه', color: ROSE },
+    94→  COMMISSION: { label: 'پورسانت', color: GOLD },
+    95→  ADVANCE: { label: 'مساعده', color: SKY },
+    96→  OTHER: { label: 'سایر', color: OLIVE },
+    97→}
+    98→const STATUS_META: Record<string, { label: string; color: string }> = {
+    99→  DRAFT: { label: 'پیش‌نویس', color: GRAY },
+   100→  CONFIRMED: { label: 'تأییدشده', color: GOLD },
+   101→  PAID: { label: 'پرداخت‌شده', color: EMERALD },
+   102→}
+   103→const DAYKIND_META: Record<string, { label: string; color: string }> = {
+   104→  WORK: { label: 'کار', color: OLIVE },
+   105→  FRIDAY: { label: 'جمعه', color: GOLD },
+   106→  HOLIDAY: { label: 'تعطیل', color: ROSE },
+   107→  LEAVE: { label: 'مرخصی', color: SKY },
+   108→  OFF: { label: 'تعطیل', color: GRAY },
+   109→}
+   110→const WEEK_SHORT = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج']
+   111→function weekdayShort(iso: string): string {
+   112→  return WEEK_SHORT[new Date(iso + 'T12:00:00').getDay() === 6 ? 0 : (new Date(iso + 'T12:00:00').getDay() + 1) % 7]
+   113→}
+   114→
+   115→/** ورودی عدد کوچک (دقیقه/شمارش) — ارقام فارسی/عربی/لاتین می‌پذیرد */
+   116→function SmallNum({ value, onChange, disabled, max = 720, w = 'w-14' }: { value: number; onChange: (v: number) => void; disabled?: boolean; max?: number; w?: string }) {
+   117→  return (
+   118→    <input
+   119→      type="text" inputMode="numeric" dir="ltr" disabled={disabled}
+   120→      value={value === 0 ? '' : faNum(value)}
+   121→      placeholder="۰"
+   122→      onChange={(e) => {
+   123→        const cleaned = enDigits(e.target.value).replace(/[^\d]/g, '')
+   124→        const n = cleaned === '' ? 0 : Math.min(max, Number(cleaned))
+   125→        onChange(isNaN(n) ? 0 : n)
+   126→      }}
+   127→      className={cn(w, 'rounded-lg border border-input bg-white/90 px-1 py-1 text-center text-xs font-bold tabular-nums outline-none focus:border-primary disabled:opacity-50')}
+   128→    />
+   129→  )
+   130→}
+   131→
+   132→/** دکمهٔ چیپ سریع دقیقه (+۳۰/+۶۰/+۱۲۰) */
+   133→function QuickChip({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+   134→  return (
+   135→    <button type="button" disabled={disabled} onClick={onClick}
+   136→      className="rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground transition hover:border-primary hover:text-primary disabled:opacity-40">
+   137→      {label}
+   138→    </button>
+   139→  )
+   140→}
+   141→
+   142→export default function PayrollView({ ctx }: { ctx: AppCtx }) {
+   143→  const now = toJalaliParts(todayIso())
+   144→  const [jy, setJy] = useState(now.jy)
+   145→  const [jm, setJm] = useState(now.jm)
+   146→  const [data, setData] = useState<Resp | null>(null)
+   147→  const [loading, setLoading] = useState(true)
+   148→  const [tab, setTab] = useState<'month' | 'yearly' | 'self' | 'settings'>('month')
+   149→  const [editorId, setEditorId] = useState<string | null>(null)
+   150→  const [confirmBox, setConfirmBox] = useState<null | { type: 'confirm' | 'pay' | 'reopen'; note: string }>(null)
+   151→  const [yearlySel, setYearlySel] = useState<{ personnelId: string; jy: number } | null>(null)
+   152→  const [yearly, setYearly] = useState<Yearly | null>(null)
+   153→  const [yearlyMeta, setYearlyMeta] = useState<{ name: string; jobTitle: string; hireDate: string; personnelNo: string } | null>(null)
+   154→  const [slipId, setSlipId] = useState<string | null>(null) // فیش چاپی: personnel id
+   155→  const canManage = !!data?.viewer.isManager
+   156→  const canCommission = !!data?.viewer.canCommission
+   157→
+   158→  const load = useCallback(async (pjy = jy, pjm = jm) => {
+   159→    try {
+   160→      const d = await api<Resp>(`/api/payroll?jy=${pjy}&jm=${pjm}`)
+   161→      setData(d)
+   162→    } catch (e) {
+   163→      toast.error((e as Error).message)
+   164→    } finally {
+   165→      setLoading(false)
+   166→    }
+   167→  }, [jy, jm])
+   168→
+   169→  useEffect(() => { setLoading(true); load() }, [load])
+   170→
+   171→  const rows = data?.personnel || []
+   172→  const editorRow = rows.find((r) => r.id === editorId) || null
+   173→  const slipRow = rows.find((r) => r.id === slipId) || null
+   174→  const selfRow = data?.self ? rows.find((r) => r.id === data.self?.personnelId) || null : null
+   175→
+   176→  const totals = useMemo(() => {
+   177→    const acc = { gross: 0, net: 0, insurance: 0, tax: 0, ot: 0, confirmed: 0, paid: 0 }
+   178→    for (const r of rows) {
+   179→      acc.gross += r.computed.gross; acc.net += r.computed.net
+   180→      acc.insurance += r.computed.insurance; acc.tax += r.computed.tax
+   181→      acc.ot += r.computed.otHours + r.computed.holidayOtHours
+   182→      if (r.month.status === 'CONFIRMED') acc.confirmed += 1
+   183→      if (r.month.status === 'PAID') acc.paid += 1
+   184→    }
+   185→    return acc
+   186→  }, [rows])
+   187→
+   188→  /* ── تغییر ماه: فقط وضعیت را عوض می‌کنیم — useEffect با load جدید واکشی می‌کند ── */
+   189→  const switchMonth = (delta: number) => {
+   190→    let njy = jy, njm = jm + delta
+   191→    if (njm > 12) { njm = 1; njy += 1 }
+   192→    if (njm < 1) { njm = 12; njy -= 1 }
+   193→    setJy(njy); setJm(njm)
+   194→  }
+   195→
+   196→  const TABS: Array<{ key: typeof tab; label: string; icon: ReactNode }> = [
+   197→    { key: 'month', label: 'حقوق ماهانه', icon: <Users size={14} /> },
+   198→    { key: 'yearly', label: 'عیدی و سنوات', icon: <Sparkles size={14} /> },
+   199→    { key: 'self', label: 'فیش من', icon: <Eye size={14} /> },
+   200→  ]
+   201→  if (data?.viewer.canSettings) TABS.push({ key: 'settings', label: 'تنظیمات', icon: <Settings2 size={14} /> })
+   202→
+   203→  return (
+   204→    <div className="space-y-4">
+   205→      {/* استایل چاپ فیش — بدون دست‌زدن به globals.css */}
+   206→      <style>{`
+   207→        @media print {
+   208→          body * { visibility: hidden !important; }
+   209→          #payslip-print-area, #payslip-print-area *, #yearly-print-area, #yearly-print-area * { visibility: visible !important; }
+   210→          #payslip-print-area, #yearly-print-area { position: absolute !important; top: 0 !important; right: 0 !important; left: 0 !important; width: 100% !important; max-height: none !important; overflow: visible !important; box-shadow: none !important; border: none !important; border-radius: 0 !important; padding: 10mm !important; background: white !important; }
+   211→          .no-print { display: none !important; }
+   212→        }
+   213→      `}</style>
+   214→
+   215→      {/* سرصفحهٔ ماه */}
+   216→      <SectionCard
+   217→        title="حقوق و دستمزد"
+   218→        subtitle={`ماه ${J_MONTHS[(data?.jm || jm) - 1]} ${faNum(data?.jy || jy)} — مبالغ جدول به تومان · مطابق قانون کار سال حقوقی ${faNum(data?.salaryYear || 1405)} (مبالغ موتور: ریال)`}
+   219→        icon={<Landmark size={20} />}
+   220→        actions={
+   221→          <>
+   222→            <button onClick={() => switchMonth(-1)} className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold hover:border-primary"><ChevronRight size={16} /> ماه قبل</button>
+   223→            <button onClick={() => { setJy(now.jy); setJm(now.jm) }} className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold hover:border-primary" title="ماه جاری"><CalendarDays size={16} /></button>
+   224→            <button onClick={() => switchMonth(1)} className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold hover:border-primary">ماه بعد <ChevronLeft size={16} /></button>
+   225→          </>
+   226→        }
+   227→      >
+   228→        {/* تب‌ها */}
+   229→        <div className="mb-4 flex flex-wrap gap-2">
+   230→          {TABS.map((t) => (
+   231→            <button key={t.key} onClick={() => setTab(t.key)}
+   232→              className={cn('flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition',
+   233→                tab === t.key ? 'bg-primary text-white shadow' : 'border border-border bg-card text-muted-foreground hover:border-primary')}>
+   234→              {t.icon}{t.label}
+   235→            </button>
+   236→          ))}
+   237→        </div>
+   238→
+   239→        {loading ? (
+   240→          <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-muted/60" />)}</div>
+   241→        ) : tab === 'month' && (
+   242→          <MonthTab data={data} rows={rows} totals={totals} onOpenEditor={setEditorId} onOpenSlip={setSlipId} onOpenYearly={(pid) => { setYearlySel({ personnelId: pid, jy: now.jy }); setYearly(null); setYearlyMeta(null); setTab('yearly') }} />
+   243→        )}
+   244→        {tab === 'yearly' && (
+   245→          <YearlyTab
+   246→            rows={rows} canManage={canManage} selfPid={data?.self?.personnelId || null}
+   247→            sel={yearlySel} setSel={setYearlySel} yearly={yearly} setYearly={setYearly} meta={yearlyMeta} setMeta={setYearlyMeta}
+   248→          />
+   249→        )}
+   250→        {tab === 'self' && <SelfTab row={selfRow} onOpenSlip={setSlipId} />}
+   251→        {/* key = سال حقوقی: با تغییر سال، پیش‌نویس تنظیمات از نو بر پایهٔ جدول قانونی تازه ساخته می‌شود */}
+   252→        {tab === 'settings' && data?.viewer.canSettings && <SettingsTab key={data.salaryYear} data={data} onSaved={() => load()} />}
+   253→      </SectionCard>
+   254→
+   255→      {/* ویرایشگر ماه پرسنل */}
+   256→      {editorRow && data && (
+   257→        <MonthEditor
+   258→          key={editorRow.id + '-' + data.jy + '-' + data.jm}
+   259→          row={editorRow} data={data} canManage={canManage} canCommission={canCommission}
+   260→          onClose={() => setEditorId(null)} onReload={() => load()}
+   261→          onConfirm={() => setConfirmBox({ type: 'confirm', note: '' })}
+   262→          onPay={() => setConfirmBox({ type: 'pay', note: '' })}
+   263→          onReopen={() => setConfirmBox({ type: 'reopen', note: '' })}
+   264→          onPrint={() => setSlipId(editorRow.id)}
+   265→        />
+   266→      )}
+   267→
+   268→      {/* جعبهٔ تأیید دومرحله‌ای */}
+   269→      {confirmBox && editorRow && (
+   270→        <Modal title={{ confirm: 'تأیید ماه حقوق', pay: 'ثبت پرداخت', reopen: 'بازگشایی ماه' }[confirmBox.type]} onClose={() => setConfirmBox(null)}>
+   271→          <p className="text-sm leading-6 text-muted-foreground">
+   272→            {confirmBox.type === 'confirm' && <>ماه {J_MONTHS[jm - 1]} {faNum(jy)} برای «{editorRow.name}» تأیید شود؟ پس از تأیید، ثبت کارکرد قفل می‌شود.</>}
+   273→            {confirmBox.type === 'pay' && <>پرداخت خالص <b className="text-primary">{T(editorRow.computed.net)} تومان</b> به «{editorRow.name}» ثبت شود؟ پس از ثبت، ماه قفل می‌شود.</>}
+   274→            {confirmBox.type === 'reopen' && <>بازگشایی ماه برای «{editorRow.name}»؟ {editorRow.month.status === 'PAID' && 'ماه پرداخت‌شده مستلزم ذکر دلیل است.'}</>}
+   275→          </p>
+   276→          {confirmBox.type === 'reopen' && (
+   277→            <Labeled label="دلیل بازگشایی (برای ماه پرداخت‌شده الزامی است)">
+   278→              <input value={confirmBox.note} onChange={(e) => setConfirmBox({ ...confirmBox, note: e.target.value })}
+   279→                className="w-full rounded-xl border border-input bg-white/90 px-3 py-2 text-sm outline-none focus:border-primary" />
+   280→            </Labeled>
+   281→          )}
+   282→          <div className="flex gap-2">
+   283→            <button onClick={async () => {
+   284→              const type = confirmBox.type; const note = confirmBox.note
+   285→              setConfirmBox(null)
+   286→              try {
+   287→                await api('/api/payroll', { method: 'POST', body: { action: type, personnelId: editorRow.id, jy: data?.jy || jy, jm: data?.jm || jm, note } })
+   288→                toast.success({ confirm: 'ماه تأیید شد ✓', pay: 'پرداخت ثبت شد ✓', reopen: 'ماه بازگشایی شد' }[type])
+   289→                load()
+   290→              } catch (e) { toast.error((e as Error).message) }
+   291→            }} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-black text-white hover:opacity-90">
+   292→              بله، انجام بده
+   293→            </button>
+   294→            <button onClick={() => setConfirmBox(null)} className="rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-muted-foreground">انصراف</button>
+   295→          </div>
+   296→        </Modal>
+   297→      )}
+   298→
+   299→      {/* فیش حقوقی (چاپ) */}
+   300→      {slipRow && data && (
+   301→        <Modal title={`فیش حقوقی — ${slipRow.name}`} wide onClose={() => setSlipId(null)}>
+   302→          <Payslip row={slipRow} data={data} generatedBy={ctx.user?.name || 'سامانه'} />
+   303→        </Modal>
+   304→      )}
+   305→    </div>
+   306→  )
+   307→}
+   308→
+   309→/* ═══════════ تب ماهانه: جدول پرسنل ═══════════ */
+   310→
+   311→function MonthTab({ rows, totals, onOpenEditor, onOpenSlip, onOpenYearly, data }: {
+   312→  rows: Row[]; totals: { gross: number; net: number; insurance: number; tax: number; ot: number; confirmed: number; paid: number }
+   313→  onOpenEditor: (id: string) => void; onOpenSlip: (id: string) => void; onOpenYearly: (id: string) => void
+   314→  data: Resp | null
+   315→}) {
+   316→  if (!rows.length) {
+   317→    return <EmptyState emoji="🫒" title="پرسنلی برای حقوق‌وریافتنی نیست" hint={data?.hint || 'پس از ساخت پروندهٔ پرسنلی، پروفایل حقوق خودکار ساخته می‌شود'} />
+   318→  }
+   319→  return (
+   320→    <div className="space-y-4">
+   321→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   322→        <StatCard label="جمع خالص پرداختی ماه (تومان)" value={T(totals.net)} tone="emerald" icon={<Banknote size={18} />} hint={`${faNum(rows.length)} پرسنل`} />
+   323→        <StatCard label="جمع حقوق و مزایا (تومان)" value={T(totals.gross)} tone="gold" icon={<Coins size={18} />} hint={`اضافه‌کاری: ${faNum(Math.round(totals.ot))} ساعت`} />
+   324→        <StatCard label="بیمهٔ سهم کارگر (تومان)" value={T(totals.insurance)} tone="olive" icon={<PiggyBank size={18} />} hint="۷٪ مشمول بیمه" />
+   325→        <StatCard label="مالیات حقوق (تومان)" value={T(totals.tax)} tone="rose" icon={<Percent size={18} />} hint={`تأییدشده: ${faNum(totals.confirmed)} · پرداخت‌شده: ${faNum(totals.paid)}`} />
+   326→      </div>
+   327→
+   328→      <div className="overflow-x-auto rounded-2xl border border-border">
+   329→        <table className="w-full min-w-[820px] text-right text-sm">
+   330→          <thead>
+   331→            <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+   332→              <th className="px-3 py-2.5 font-bold">پرسنل</th>
+   333→              <th className="px-3 py-2.5 font-bold">کارکرد</th>
+   334→              <th className="px-3 py-2.5 font-bold">اضافه‌کاری (عادی/جمعه/شب)</th>
+   335→              <th className="px-3 py-2.5 font-bold">ناخالص</th>
+   336→              <th className="px-3 py-2.5 font-bold">بیمه</th>
+   337→              <th className="px-3 py-2.5 font-bold">مالیات</th>
+   338→              <th className="px-3 py-2.5 font-bold">خالص (تومان)</th>
+   339→              <th className="px-3 py-2.5 font-bold">وضعیت</th>
+   340→              <th className="px-3 py-2.5 font-bold"></th>
+   341→            </tr>
+   342→          </thead>
+   343→          <tbody>
+   344→            {rows.map((r) => {
+   345→              const st = STATUS_META[r.month.status] || STATUS_META.DRAFT
+   346→              return (
+   347→                <tr key={r.id} onClick={() => onOpenEditor(r.id)}
+   348→                  className="cursor-pointer border-b border-border/60 transition hover:bg-secondary/60 last:border-0">
+   349→                  <td className="px-3 py-2.5">
+   350→                    <div className="font-bold text-foreground">{r.name} {!r.active && <span className="text-[10px] font-bold text-rose-600">(غیرفعال)</span>}</div>
+   351→                    <div className="text-[11px] text-muted-foreground">{r.jobTitle || '—'} · {r.personnelNo}</div>
+   352→                  </td>
+   353→                  <td className="px-3 py-2.5 tabular-nums">{faNum(r.computed.workDays)} روز{r.computed.absentFullDays + r.computed.absentHalfDays > 0 && <span className="text-[11px] text-rose-600"> (−{faNum(r.computed.absentFullDays + r.computed.absentHalfDays)})</span>}</td>
+   354→                  <td className="px-3 py-2.5 tabular-nums text-xs">
+   355→                    <span className="font-bold text-foreground">{faNum(Math.round(r.computed.otHours))}</span> / <span style={{ color: GOLD }}>{faNum(Math.round(r.computed.holidayOtHours))}</span> / <span style={{ color: SKY }}>{faNum(Math.round(r.computed.nightHours))}</span> ساعت
+   356→                  </td>
+   357→                  <td className="px-3 py-2.5 tabular-nums font-bold">{T(r.computed.gross)}</td>
+   358→                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{T(r.computed.insurance)}</td>
+   359→                  <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{T(r.computed.tax)}</td>
+   360→                  <td className="px-3 py-2.5 tabular-nums font-black text-primary">{T(r.computed.net)}</td>
+   361→                  <td className="px-3 py-2.5"><Pill label={st.label} color={st.color} /></td>
+   362→                  <td className="px-3 py-2.5">
+   363→                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+   364→                      <button title="فیش حقوقی" onClick={() => onOpenSlip(r.id)} className="rounded-lg border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-primary"><FileDown size={14} /></button>
+   365→                      <button title="عیدی و سنوات" onClick={() => onOpenYearly(r.id)} className="rounded-lg border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-primary"><Sparkles size={14} /></button>
+   366→                    </div>
+   367→                  </td>
+   368→                </tr>
+   369→              )
+   370→            })}
+   371→          </tbody>
+   372→        </table>
+   373→      </div>
+   374→      <p className="text-[11px] leading-5 text-muted-foreground">
+   375→        برای ثبت اضافه‌کاری، غیبت و اقلام متغیر روی ردیف پرسنل کلیک کنید · سقف اضافه‌کاری قانونی ۴ ساعت در روز است (مادهٔ ۵۹) · حق مسکن، بن کارگری و اضافه‌کاری از مشمول بیمه معاف‌اند (تبصرهٔ مادهٔ ۳۸ قانون تأمین اجتماعی).
+   376→      </p>
+   377→    </div>
+   378→  )
+   379→}
+   380→
+   381→/* ═══════════ ویرایشگر ماه ═══════════ */
+   382→
+   383→function MonthEditor({ row, data, canManage, canCommission, onClose, onReload, onConfirm, onPay, onReopen, onPrint }: {
+   384→  row: Row; data: Resp; canManage: boolean; canCommission: boolean
+   385→  onClose: () => void; onReload: () => void; onConfirm: () => void; onPay: () => void; onReopen: () => void; onPrint: () => void
+   386→}) {
+   387→  const locked = row.month.status !== 'DRAFT'
+   388→  const st = STATUS_META[row.month.status] || STATUS_META.DRAFT
+   389→  const [editingProfile, setEditingProfile] = useState(false)
+   390→  const [profileDraft, setProfileDraft] = useState<Profile>(row.profile)
+   391→  const [adjustForm, setAdjustForm] = useState<{ kind: string; amount: number | ''; note: string }>({ kind: 'REWARD', amount: '', note: '' })
+   392→  const [busy, setBusy] = useState(false)
+   393→  const md = data.monthDays
+   394→
+   395→  // پیش‌نویس روزها — کلید: تاریخ iso
+   396→  const [dayDraft, setDayDraft] = useState<Record<string, { ot: number; hot: number; night: number; absence: string; note: string }>>(() => {
+   397→    const m: Record<string, { ot: number; hot: number; night: number; absence: string; note: string }> = {}
+   398→    for (let i = 1; i <= md; i++) {
+   399→      const iso = jalaliToIso(data.jy, data.jm, i)
+   400→      const d = row.days.find((x) => x.forDate === iso)
+   401→      m[iso] = { ot: d?.otMinutes || 0, hot: d?.holidayOtMinutes || 0, night: d?.nightMinutes || 0, absence: d?.absence || 'NONE', note: d?.note || '' }
+   402→    }
+   403→    return m
+   404→  })
+   405→  const daysIso = useMemo(() => Array.from({ length: md }, (_, i) => jalaliToIso(data.jy, data.jm, i + 1)), [md, data.jy, data.jm])
+   406→  const dirtyDays = daysIso.filter((iso) => {
+   407→    const d = row.days.find((x) => x.forDate === iso)
+   408→    const c = dayDraft[iso]
+   409→    return c && (!!d ? (d.otMinutes !== c.ot || d.holidayOtMinutes !== c.hot || d.nightMinutes !== c.night || d.absence !== c.absence || (d.note || '') !== c.note) : (c.ot || c.hot || c.night || c.absence !== 'NONE' || c.note))
+   410→  })
+   411→
+   412→  const saveDay = async (iso: string) => {
+   413→    const c = dayDraft[iso]
+   414→    setBusy(true)
+   415→    try {
+   416→      await api('/api/payroll', { method: 'POST', body: { action: 'set-day', personnelId: row.id, forDate: iso, otMinutes: c.ot, holidayOtMinutes: c.hot, nightMinutes: c.night, absence: c.absence, note: c.note } })
+   417→      toast.success(`کارکرد ${formatJalaliShort(iso)} ثبت شد`)
+   418→      onReload()
+   419→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   420→  }
+   421→
+   422→  const saveAllDays = async () => {
+   423→    setBusy(true)
+   424→    try {
+   425→      for (const iso of dirtyDays) {
+   426→        const c = dayDraft[iso]
+   427→        await api('/api/payroll', { method: 'POST', body: { action: 'set-day', personnelId: row.id, forDate: iso, otMinutes: c.ot, holidayOtMinutes: c.hot, nightMinutes: c.night, absence: c.absence, note: c.note } })
+   428→      }
+   429→      toast.success('همهٔ تغییرهای کارکرد ثبت شد')
+   430→      onReload()
+   431→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   432→  }
+   433→
+   434→  const saveProfile = async () => {
+   435→    setBusy(true)
+   436→    try {
+   437→      await api('/api/payroll', { method: 'POST', body: { action: 'update-profile', personnelId: row.id, ...profileDraft, childCount: Number(profileDraft.childCount) || 0 } })
+   438→      toast.success('پروفایل حقوق به‌روزرسانی شد')
+   439→      setEditingProfile(false)
+   440→      onReload()
+   441→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   442→  }
+   443→
+   444→  const addAdjust = async () => {
+   445→    if (!adjustForm.amount) { toast.error('مبلغ را وارد کنید'); return }
+   446→    setBusy(true)
+   447→    try {
+   448→      await api('/api/payroll', { method: 'POST', body: { action: 'set-adjust', personnelId: row.id, jy: data.jy, jm: data.jm, kind: adjustForm.kind, amount: adjustForm.amount, note: adjustForm.note } })
+   449→      toast.success('قلم ثبت شد')
+   450→      setAdjustForm({ kind: adjustForm.kind, amount: '', note: '' })
+   451→      onReload()
+   452→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   453→  }
+   454→
+   455→  const delAdjust = async (id: string) => {
+   456→    setBusy(true)
+   457→    try {
+   458→      await api('/api/payroll', { method: 'POST', body: { action: 'delete-adjust', adjustId: id } })
+   459→      toast.success('قلم حذف شد')
+   460→      onReload()
+   461→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   462→  }
+   463→
+   464→  const c = row.computed
+   465→
+   466→  return (
+   467→    <div className="fixed inset-0 z-50 flex items-start justify-center p-2 sm:p-4">
+   468→      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+   469→      <div className="scroll-gold glow-card relative max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-card p-4 sm:p-6">
+   470→        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+   471→          <div>
+   472→            <h3 className="flex flex-wrap items-center gap-2 text-base font-black">
+   473→              {row.name} <Pill label={st.label} color={st.color} />
+   474→              {!row.active && <Pill label="پرسنل غیرفعال" color={ROSE} />}
+   475→              {locked && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Lock size={12} /> قفل ثبت</span>}
+   476→            </h3>
+   477→            <p className="mt-0.5 text-xs text-muted-foreground">
+   478→              {row.jobTitle} · {row.personnelNo} · ماه {J_MONTHS[data.jm - 1]} {faNum(data.jy)}
+   479→              {row.month.paidAt && ` · پرداخت: ${formatJalaliDateTime(row.month.paidAt)}`}
+   480→              {row.month.confirmedByName && ` · تأیید: ${row.month.confirmedByName}`}
+   481→            </p>
+   482→          </div>
+   483→          <div className="no-print flex flex-wrap gap-2">
+   484→            <button onClick={onPrint} className="flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-xs font-bold hover:border-primary"><Printer size={14} /> چاپ فیش</button>
+   485→            {canManage && !locked && <button onClick={onConfirm} className="flex items-center gap-1 rounded-xl bg-[#c9a227] px-3 py-2 text-xs font-black text-white hover:opacity-90"><BadgeCheck size={14} /> تأیید ماه</button>}
+   486→            {canManage && row.month.status === 'CONFIRMED' && <button onClick={onPay} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white hover:opacity-90"><Banknote size={14} /> ثبت پرداخت</button>}
+   487→            {canManage && locked && <button onClick={onReopen} className="flex items-center gap-1 rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"><RefreshCcw size={14} /> بازگشایی</button>}
+   488→            <button onClick={onClose} className="rounded-lg p-2 hover:bg-muted"><X size={16} /></button>
+   489→          </div>
+   490→        </div>
+   491→
+   492→        {row.hiddenCommissionCount > 0 && (
+   493→          <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+   494→            🔒 {faNum(row.hiddenCommissionCount)} مورد پورسانت — محرمانه (فقط مالک). جمع‌های نمایشی بدون پورسانت است.
+   495→          </div>
+   496→        )}
+   497→        {c.warnings.map((w, i) => (
+   498→          <div key={i} className="mb-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">⚠️ {w}</div>
+   499→        ))}
+   500→
+   501→        <div className="grid gap-4 lg:grid-cols-[1fr_330px]">
+   502→          {/* ستون راست‌چین: پروفایل + روزها + اقلام */}
+   503→          <div className="space-y-4">
+   504→            {/* پروفایل */}
+   505→            <div className="rounded-2xl border border-border p-3">
+   506→              <div className="mb-2 flex items-center justify-between">
+   507→                <h4 className="text-sm font-black">پروفایل حقوق (ریال)</h4>
+   508→                {canManage && !editingProfile && (
+   509→                  <button onClick={() => { setProfileDraft(row.profile); setEditingProfile(true) }} className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-bold hover:border-primary"><Pencil size={12} /> ویرایش</button>
+   510→                )}
+   511→              </div>
+   512→              {!editingProfile ? (
+   513→                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+   514→                  {([
+   515→                    ['حقوق پایه', R(row.profile.baseSalary)], ['حق مسکن', R(row.profile.housing)],
+   516→                    ['بن کارگری', R(row.profile.foodAllowance)], ['حق تأهل', R(row.profile.maritalAllowance)],
+   517→                    ['حق اولاد', `${R(row.profile.childAllowance)} × ${faNum(row.profile.childCount)}`],
+   518→                    ['سنوات روزانه', R(row.profile.seniorityBase)],
+   519→                    ['مخرج اضافه‌کاری', faNum(row.profile.overtimeDivisor)],
+   520→                    ['مزایا در مأخذ OT', row.profile.includeBenefitsInOT ? 'دارد' : 'ندارد'],
+   521→                  ] as Array<[string, string]>).map(([k, v]) => (
+   522→                    <div key={k} className="rounded-lg bg-muted/50 px-2 py-1.5">
+   523→                      <div className="text-[10px] text-muted-foreground">{k}</div>
+   524→                      <div className="font-bold tabular-nums">{v}</div>
+   525→                    </div>
+   526→                  ))}
+   527→                </div>
+   528→              ) : (
+   529→                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+   530→                  <ProfField label="حقوق پایه (ریال)" value={profileDraft.baseSalary} onChange={(v) => setProfileDraft({ ...profileDraft, baseSalary: v || 0 })} />
+   531→                  <ProfField label="حق مسکن (ریال)" value={profileDraft.housing} onChange={(v) => setProfileDraft({ ...profileDraft, housing: v || 0 })} />
+   532→                  <ProfField label="بن کارگری (ریال)" value={profileDraft.foodAllowance} onChange={(v) => setProfileDraft({ ...profileDraft, foodAllowance: v || 0 })} />
+   533→                  <ProfField label="حق تأهل (ریال)" value={profileDraft.maritalAllowance} onChange={(v) => setProfileDraft({ ...profileDraft, maritalAllowance: v || 0 })} />
+   534→                  <ProfField label="حق اولاد هر فرزند (ریال)" value={profileDraft.childAllowance} onChange={(v) => setProfileDraft({ ...profileDraft, childAllowance: v || 0 })} hint="شرط ۷۲۰ روز سابقهٔ بیمه — در صورت عدم احراز صفر بگذارید" />
+   535→                  <ProfField label="سنوات روزانه (ریال)" value={profileDraft.seniorityBase} onChange={(v) => setProfileDraft({ ...profileDraft, seniorityBase: v || 0 })} />
+   536→                  <ProfField label="تعداد فرزند" value={profileDraft.childCount} onChange={(v) => setProfileDraft({ ...profileDraft, childCount: v || 0 })} />
+   537→                  <ProfField label="مخرج مزد ساعتی (قانون: ۲۲۰)" value={profileDraft.overtimeDivisor} onChange={(v) => setProfileDraft({ ...profileDraft, overtimeDivisor: v || 0 })} />
+   538→                  <label className="col-span-2 flex items-center gap-2 rounded-lg bg-muted/40 px-2 py-2 text-xs font-bold sm:col-span-3">
+   539→                    <input type="checkbox" checked={profileDraft.includeBenefitsInOT} onChange={(e) => setProfileDraft({ ...profileDraft, includeBenefitsInOT: e.target.checked })} />
+   540→                    مزایا (مسکن+بن) در مأخذ اضافه‌کاری لحاظ شود
+   541→                  </label>
+   542→                  <div className="col-span-2 flex gap-2 sm:col-span-3">
+   543→                    <button disabled={busy} onClick={saveProfile} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white disabled:opacity-50"><Save size={13} /> ذخیرهٔ پروفایل</button>
+   544→                    <button onClick={() => setEditingProfile(false)} className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-muted-foreground">انصراف</button>
+   545→                  </div>
+   546→                  <p className="col-span-2 text-[10px] leading-4 text-muted-foreground sm:col-span-3">
+   547→                    💡 سایر سطوح دستمزد (فرمول رایج ۱۴۰۴): مزد سال قبل × ۱٫۳۲ + ۹٬۳۱۶٬۰۸۰ ریال — به‌صورت خودکار اعمال نمی‌شود؛ دستی وارد کنید.
+   548→                  </p>
+   549→                </div>
+   550→              )}
+   551→            </div>
+   552→
+   553→            {/* کارکرد روزانه */}
+   554→            <div className="rounded-2xl border border-border p-3">
+   555→              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   556→                <h4 className="text-sm font-black">کارکرد روزانه <span className="text-[10px] font-normal text-muted-foreground">(دقیقه · سقف قانونی ۴ ساعت/روز — مادهٔ ۵۹)</span></h4>
+   557→                {canManage && !locked && dirtyDays.length > 0 && (
+   558→                  <button disabled={busy} onClick={saveAllDays} className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[11px] font-black text-white disabled:opacity-50">
+   559→                    <Save size={12} /> ذخیرهٔ {faNum(dirtyDays.length)} روز تغییر یافته
+   560→                  </button>
+   561→                )}
+   562→              </div>
+   563→              <div className="max-h-[340px] overflow-y-auto rounded-xl border border-border/60">
+   564→                <table className="w-full text-right text-xs">
+   565→                  <thead className="sticky top-0 bg-muted/95">
+   566→                    <tr className="text-[10px] text-muted-foreground">
+   567→                      <th className="px-2 py-1.5 font-bold">روز</th>
+   568→                      <th className="px-2 py-1.5 font-bold">نوع</th>
+   569→                      <th className="px-1 py-1.5 font-bold">اضافه‌کاری</th>
+   570→                      <th className="px-1 py-1.5 font-bold">جمعه/تعطیل</th>
+   571→                      <th className="px-1 py-1.5 font-bold">شب‌کاری</th>
+   572→                      <th className="px-2 py-1.5 font-bold">غیبت</th>
+   573→                      <th className="px-2 py-1.5 font-bold">یادداشت</th>
+   574→                      <th></th>
+   575→                    </tr>
+   576→                  </thead>
+   577→                  <tbody>
+   578→                    {daysIso.map((iso) => {
+   579→                      const jd = toJalaliParts(iso).jd
+   580→                      const kind = row.days.find((x) => x.forDate === iso)?.dayKind || (new Date(iso + 'T12:00:00').getDay() === 5 ? 'FRIDAY' : 'WORK')
+   581→                      const km = DAYKIND_META[kind] || DAYKIND_META.WORK
+   582→                      const d = dayDraft[iso]
+   583→                      const dirty = dirtyDays.includes(iso)
+   584→                      return (
+   585→                        <tr key={iso} className={cn('border-t border-border/50', dirty && 'bg-amber-50/70')}>
+   586→                          <td className="px-2 py-1 font-bold tabular-nums whitespace-nowrap">{faNum(jd)} <span className="text-[10px] text-muted-foreground">{weekdayShort(iso)}</span></td>
+   587→                          <td className="px-2 py-1"><Pill label={km.label} color={km.color} /></td>
+   588→                          <td className="px-1 py-1">
+   589→                            <div className="flex items-center gap-1">
+   590→                              <SmallNum value={d.ot} disabled={!canManage || locked} onChange={(v) => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: v } })} />
+   591→                              {!canManage || locked ? null : (
+   592→                                <div className="flex flex-col gap-0.5">
+   593→                                  <div className="flex gap-0.5">
+   594→                                    <QuickChip label="+۳۰" onClick={() => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: Math.min(720, d.ot + 30) } })} />
+   595→                                    <QuickChip label="+۶۰" onClick={() => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: Math.min(720, d.ot + 60) } })} />
+   596→                                  </div>
+   597→                                  <QuickChip label="+۱۲۰" onClick={() => setDayDraft({ ...dayDraft, [iso]: { ...d, ot: Math.min(720, d.ot + 120) } })} />
+   598→                                </div>
+   599→                              )}
+   600→                            </div>
+   601→                          </td>
+   602→                          <td className="px-1 py-1"><SmallNum value={d.hot} disabled={!canManage || locked} onChange={(v) => setDayDraft({ ...dayDraft, [iso]: { ...d, hot: v } })} /></td>
+   603→                          <td className="px-1 py-1"><SmallNum value={d.night} disabled={!canManage || locked} onChange={(v) => setDayDraft({ ...dayDraft, [iso]: { ...d, night: v } })} /></td>
+   604→                          <td className="px-2 py-1">
+   605→                            <select value={d.absence} disabled={!canManage || locked} onChange={(e) => setDayDraft({ ...dayDraft, [iso]: { ...d, absence: e.target.value } })}
+   606→                              className="rounded-lg border border-input bg-white/90 px-1 py-1 text-[11px] outline-none disabled:opacity-50">
+   607→                              <option value="NONE">—</option>
+   608→                              <option value="FULL">غیبت کامل</option>
+   609→                              <option value="HALF">نیم‌روز</option>
+   610→                            </select>
+   611→                          </td>
+   612→                          <td className="px-2 py-1">
+   613→                            <input value={d.note} disabled={!canManage || locked} placeholder="شرح / روز جایگزین…"
+   614→                              onChange={(e) => setDayDraft({ ...dayDraft, [iso]: { ...d, note: e.target.value } })}
+   615→                              className="w-24 rounded-lg border border-input bg-white/90 px-1.5 py-1 text-[11px] outline-none focus:border-primary disabled:opacity-50 sm:w-32" />
+   616→                          </td>
+   617→                          <td className="px-1 py-1">
+   618→                            {canManage && !locked && dirty && (
+   619→                              <button disabled={busy} onClick={() => saveDay(iso)} title="ثبت این روز" className="rounded-md bg-primary p-1 text-white disabled:opacity-50"><Save size={12} /></button>
+   620→                            )}
+   621→                          </td>
+   622→                        </tr>
+   623→                      )
+   624→                    })}
+   625→                  </tbody>
+   626→                </table>
+   627→              </div>
+   628→              <p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">
+   629→                نوع روز خودکار است: جمعه (مادهٔ ۶۲)، تعطیل رسمی (مادهٔ ۶۳) و مرخصی تأییدشده از سامانه تشخیص داده می‌شود · غیبت کامل = کسر روزمزد، نیم‌روز = نصف · جمعه‌کاری/تعطیل‌کاری مستلزم روز جایگزین است.
+   630→              </p>
+   631→            </div>
+   632→
+   633→            {/* اقلام متغیر */}
+   634→            <div className="rounded-2xl border border-border p-3">
+   635→              <h4 className="mb-2 text-sm font-black">اقلام متغیر ماه</h4>
+   636→              <div className="space-y-1.5">
+   637→                {row.adjusts.length === 0 && !row.hiddenCommissionCount && <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">قلمی ثبت نشده است</p>}
+   638→                {row.adjusts.map((a) => {
+   639→                  const km = KIND_META[a.kind] || KIND_META.OTHER
+   640→                  return (
+   641→                    <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-1.5 text-xs">
+   642→                      <div className="flex items-center gap-2">
+   643→                        <Pill label={km.label} color={km.color} />
+   644→                        <span className="font-bold tabular-nums">{T(a.amount)} تومان</span>
+   645→                        {a.note && <span className="truncate text-muted-foreground">— {a.note}</span>}
+   646→                      </div>
+   647→                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+   648→                        {a.createdByName && <span>{a.createdByName}</span>}
+   649→                        {canManage && !locked && (
+   650→                          <button onClick={() => delAdjust(a.id)} className="rounded p-1 text-rose-600 hover:bg-rose-50"><Trash2 size={12} /></button>
+   651→                        )}
+   652→                      </div>
+   653→                    </div>
+   654→                  )
+   655→                })}
+   656→                {row.hiddenCommissionCount > 0 && (
+   657→                  <div className="flex items-center gap-2 rounded-lg border border-dashed border-amber-400 bg-amber-50/60 px-3 py-1.5 text-xs font-bold text-amber-800">
+   658→                    <Lock size={12} /> مورد پورسانت — محرمانه ({faNum(row.hiddenCommissionCount)} مورد)
+   659→                  </div>
+   660→                )}
+   661→              </div>
+   662→              {canManage && !locked && (
+   663→                <div className="mt-3 grid gap-2 rounded-xl border border-border/70 bg-muted/20 p-2 sm:grid-cols-[130px_1fr_1fr_auto]">
+   664→                  <select value={adjustForm.kind} onChange={(e) => setAdjustForm({ ...adjustForm, kind: e.target.value })}
+   665→                    className="rounded-lg border border-input bg-white/90 px-2 py-2 text-xs font-bold outline-none">
+   666→                    {Object.entries(KIND_META).filter(([k]) => k !== 'COMMISSION' || canCommission).map(([k, m]) => (
+   667→                      <option key={k} value={k}>{m.label}</option>
+   668→                    ))}
+   669→                  </select>
+   670→                  <FaPriceInput value={adjustForm.amount} onChange={(v) => setAdjustForm({ ...adjustForm, amount: v })} placeholder="مبلغ (ریال)" className="rounded-lg border border-input py-2 text-xs" />
+   671→                  <input value={adjustForm.note} onChange={(e) => setAdjustForm({ ...adjustForm, note: e.target.value })} placeholder="یادداشت / شرح قانونی…"
+   672→                    className="rounded-lg border border-input bg-white/90 px-2 py-2 text-xs outline-none focus:border-primary" />
+   673→                  <button disabled={busy} onClick={addAdjust} className="flex items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-black text-white disabled:opacity-50">افزودن</button>
+   674→                  {adjustForm.kind === 'FINE' && (
+   675→                    <p className="text-[10px] font-bold leading-4 text-rose-700 sm:col-span-4">⚠️ جریمه مستلزم شرح قانونی و مستند است — سقف جریمهٔ ماهانه {faNum(data.policy.fineCapPct)}٪ جمع حقوق و مزایاست. جریمهٔ بدون شرحِ دست‌کم ۵ نویسه ثبت نمی‌شود.</p>
+   676→                  )}
+   677→                  {adjustForm.kind === 'COMMISSION' && (
+   678→                    <p className="text-[10px] font-bold leading-4 text-amber-700 sm:col-span-4">🔒 پورسانت فقط مالک می‌بیند و برای دیگران «محرمانه» نمایش داده می‌شود.</p>
+   679→                  )}
+   680→                </div>
+   681→              )}
+   682→            </div>
+   683→          </div>
+   684→
+   685→          {/* ستون جمع‌ها — تصویر زندهٔ موتور */}
+   686→          <div className="space-y-2 lg:sticky lg:top-0 lg:self-start">
+   687→            <div className="rounded-2xl border border-border bg-muted/20 p-3">
+   688→              <h4 className="mb-2 text-sm font-black">جمع حقوق و مزایا <span className="text-[10px] font-normal text-muted-foreground">(تومان)</span></h4>
+   689→              <div className="space-y-1 text-xs">
+   690→                <TotalRow k={`حقوق پایه (${faNum(c.workDays)} روز کارکرد)`} v={T(c.baseProrated)} />
+   691→                <TotalRow k="حق مسکن" v={T(c.housing)} />
+   692→                <TotalRow k="بن کارگری" v={T(c.foodAllowance)} />
+   693→                <TotalRow k="حق تأهل" v={T(c.marital)} />
+   694→                <TotalRow k="حق اولاد" v={T(c.childTotal)} />
+   695→                <TotalRow k={`اضافه‌کاری (${faNum(Math.round(c.otHours * 10) / 10)} ساعت × ۱٫۴)`} v={T(c.overtimePay)} />
+   696→                <TotalRow k={`جمعه/تعطیل‌کاری (${faNum(Math.round(c.holidayOtHours * 10) / 10)} ساعت × ۱٫۴)`} v={T(c.holidayOtPay)} />
+   697→                <TotalRow k={`شب‌کاری (${faNum(Math.round(c.nightHours * 10) / 10)} ساعت +۳۵٪)`} v={T(c.nightPay)} />
+   698→                {c.rewards > 0 && <TotalRow k="تشویقی" v={T(c.rewards)} />}
+   699→                {c.commissions > 0 && <TotalRow k="پورسانت 🔒" v={T(c.commissions)} />}
+   700→                {c.other > 0 && <TotalRow k="سایر" v={T(c.other)} />}
+   701→                <div className="my-1 border-t border-dashed border-border" />
+   702→                <TotalRow k="ناخالص" v={T(c.gross)} bold />
+   703→                <TotalRow k={`مشمول بیمه (${data.policy.insuranceIncludesOT ? 'با' : 'بدون'} اضافه‌کاری)`} v={T(c.insurableBase)} muted />
+   704→                <TotalRow k={`بیمهٔ سهم کارگر (${faNum(Math.round(data.policy.insuranceRate * 100))}٪)`} v={`−${T(c.insurance)}`} danger />
+   705→                <TotalRow k="مالیات پلکانی" v={`−${T(c.tax)}`} danger />
+   706→                {c.fines > 0 && <TotalRow k="جریمه" v={`−${T(c.fines)}`} danger />}
+   707→                {c.advances > 0 && <TotalRow k="مساعده" v={`−${T(c.advances)}`} danger />}
+   708→                <div className="my-1 border-t border-dashed border-border" />
+   709→                <div className="flex items-center justify-between rounded-xl bg-primary/10 px-3 py-2">
+   710→                  <span className="text-sm font-black">خالص پرداختی</span>
+   711→                  <span className="text-lg font-black tabular-nums text-primary">{T(c.net)}</span>
+   712→                </div>
+   713→                <p className="text-[10px] leading-4 text-muted-foreground">ذخیرهٔ سنوات این ماه: {T(c.seniorityAccrual)} تومان (تسویهٔ سالانه همراه عیدی) · مزد ساعتی مأخذ: {T(c.hourlyBase)} تومان</p>
+   714→              </div>
+   715→            </div>
+   716→          </div>
+   717→        </div>
+   718→      </div>
+   719→    </div>
+   720→  )
+   721→}
+   722→
+   723→/** ورودی اعشاری (نرخ‌ها) — ارقام فارسی/لاتین + ممیز */
+   724→function DecimalField({ label, value, onChange, hint }: { label: string; value: number; onChange: (v: number) => void; hint?: string }) {
+   725→  return (
+   726→    <Labeled label={label} hint={hint}>
+   727→      <input dir="ltr" inputMode="decimal"
+   728→        value={String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)])}
+   729→        onChange={(e) => {
+   730→          const cleaned = enDigits(e.target.value).replace(/[^\d.]/g, '')
+   731→          const n = Number(cleaned)
+   732→          onChange(isNaN(n) ? 0 : n)
+   733→        }}
+   734→        className="w-full rounded-lg border border-input bg-white/90 px-2 py-2 text-center text-xs font-bold tabular-nums outline-none focus:border-primary" />
+   735→    </Labeled>
+   736→  )
+   737→}
+   738→
+   739→function ProfField({ label, value, onChange, hint }: { label: string; value: number; onChange: (v: number | '') => void; hint?: string }) {
+   740→  return (
+   741→    <Labeled label={label} hint={hint}>
+   742→      <FaPriceInput value={value} onChange={onChange} className="rounded-lg border border-input py-2 text-xs" />
+   743→    </Labeled>
+   744→  )
+   745→}
+   746→
+   747→function TotalRow({ k, v, bold, danger, muted }: { k: string; v: string; bold?: boolean; danger?: boolean; muted?: boolean }) {
+   748→  return (
+   749→    <div className="flex items-center justify-between gap-2 px-1">
+   750→      <span className={cn('text-[11px]', muted && 'text-muted-foreground')}>{k}</span>
+   751→      <span className={cn('tabular-nums', bold ? 'font-black text-foreground' : 'font-bold', danger && 'text-rose-600')}>{v}</span>
+   752→    </div>
+   753→  )
+   754→}
+   755→
+   756→/* ═══════════ فیش حقوقی چاپی ═══════════ */
+   757→
+   758→function Payslip({ row, data, generatedBy }: { row: Row; data: Resp; generatedBy: string }) {
+   759→  const c = row.computed
+   760→  const st = STATUS_META[row.month.status] || STATUS_META.DRAFT
+   761→  const rows: Array<[string, number]> = [
+   762→    ['حقوق پایه (کسر غیبت‌شده)', c.baseProrated],
+   763→    ['حق مسکن', c.housing],
+   764→    ['بن کارگری (خواروبار)', c.foodAllowance],
+   765→    ['حق تأهل', c.marital],
+   766→    [`حق اولاد (${faNum(row.profile.childCount)} فرزند)`, c.childTotal],
+   767→    [`اضافه‌کاری ${faNum(Math.round(c.otHours * 10) / 10)} ساعت × ۱٫۴ (مادهٔ ۵۹)`, c.overtimePay],
+   768→    [`جمعه/تعطیل‌کاری ${faNum(Math.round(c.holidayOtHours * 10) / 10)} ساعت × ۱٫۴ (مواد ۶۲ و ۶۳)`, c.holidayOtPay],
+   769→    [`شب‌کاری ${faNum(Math.round(c.nightHours * 10) / 10)} ساعت +۳۵٪ (مادهٔ ۵۸)`, c.nightPay],
+   770→    ['تشویقی', c.rewards],
+   771→    ['پورسانت (محرمانه)', c.commissions],
+   772→    ['سایر مزایا', c.other],
+   773→  ]
+   774→  const deductions: Array<[string, number]> = [
+   775→    [`بیمهٔ تأمین اجتماعی — سهم کارگر ${faNum(Math.round(data.policy.insuranceRate * 100))}٪ (مشمول: ${R(c.insurableBase)} ریال)`, c.insurance],
+   776→    ['مالیات حقوق پلکانی (مادهٔ ۸۴ ق.م.م)', c.tax],
+   777→    ['جریمه', c.fines],
+   778→    ['مساعده', c.advances],
+   779→  ]
+   780→  return (
+   781→    <div>
+   782→      <div id="payslip-print-area" className="rounded-2xl border border-border bg-white p-4 text-[#111]" dir="rtl" style={{ fontFamily: 'Vazirmatn, sans-serif' }}>
+   783→        <div className="flex items-start justify-between border-b-2 border-[#0e7a4a] pb-2">
+   784→          <div>
+   785→            <div className="text-lg font-black">{data.employer}</div>
+   786→            <div className="text-[10px] text-gray-500">فیش حقوق و دستمزد — مطابق قانون کار جمهوری اسلامی ایران</div>
+   787→          </div>
+   788→          <div className="text-left text-[11px] leading-5">
+   789→            <div>شمارهٔ فیش: <b>{row.month.payslipNo || '—'}</b></div>
+   790→            <div>دوره: <b>{J_MONTHS[data.jm - 1]} {faNum(data.jy)}</b></div>
+   791→            <div>وضعیت: <b>{st.label}</b>{row.month.paidAt ? ` — ${formatJalaliDateTime(row.month.paidAt)}` : ''}</div>
+   792→          </div>
+   793→        </div>
+   794→
+   795→        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-b border-dashed border-gray-300 pb-2 text-[11px] sm:grid-cols-4">
+   796→          <Info k="نام و نام خانوادگی" v={row.name} />
+   797→          <Info k="شمارهٔ پرسنلی" v={row.personnelNo} />
+   798→          <Info k="کد ملی" v={row.nationalId ? faNum(row.nationalId) : '—'} />
+   799→          <Info k="سمت" v={row.jobTitle || '—'} />
+   800→          <Info k="شمارهٔ کارت بانکی" v={row.bankCard ? faNum(row.bankCard) : '—'} />
+   801→          <Info k="شبا" v={row.shaba || '—'} />
+   802→          <Info k="تاریخ استخدام" v={row.hireDate ? faNum(row.hireDate) : '—'} />
+   803→          <Info k="روز کارکرد مؤثر" v={`${faNum(c.workDays)} روز (غیبت: ${faNum(c.absentFullDays)} کامل / ${faNum(c.absentHalfDays)} نیم)`} />
+   804→        </div>
+   805→
+   806→        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+   807→          <div>
+   808→            <div className="mb-1 rounded bg-[#0e7a4a] px-2 py-1 text-[11px] font-black text-white">مزایا و درآمد (ریال)</div>
+   809→            <table className="w-full text-[11px]">
+   810→              <tbody>
+   811→                {rows.filter(([, v]) => v > 0).map(([k, v]) => (
+   812→                  <tr key={k} className="border-b border-gray-100">
+   813→                    <td className="py-1">{k}</td>
+   814→                    <td className="py-1 text-left tabular-nums font-bold">{R(v)}</td>
+   815→                  </tr>
+   816→                ))}
+   817→                <tr className="bg-gray-50 font-black">
+   818→                  <td className="py-1">جمع حقوق و مزایا</td>
+   819→                  <td className="py-1 text-left tabular-nums">{R(c.gross)}</td>
+   820→                </tr>
+   821→              </tbody>
+   822→            </table>
+   823→          </div>
+   824→          <div>
+   825→            <div className="mb-1 rounded bg-[#b3372f] px-2 py-1 text-[11px] font-black text-white">کسور (ریال)</div>
+   826→            <table className="w-full text-[11px]">
+   827→              <tbody>
+   828→                {deductions.filter(([, v]) => v > 0).map(([k, v]) => (
+   829→                  <tr key={k} className="border-b border-gray-100">
+   830→                    <td className="py-1">{k}</td>
+   831→                    <td className="py-1 text-left tabular-nums font-bold">{R(v)}</td>
+   832→                  </tr>
+   833→                ))}
+   834→                {!deductions.some(([, v]) => v > 0) && <tr><td className="py-2 text-gray-400">کسوری ثبت نشده است</td></tr>}
+   835→                <tr className="bg-gray-50 font-black">
+   836→                  <td className="py-1">جمع کسور</td>
+   837→                  <td className="py-1 text-left tabular-nums">{R(c.insurance + c.tax + c.otherDeductions)}</td>
+   838→                </tr>
+   839→              </tbody>
+   840→            </table>
+   841→          </div>
+   842→        </div>
+   843→
+   844→        <div className="mt-3 flex items-center justify-between rounded-xl border-2 border-[#0e7a4a] bg-[#0e7a4a]/5 px-3 py-2">
+   845→          <span className="text-sm font-black">خالص پرداختی</span>
+   846→          <span className="text-xl font-black tabular-nums text-[#0e7a4a]">{R(c.net)} ریال</span>
+   847→        </div>
+   848→        <p className="mt-2 text-[9px] leading-4 text-gray-500">
+   849→          توضیح: حق مسکن، بن کارگری و اضافه‌کاری از مشمول بیمهٔ سهم کارگر معاف است (تبصرهٔ مادهٔ ۳۸ قانون تأمین اجتماعی) · مأخذ اضافه‌کاری {data.policy.insuranceIncludesOT ? 'شامل مزایا' : 'حقوق پایه'} با مخرج {faNum(row.profile.overtimeDivisor)} · ذخیرهٔ سنوات این ماه {R(c.seniorityAccrual)} ریال (تسویهٔ سالانه همراه عیدی) · این فیش به‌صورت سیستمی از سامانهٔ هایپر زیتون صادر شده است.
+   850→        </p>
+   851→        <div className="mt-4 grid grid-cols-2 gap-8 text-center text-[10px] text-gray-600">
+   852→          <div className="border-t border-gray-400 pt-1">امضای کارمند</div>
+   853→          <div className="border-t border-gray-400 pt-1">امضای کارفرما / حسابدار</div>
+   854→        </div>
+   855→        <div className="mt-2 text-left text-[9px] text-gray-400">
+   856→          صادره توسط: {generatedBy} — {formatJalaliDateTime(new Date().toISOString())}
+   857→        </div>
+   858→      </div>
+   859→      <div className="no-print mt-3 flex justify-end gap-2">
+   860→        <button onClick={() => window.print()} className="flex items-center gap-1 rounded-xl bg-primary px-4 py-2 text-sm font-black text-white hover:opacity-90"><Printer size={15} /> چاپ فیش (A4)</button>
+   861→      </div>
+   862→    </div>
+   863→  )
+   864→}
+   865→
+   866→function Info({ k, v }: { k: string; v: string }) {
+   867→  return (
+   868→    <div>
+   869→      <span className="text-gray-500">{k}: </span>
+   870→      <b>{v}</b>
+   871→    </div>
+   872→  )
+   873→}
+   874→
+   875→/* ═══════════ عیدی و سنوات (سالانه) ═══════════ */
+   876→
+   877→function YearlyTab({ rows, canManage, selfPid, sel, setSel, yearly, setYearly, meta, setMeta }: {
+   878→  rows: Row[]; canManage: boolean; selfPid: string | null
+   879→  sel: { personnelId: string; jy: number } | null
+   880→  setSel: (v: { personnelId: string; jy: number } | null) => void
+   881→  yearly: Yearly | null; setYearly: (y: Yearly | null) => void
+   882→  meta: { name: string; jobTitle: string; hireDate: string; personnelNo: string } | null
+   883→  setMeta: (m: { name: string; jobTitle: string; hireDate: string; personnelNo: string } | null) => void
+   884→}) {
+   885→  const now = toJalaliParts(todayIso())
+   886→  const [busy, setBusy] = useState(false)
+   887→  const years = [now.jy + 1, now.jy, now.jy - 1, now.jy - 2]
+   888→
+   889→  const compute = async (personnelId: string, jy: number) => {
+   890→    setBusy(true)
+   891→    try {
+   892→      const d = await api<{ yearly: Yearly; personnel: { name: string; jobTitle: string; hireDate: string }; personnelNo: string }>('/api/payroll', { method: 'POST', body: { action: 'yearly', personnelId, jy } })
+   893→      setYearly(d.yearly)
+   894→      setMeta({ name: d.personnel.name, jobTitle: d.personnel.jobTitle, hireDate: d.personnel.hireDate, personnelNo: d.personnelNo })
+   895→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+   896→  }
+   897→
+   898→  if (!rows.length) return <EmptyState emoji="🫒" title="پرسنلی یافت نشد" />
+   899→
+   900→  return (
+   901→    <div className="space-y-4">
+   902→      <div className="flex flex-wrap items-end gap-2">
+   903→        <Labeled label="پرسنل">
+   904→          <select value={sel?.personnelId || ''} onChange={(e) => { setSel({ personnelId: e.target.value, jy: sel?.jy || now.jy }); setYearly(null) }}
+   905→            className="min-w-48 rounded-xl border border-input bg-white/90 px-3 py-2 text-sm font-bold outline-none focus:border-primary">
+   906→            <option value="">انتخاب کنید…</option>
+   907→            {rows.map((r) => <option key={r.id} value={r.id}>{r.name} — {r.jobTitle || '—'}</option>)}
+   908→          </select>
+   909→        </Labeled>
+   910→        <Labeled label="سال شمسی">
+   911→          <select value={sel?.jy || now.jy} onChange={(e) => { setSel({ personnelId: sel?.personnelId || '', jy: Number(e.target.value) }); setYearly(null) }}
+   912→            className="rounded-xl border border-input bg-white/90 px-3 py-2 text-sm font-bold outline-none focus:border-primary">
+   913→            {years.map((y) => <option key={y} value={y}>{faNum(y)}</option>)}
+   914→          </select>
+   915→        </Labeled>
+   916→        <button disabled={!sel?.personnelId || busy} onClick={() => sel && compute(sel.personnelId, sel.jy)}
+   917→          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-white disabled:opacity-40">
+   918→          محاسبهٔ تسویه
+   919→        </button>
+   920→        <p className="text-[11px] text-muted-foreground">عیدی: حداقل ۲ برابر مزد ماهانه، سقف ۳ برابر حداقل مزد (۹۰ روز مزد حداقلی) · سنوات: پایهٔ روزانه × روزهای خدمت · خدمت ناقص → تناسب روزها</p>
+   921→      </div>
+   922→
+   923→      {busy && <div className="h-24 animate-pulse rounded-2xl bg-muted/60" />}
+   924→      {!busy && yearly && meta && (
+   925→        <div id="yearly-print-area" className="rounded-2xl border border-border bg-white p-4 text-[#111]" dir="rtl" style={{ fontFamily: 'Vazirmatn, sans-serif' }}>
+   926→          <div className="flex items-start justify-between border-b-2 border-[#c9a227] pb-2">
+   927→            <div>
+   928→              <div className="text-lg font-black">تسویهٔ سالانهٔ عیدی و سنوات</div>
+   929→              <div className="text-[11px] text-gray-500">{meta.name} · {meta.jobTitle} · {meta.personnelNo} · استخدام: {meta.hireDate ? faNum(meta.hireDate) : '—'}</div>
+   930→            </div>
+   931→            <div className="text-[11px]">سال <b>{faNum(yearly.jy)}</b></div>
+   932→          </div>
+   933→          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+   934→            <KV k="روزهای خدمت در سال" v={`${faNum(yearly.serviceDays)} از ${faNum(yearly.yearDays)} روز (${faNum(Math.round(yearly.ratio * 100))}٪)${yearly.partial ? ' — تناسبی' : ''}`} />
+   935→            <KV k="بازهٔ احتساب" v={`${yearly.serviceFrom ? formatJalaliShort(yearly.serviceFrom) : '—'} تا ${formatJalaliShort(yearly.serviceTo)}`} />
+   936→            <KV k="عیدی (۲ برابر مزد، تناسبی)" v={`${faMoney(yearly.eydi)} ریال`} />
+   937→            <KV k="سقف قانونی عیدی (۳ × ماه حداقلی)" v={`${faMoney(yearly.eydiCap)} ریال`} />
+   938→            <KV k="سنوات (پایهٔ روزانه × روز خدمت)" v={`${faMoney(yearly.seniority)} ریال`} />
+   939→            <KV k="جمع تسویه" v={`${faMoney(yearly.total)} ریال`} strong />
+   940→          </div>
+   941→          <p className="mt-3 text-[9px] leading-4 text-gray-500">این برگه «ماشین‌حساب» است و تسویهٔ قطعی پس از بررسی حسابداری معتبر است · قانون حق پاداش سالانه و مادهٔ ۴۲ قانون کار · صادره: {formatJalaliDateTime(new Date().toISOString())}</p>
+   942→        </div>
+   943→      )}
+   944→      {!busy && yearly && (
+   945→        <div className="flex justify-end">
+   946→          <button onClick={() => window.print()} className="flex items-center gap-1 rounded-xl bg-primary px-4 py-2 text-sm font-black text-white"><Printer size={15} /> چاپ تسویه</button>
+   947→        </div>
+   948→      )}
+   949→      {!yearly && !busy && (
+   950→        <EmptyState emoji="🎁" title="برای محاسبه، پرسنل و سال را انتخاب کنید" hint="عیدی و سنوات سالانه به‌صورت تناسبی با روزهای خدمت محاسبه می‌شود" />
+   951→      )}
+   952→    </div>
+   953→  )
+   954→}
+   955→
+   956→function KV({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+   957→  return (
+   958→    <div className={cn('flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2', strong && 'bg-[#0e7a4a]/10')}>
+   959→      <span className="text-gray-600">{k}</span>
+   960→      <span className={cn('tabular-nums', strong ? 'font-black text-[#0e7a4a]' : 'font-bold')}>{v}</span>
+   961→    </div>
+   962→  )
+   963→}
+   964→
+   965→/* ═══════════ فیش من ═══════════ */
+   966→
+   967→function SelfTab({ row, onOpenSlip }: { row: Row | null; onOpenSlip: (id: string) => void }) {
+   968→  if (!row) {
+   969→    return <EmptyState emoji="🪪" title="فیشی برای نمایش نیست" hint="حساب شما به پروندهٔ پرسنلی متصل نیست — با منابع انسانی تماس بگیرید" />
+   970→  }
+   971→  const c = row.computed
+   972→  const st = STATUS_META[row.month.status] || STATUS_META.DRAFT
+   973→  return (
+   974→    <div className="space-y-3">
+   975→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   976→        <StatCard label="خالص پرداختی (تومان)" value={T(c.net)} tone="emerald" hint={st.label} />
+   977→        <StatCard label="جمع حقوق و مزایا (تومان)" value={T(c.gross)} tone="gold" />
+   978→        <StatCard label="بیمه + مالیات (تومان)" value={T(c.insurance + c.tax)} tone="rose" />
+   979→        <StatCard label="روز کارکرد" value={faNum(c.workDays)} tone="olive" hint={`اضافه‌کاری ${faNum(Math.round(c.otHours))} ساعت`} />
+   980→      </div>
+   981→      <div className="rounded-2xl border border-border p-4 text-sm">
+   982→        <div className="mb-2 flex items-center justify-between">
+   983→          <h4 className="font-black">فیش من — {row.name}</h4>
+   984→          <button onClick={() => onOpenSlip(row.id)} className="flex items-center gap-1 rounded-xl border border-border px-3 py-1.5 text-xs font-bold hover:border-primary"><Printer size={13} /> چاپ فیش من</button>
+   985→        </div>
+   986→        <div className="space-y-1 text-xs">
+   987→          <TotalRow k="حقوق پایه (کسر غیبت)" v={T(c.baseProrated)} />
+   988→          <TotalRow k="مسکن + بن + تأهل + اولاد" v={T(c.housing + c.foodAllowance + c.marital + c.childTotal)} />
+   989→          <TotalRow k="اضافه‌کاری + جمعه‌کاری + شب‌کاری" v={T(c.overtimePay + c.holidayOtPay + c.nightPay)} />
+   990→          <TotalRow k="بیمهٔ سهم کارگر" v={`−${T(c.insurance)}`} danger />
+   991→          <TotalRow k="مالیات" v={`−${T(c.tax)}`} danger />
+   992→          <div className="flex items-center justify-between rounded-xl bg-primary/10 px-3 py-2">
+   993→            <span className="font-black">خالص پرداختی</span>
+   994→            <span className="text-base font-black tabular-nums text-primary">{T(c.net)}</span>
+   995→          </div>
+   996→        </div>
+   997→      </div>
+   998→    </div>
+   999→  )
+  1000→}
+  1001→
+  1002→/* ═══════════ تنظیمات — round-16: سال حقوقی ۱۴۰۵ · جایگاه‌ها · افزایش گروهی · بیمه/مالیات · پروفایل فردی ═══════════ */
+  1003→
+  1004→/** ورودی پول به «تومان» — مرز API: تومان ×۱۰ = ریال (موتور ریال است). اعشار یک‌رقمی برای سنوات روزانه (۱۶٬۶۶۶٫۷) */
+  1005→function TomanInput({ rial, onRial, className, disabled, placeholder, ariaLabel }: {
+  1006→  rial: number; onRial: (rial: number) => void; className?: string; disabled?: boolean; placeholder?: string; ariaLabel?: string
+  1007→}) {
+  1008→  const toTxt = (r: number) => {
+  1009→    if (!r) return ''
+  1010→    const t = r / 10
+  1011→    return faNum(Number.isInteger(t) ? t.toLocaleString('en-US') : t.toFixed(1))
+  1012→  }
+  1013→  const [text, setText] = useState(() => toTxt(rial))
+  1014→  const [focused, setFocused] = useState(false)
+  1015→  // resync when the prop changes from outside (e.g. save/reload) — official render-phase adjustment pattern
+  1016→  const [prev, setPrev] = useState(rial)
+  1017→  if (prev !== rial) {
+  1018→    setPrev(rial)
+  1019→    if (!focused) setText(toTxt(rial))
+  1020→  }
+  1021→  return (
+  1022→    <input
+  1023→      dir="ltr" inputMode="decimal" disabled={disabled} aria-label={ariaLabel}
+  1024→      value={text} placeholder={placeholder ?? '۰'}
+  1025→      onFocus={() => setFocused(true)}
+  1026→      onBlur={() => { setFocused(false); setText(toTxt(rial)) }}
+  1027→      onChange={(e) => {
+  1028→        const cleaned = enDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 18)
+  1029→        setText(faNum(cleaned))
+  1030→        const n = Number(cleaned)
+  1031→        onRial(cleaned === '' || isNaN(n) ? 0 : Math.round(n * 10))
+  1032→      }}
+  1033→      className={cn('rounded-lg border border-input bg-white/90 px-2 py-2 text-center text-xs font-bold tabular-nums outline-none focus:border-primary disabled:opacity-50', className)}
+  1034→    />
+  1035→  )
+  1036→}
+  1037→
+  1038→function TomanField({ label, rial, onRial, hint }: { label: string; rial: number; onRial: (rial: number) => void; hint?: string }) {
+  1039→  return (
+  1040→    <Labeled label={label} hint={hint}>
+  1041→      <TomanInput rial={rial} onRial={onRial} className="w-full" />
+  1042→    </Labeled>
+  1043→  )
+  1044→}
+  1045→
+  1046→function SettingsTab({ data, onSaved }: { data: Resp; onSaved: () => void }) {
+  1047→  const [tax, setTax] = useState<TaxCfg>(data.tax)
+  1048→  const [dft, setDft] = useState<Partial<Profile>>(data.defaults)
+  1049→  const [pol, setPol] = useState<PolicyCfg>(data.policy)
+  1050→  const [busy, setBusy] = useState(false)
+  1051→  const [raisePct, setRaisePct] = useState('')
+  1052→  const [raiseOpen, setRaiseOpen] = useState(false)
+  1053→  const [profEditId, setProfEditId] = useState<string | null>(null)
+  1054→  const stat = data.statutory
+  1055→  const salaryYear = data.salaryYear
+  1056→  const minMonthly = stat.monthlyMinWage
+  1057→  const canManage = data.viewer.isManager
+  1058→
+  1059→  const pctNum = Number(enDigits(raisePct).replace(/[^\d.-]/g, ''))
+  1060→  const pctValid = isFinite(pctNum) && pctNum !== 0 && Math.abs(pctNum) <= 100
+  1061→
+  1062→  /* ── سال حقوقی ── */
+  1063→  const saveYear = async (y: number) => {
+  1064→    setBusy(true)
+  1065→    try {
+  1066→      await api('/api/payroll', { method: 'POST', body: { action: 'set-defaults', salaryYear: y } })
+  1067→      toast.success(`سال حقوقی به ${faNum(y)} تغییر کرد — جدول‌های قانونی خودکار به‌روزرسانی شد`)
+  1068→      onSaved()
+  1069→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1070→  }
+  1071→
+  1072→  /* ── پیش‌فرض‌های پروفایل (تومان → ریال در مرز API) ── */
+  1073→  const saveDefaults = async () => {
+  1074→    setBusy(true)
+  1075→    try {
+  1076→      await api('/api/payroll', {
+  1077→        method: 'POST',
+  1078→        body: {
+  1079→          action: 'set-defaults',
+  1080→          baseSalary: TOR(dft.baseSalary ?? 0), housing: TOR(dft.housing ?? 0),
+  1081→          foodAllowance: TOR(dft.foodAllowance ?? 0), maritalAllowance: TOR(dft.maritalAllowance ?? 0),
+  1082→          childAllowance: TOR(dft.childAllowance ?? 0), seniorityBase: TOR(dft.seniorityBase ?? 0),
+  1083→          overtimeDivisor: dft.overtimeDivisor ?? 220,
+  1084→        },
+  1085→      })
+  1086→      toast.success('پیش‌فرض‌های پروفایل جدید ذخیره شد')
+  1087→      onSaved()
+  1088→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1089→  }
+  1090→
+  1091→  /* ── سیاست بیمه/محاسبه (شامل سهم کارفرما) ── */
+  1092→  const savePolicy = async () => {
+  1093→    setBusy(true)
+  1094→    try {
+  1095→      await api('/api/payroll', { method: 'POST', body: { action: 'set-defaults', ...pol } })
+  1096→      toast.success('سیاست بیمه و محاسبه ذخیره شد')
+  1097→      onSaved()
+  1098→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1099→  }
+  1100→
+  1101→  /* ── جدول مالیات ── */
+  1102→  const saveTax = async () => {
+  1103→    if (tax.bands.some((b) => !(b.rate > 0) || b.rate > 1)) { toast.error('نرخ هر پله باید بین ۰ و ۱۰۰ درصد باشد'); return }
+  1104→    setBusy(true)
+  1105→    try {
+  1106→      await api('/api/payroll', { method: 'POST', body: { action: 'set-tax', exempt: tax.exempt, bands: tax.bands } })
+  1107→      toast.success('جدول مالیات ذخیره شد')
+  1108→      onSaved()
+  1109→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1110→  }
+  1111→
+  1112→  const resetTax = async () => {
+  1113→    setBusy(true)
+  1114→    try {
+  1115→      await api('/api/payroll', { method: 'POST', body: { action: 'set-tax', exempt: stat.tax.exempt, bands: stat.tax.bands } })
+  1116→      setTax({ exempt: stat.tax.exempt, bands: stat.tax.bands.map((b) => ({ ...b })) })
+  1117→      toast.success(`جدول مالیات به نرخ قانونی ${faNum(salaryYear)} بازگشت`)
+  1118→      onSaved()
+  1119→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1120→  }
+  1121→
+  1122→  /* ── افزایش گروهی (مادهٔ ۴۱ در سرور گارد می‌شود) ── */
+  1123→  const applyRaise = async () => {
+  1124→    const pct = pctNum
+  1125→    setRaiseOpen(false)
+  1126→    setBusy(true)
+  1127→    try {
+  1128→      const res = await api<{ changed: number; skippedBelowMin: number; minMonthly: number }>('/api/payroll', { method: 'POST', body: { action: 'raise-all', percent: pct } })
+  1129→      toast.success(`${faNum(res.changed)} پروندهٔ حقوق به‌روزرسانی شد (${pct > 0 ? '+' : '−'}${faNum(Math.abs(pct))}٪)`)
+  1130→      if (res.skippedBelowMin > 0) toast.warning(`${faNum(res.skippedBelowMin)} پرونده رد شد — پایهٔ جدید زیر حداقل دستمزد مادهٔ ۴۱ (${T(res.minMonthly)} تومان) بود`)
+  1131→      setRaisePct('')
+  1132→      onSaved()
+  1133→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1134→  }
+  1135→
+  1136→  const statRows: Array<[string, number]> = [
+  1137→    ['حداقل دستمزد روزانه', stat.dailyMinWage],
+  1138→    ['حداقل دستمزد ماهانه — مادهٔ ۴۱', stat.monthlyMinWage],
+  1139→    ['مزد ساعتی حداقلی', stat.hourlyMinWage],
+  1140→    ['حق مسکن', stat.housing],
+  1141→    ['بن کارگری (خواروبار)', stat.foodAllowance],
+  1142→    ['حق تأهل', stat.maritalAllowance],
+  1143→    ['حق اولاد هر فرزند', stat.childAllowance],
+  1144→    ['پایهٔ سنوات روزانه', stat.seniorityDaily],
+  1145→    ['عیدی — کف قانونی (۶۰ روز)', stat.newYearBonusMin],
+  1146→    ['عیدی — سقف قانونی (۹۰ روز حداقلی)', stat.newYearBonusMax],
+  1147→  ]
+  1148→  const profRow = data.personnel.find((r) => r.id === profEditId) || null
+  1149→
+  1150→  return (
+  1151→    <div className="space-y-4">
+  1152→      {/* ۱ — سال حقوقی + جدول قانونی */}
+  1153→      <div className="rounded-2xl border border-border p-3">
+  1154→        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+  1155→          <h4 className="flex items-center gap-1 text-sm font-black"><Landmark size={14} /> سال حقوقی</h4>
+  1156→          <div className="flex gap-1.5">
+  1157→            {[1404, 1405].map((y) => (
+  1158→              <button key={y} disabled={busy || y === salaryYear} onClick={() => saveYear(y)}
+  1159→                className={cn('rounded-xl px-3 py-1.5 text-xs font-black transition disabled:opacity-40',
+  1160→                  y === salaryYear ? 'bg-primary text-white shadow' : 'border border-border bg-card text-muted-foreground hover:border-primary')}>
+  1161→                {faNum(y)}{y === 1405 ? ' (جاری)' : ''}
+  1162→              </button>
+  1163→            ))}
+  1164→          </div>
+  1165→        </div>
+  1166→        <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
+  1167→          با تغییر سال حقوقی، جدول‌های قانونی (حداقل دستمزد مادهٔ ۴۱، مزایای مسکن/بن/تأهل/اولاد، سنوات، عیدی و مالیات) به‌صورت خودکار به سال انتخابی منتقل می‌شوند — محاسبات با جدول همان سال انجام می‌شود؛ پروفایل ذخیره‌شدهٔ هر پرسنل تغییر نمی‌کند.
+  1168→        </p>
+  1169→        <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+  1170→          {statRows.map(([k, v]) => (
+  1171→            <div key={k} className="rounded-xl bg-muted/40 px-2.5 py-2">
+  1172→              <div className="text-[10px] leading-4 text-muted-foreground">{k}</div>
+  1173→              <div className="text-xs font-black tabular-nums">{R(v)} <span className="text-[10px] font-bold text-muted-foreground">ریال</span></div>
+  1174→              <div className="text-[10px] font-bold tabular-nums text-primary">{T(v)} تومان</div>
+  1175→            </div>
+  1176→          ))}
+  1177→          <div className="rounded-xl bg-muted/40 px-2.5 py-2">
+  1178→            <div className="text-[10px] text-muted-foreground">مخرج مزد ساعتی (اضافه‌کاری)</div>
+  1179→            <div className="text-xs font-black tabular-nums">{faNum(stat.overtimeDivisor)} <span className="text-[10px] font-bold text-muted-foreground">— ثابت قانونی</span></div>
+  1180→          </div>
+  1181→          <div className="col-span-2 rounded-xl bg-muted/40 px-2.5 py-2 lg:col-span-2">
+  1182→            <div className="text-[10px] text-muted-foreground">فرمول سایر سطوح دستمزد</div>
+  1183→            <div className="text-xs font-bold tabular-nums">مزد سال قبل × {faNum(stat.otherLevelsFormula.factor)} + {R(stat.otherLevelsFormula.addend)} ریال</div>
+  1184→          </div>
+  1185→          <div className="col-span-2 rounded-xl bg-muted/40 px-2.5 py-2 lg:col-span-2">
+  1186→            <div className="text-[10px] text-muted-foreground">مالیات ماهانه (مادهٔ ۸۴ ق.م.م)</div>
+  1187→            <div className="text-xs font-bold tabular-nums">معافیت {T(stat.tax.exempt)} تومان — پلکان: {stat.tax.bands.map((b) => `${faNum(Math.round(b.rate * 100))}٪`).join(' / ')}</div>
+  1188→          </div>
+  1189→        </div>
+  1190→        <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+  1191→          {salaryYear === 1405
+  1192→            ? 'منبع: مصوبهٔ شورای عالی کار ۱۴۰۴/۱۲/۲۴ + قانون بودجهٔ ۱۴۰۵.'
+  1193→            : 'منبع: مصوبهٔ شورای عالی کار (ابلاغی اسفند ۱۴۰۳) + قانون بودجهٔ ۱۴۰۴.'}
+  1194→        </p>
+  1195→      </div>
+  1196→
+  1197→      {/* ۲ و ۳ — حقوق پایهٔ جایگاه‌ها + افزایش گروهی */}
+  1198→      <div className="grid gap-4 lg:grid-cols-2">
+  1199→        <PositionBaseCard positionBase={data.positionBase} personnelJobTitles={data.personnel.map((r) => r.jobTitle.trim())} disabled={busy} onSaved={onSaved} />
+  1200→
+  1201→        <div className="rounded-2xl border border-border p-3">
+  1202→          <h4 className="mb-1 flex items-center gap-1 text-sm font-black"><TrendingUp size={14} /> افزایش گروهی حقوق</h4>
+  1203→          <p className="mb-2 text-[10px] leading-4 text-muted-foreground">درصد تغییر روی «پایهٔ حقوق» همهٔ پرونده‌ها اعمال می‌شود (عدد منفی = کاهش) — پیش از اعمال، پیش‌نمایش را تأیید کنید.</p>
+  1204→          <div className="flex flex-wrap items-end gap-2">
+  1205→            <Labeled label="درصد تغییر (غیرصفر — بین −۱۰۰ تا +۱۰۰)">
+  1206→              <input dir="ltr" value={raisePct} placeholder="مثلاً ۱۵"
+  1207→                onChange={(e) => setRaisePct(enDigits(e.target.value).replace(/[^\d.-]/g, '').slice(0, 6))}
+  1208→                className="w-28 rounded-lg border border-input bg-white/90 px-2 py-2 text-center text-xs font-bold tabular-nums outline-none focus:border-primary" />
+  1209→            </Labeled>
+  1210→            <div className="flex flex-wrap gap-1">
+  1211→              {[10, 15, 20, 45].map((p) => (
+  1212→                <button key={p} onClick={() => setRaisePct(String(p))} className="rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground transition hover:border-primary hover:text-primary">+{faNum(p)}٪</button>
+  1213→              ))}
+  1214→              <button onClick={() => setRaisePct('-10')} className="rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground transition hover:border-primary hover:text-primary">−۱۰٪</button>
+  1215→            </div>
+  1216→            <button disabled={!pctValid || busy} onClick={() => setRaiseOpen(true)}
+  1217→              className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-black text-white disabled:opacity-40">
+  1218→              <TrendingUp size={13} /> پیش‌نمایش و اعمال
+  1219→            </button>
+  1220→          </div>
+  1221→          {pctValid && (
+  1222→            <p className="mt-2 rounded-lg bg-muted/40 px-2 py-1.5 text-[11px] font-bold leading-5">
+  1223→              {pctNum > 0 ? 'افزایش' : 'کاهش'} {faNum(Math.abs(pctNum))}٪ روی {faNum(data.personnel.length)} پروندهٔ حقوق — حداقل دستمزد مادهٔ ۴۱ ({T(minMonthly)} تومان) به‌صورت خودکار گارد می‌شود و پرونده‌های زیر حداقل رد می‌شوند.
+  1224→            </p>
+  1225→          )}
+  1226→        </div>
+  1227→      </div>
+  1228→
+  1229→      {/* ۴ — بیمه/سیاست محاسبه + جدول مالیات */}
+  1230→      <div className="grid gap-4 lg:grid-cols-2">
+  1231→        <div className="rounded-2xl border border-border p-3">
+  1232→          <h4 className="mb-2 flex items-center gap-1 text-sm font-black"><PiggyBank size={14} /> بیمه و سیاست محاسبه</h4>
+  1233→          <div className="space-y-2">
+  1234→            <DecimalField label="نرخ بیمهٔ سهم کارگر ٪ (قانون: ۷٪)" value={Math.round((pol.insuranceRate || 0) * 10000) / 100} onChange={(v) => setPol({ ...pol, insuranceRate: v / 100 })} />
+  1235→            <DecimalField label="نرخ بیمهٔ سهم کارفرما ٪ (۲۰ بیمه + ۳ بیکاری = ۲۳٪)" value={Math.round((pol.employerRate || 0) * 10000) / 100} onChange={(v) => setPol({ ...pol, employerRate: v / 100 })} hint="سهم کارفرما در فیش کسر نمی‌شود؛ برای گزارش هزینهٔ کارفرما به‌کار می‌رود" />
+  1236→            <DecimalField label="ضریب اضافه‌کاری (قانون: ۱٫۴)" value={pol.otRate} onChange={(v) => setPol({ ...pol, otRate: v })} />
+  1237→            <DecimalField label="ضریب شب‌کاری افزودنی (قانون: ۰٫۳۵)" value={pol.nightRate} onChange={(v) => setPol({ ...pol, nightRate: v })} />
+  1238→            <DecimalField label="ضریب جمعه/تعطیل‌کاری (قانون: ۱٫۴)" value={pol.holidayOtRate} onChange={(v) => setPol({ ...pol, holidayOtRate: v })} />
+  1239→            <ProfField label="سقف اضافه‌کاری روزانه (دقیقه — قانون: ۲۴۰)" value={pol.otCapMinutes} onChange={(v) => setPol({ ...pol, otCapMinutes: v || 0 })} />
+  1240→            <ProfField label="سقف جریمهٔ ماهانه (درصد جمع حقوق و مزایا)" value={pol.fineCapPct} onChange={(v) => setPol({ ...pol, fineCapPct: v || 0 })} />
+  1241→            <ProfField label="گردکردن خالص به مضرب ریال (۰ = دقیق، ۱۰۰۰ = هزار ریال)" value={pol.roundTo} onChange={(v) => setPol({ ...pol, roundTo: v || 0 })} />
+  1242→            <label className="flex items-center gap-2 rounded-lg bg-muted/40 px-2 py-2 text-xs font-bold">
+  1243→              <input type="checkbox" checked={pol.insuranceIncludesOT} onChange={(e) => setPol({ ...pol, insuranceIncludesOT: e.target.checked })} />
+  1244→              اضافه‌کاری مشمول بیمه شود (پیش‌فرض طرح: معاف — تبصرهٔ مادهٔ ۳۸ ق.ت.أ)
+  1245→            </label>
+  1246→            <button disabled={busy} onClick={savePolicy} className="w-full rounded-xl bg-primary py-2 text-xs font-black text-white disabled:opacity-50">ذخیرهٔ بیمه و سیاست محاسبه</button>
+  1247→            <p className="text-[10px] leading-4 text-muted-foreground">تغییر نرخ‌ها فقط روی محاسبات بعدی اثر می‌گذارد؛ ماه‌های قفل‌شده به‌عقب بازنمی‌گردند.</p>
+  1248→          </div>
+  1249→        </div>
+  1250→
+  1251→        <div className="rounded-2xl border border-border p-3">
+  1252→          <h4 className="mb-2 flex items-center gap-1 text-sm font-black"><Percent size={14} /> جدول مالیات حقوق (تومان)</h4>
+  1253→          <div className="space-y-2">
+  1254→            <TomanField label="معافیت ماهانه (تومان)" rial={tax.exempt} onRial={(r) => setTax({ ...tax, exempt: r })} />
+  1255→            {tax.bands.map((b, i) => (
+  1256→              <div key={i} className="flex items-end gap-2">
+  1257→                <div className="flex-1">
+  1258→                  <Labeled label={`سقف پلهٔ ${faNum(i + 1)} — مازاد بر معافیت (تومان${i === tax.bands.length - 1 ? ' · خالی = بی‌سقف' : ''})`}>
+  1259→                    <TomanInput rial={b.upTo ?? 0} placeholder={i === tax.bands.length - 1 ? 'بی‌سقف ∞' : '۰'} className="w-full"
+  1260→                      onRial={(r) => { const bands = [...tax.bands]; bands[i] = { ...b, upTo: r === 0 ? null : r }; setTax({ ...tax, bands }) }} />
+  1261→                  </Labeled>
+  1262→                </div>
+  1263→                <Labeled label="نرخ ٪">
+  1264→                  <input dir="ltr" value={Math.round(b.rate * 1000) / 10} onChange={(e) => {
+  1265→                    const pct = Number(enDigits(e.target.value).replace(/[^\d.]/g, ''))
+  1266→                    const bands = [...tax.bands]; bands[i] = { ...b, rate: (isNaN(pct) ? 0 : pct) / 100 }
+  1267→                    setTax({ ...tax, bands })
+  1268→                  }} className="w-20 rounded-lg border border-input px-2 py-2 text-center text-xs font-bold tabular-nums outline-none focus:border-primary" />
+  1269→                </Labeled>
+  1270→                <button disabled={tax.bands.length <= 1} onClick={() => setTax({ ...tax, bands: tax.bands.filter((_, j) => j !== i) })}
+  1271→                  title="حذف پله" className="mb-0.5 rounded-lg border border-rose-200 p-2 text-rose-600 transition hover:bg-rose-50 disabled:opacity-30">
+  1272→                  <Trash2 size={13} />
+  1273→                </button>
+  1274→              </div>
+  1275→            ))}
+  1276→            <button onClick={() => setTax({ ...tax, bands: [...tax.bands, { upTo: null, rate: 0.1 }] })}
+  1277→              className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary">
+  1278→              <Plus size={12} /> افزودن پله
+  1279→            </button>
+  1280→            <div className="flex gap-2">
+  1281→              <button disabled={busy} onClick={saveTax} className="flex-1 rounded-xl bg-primary py-2 text-xs font-black text-white disabled:opacity-50">ذخیرهٔ جدول مالیات</button>
+  1282→              <button disabled={busy} onClick={resetTax} className="flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-50">
+  1283→                <RefreshCcw size={12} /> بازگشت به نرخ قانونی {faNum(salaryYear)}
+  1284→              </button>
+  1285→            </div>
+  1286→            <p className="text-[10px] leading-4 text-muted-foreground">
+  1287→              پلکان ۱۴۰۵ (قانون بودجه): معافیت ۴۰م تومان؛ مازاد تا ۸۰م ← ۱۰٪، تا ۱۰۰م ← ۱۵٪، تا ۱۲۰م ← ۲۰٪، تا ۱۴۰م ← ۲۵٪، بیش از آن ← ۳۰٪ (مادهٔ ۸۴ ق.م.م)
+  1288→            </p>
+  1289→          </div>
+  1290→        </div>
+  1291→      </div>
+  1292→
+  1293→      {/* ۵ و ۶ — پیش‌فرض‌ها + پروفایل فردی */}
+  1294→      <div className="grid gap-4 lg:grid-cols-2">
+  1295→        <div className="rounded-2xl border border-border p-3">
+  1296→          <h4 className="mb-2 flex items-center gap-1 text-sm font-black"><Coins size={14} /> پیش‌فرض‌های پروفایل جدید (تومان)</h4>
+  1297→          <div className="space-y-2">
+  1298→            <TomanField label="حقوق پایهٔ عمومی (تومان)" rial={dft.baseSalary ?? 0} onRial={(r) => setDft({ ...dft, baseSalary: r })} hint="برای پرونده‌های بدون حقوق پایه — در اولویت، پایهٔ جایگاه شغلی اعمال می‌شود" />
+  1299→            <TomanField label="حق مسکن (تومان)" rial={dft.housing ?? 0} onRial={(r) => setDft({ ...dft, housing: r })} />
+  1300→            <TomanField label="بن کارگری (تومان)" rial={dft.foodAllowance ?? 0} onRial={(r) => setDft({ ...dft, foodAllowance: r })} />
+  1301→            <TomanField label="حق تأهل (تومان)" rial={dft.maritalAllowance ?? 0} onRial={(r) => setDft({ ...dft, maritalAllowance: r })} />
+  1302→            <TomanField label="حق اولاد هر فرزند (تومان)" rial={dft.childAllowance ?? 0} onRial={(r) => setDft({ ...dft, childAllowance: r })} hint="شرط ۷۲۰ روز سابقهٔ بیمه — ذخیرهٔ صفر = عدم احراز" />
+  1303→            <TomanField label="سنوات روزانه (تومان)" rial={dft.seniorityBase ?? 0} onRial={(r) => setDft({ ...dft, seniorityBase: r })} />
+  1304→            <ProfField label="مخرج مزد ساعتی (قانون: ۲۲۰)" value={dft.overtimeDivisor ?? 220} onChange={(v) => setDft({ ...dft, overtimeDivisor: v || 0 })} />
+  1305→            <button disabled={busy} onClick={saveDefaults} className="w-full rounded-xl bg-primary py-2 text-xs font-black text-white disabled:opacity-50">ذخیرهٔ پیش‌فرض‌ها</button>
+  1306→            <p className="text-[10px] leading-4 text-muted-foreground">
+  1307→              مقادیر پیشنهادی سال {faNum(salaryYear)}: مسکن {T(stat.housing)} · بن {T(stat.foodAllowance)} · تأهل {T(stat.maritalAllowance)} · اولاد {T(stat.childAllowance)} · سنوات روزانه {T(stat.seniorityDaily)} تومان
+  1308→            </p>
+  1309→          </div>
+  1310→        </div>
+  1311→
+  1312→        <div className="rounded-2xl border border-border p-3">
+  1313→          <h4 className="mb-2 flex items-center gap-1 text-sm font-black"><Users size={14} /> پروفایل فردی حقوق</h4>
+  1314→          {canManage ? (
+  1315→            <>
+  1316→              <p className="mb-2 text-[10px] leading-4 text-muted-foreground">ویرایش سریع پایه و مزایای هر پرسنل (تومان) — ثبت کارکرد روزانه و اقلام متغیر از تب «حقوق ماهانه» انجام می‌شود.</p>
+  1317→              <div className="scroll-gold max-h-72 space-y-1.5 overflow-y-auto pl-1">
+  1318→                {data.personnel.map((r) => {
+  1319→                  const below = r.profile.baseSalary > 0 && r.profile.baseSalary < minMonthly
+  1320→                  return (
+  1321→                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/20 px-2 py-1.5">
+  1322→                      <div className="min-w-0">
+  1323→                        <div className="truncate text-xs font-bold">{r.name} {!r.active && <span className="text-[10px] font-bold text-rose-600">(غیرفعال)</span>}</div>
+  1324→                        <div className="text-[10px] text-muted-foreground">{r.jobTitle || '—'} · پایه: {T(r.profile.baseSalary)} تومان</div>
+  1325→                      </div>
+  1326→                      <div className="flex shrink-0 items-center gap-1">
+  1327→                        {below && <Pill label="زیر حداقل ۴۱" color={ROSE} />}
+  1328→                        <button onClick={() => setProfEditId(r.id)} title="ویرایش پروفایل حقوقی"
+  1329→                          className="rounded-lg border border-border p-1.5 text-muted-foreground transition hover:border-primary hover:text-primary">
+  1330→                          <Pencil size={13} />
+  1331→                        </button>
+  1332→                      </div>
+  1333→                    </div>
+  1334→                  )
+  1335→                })}
+  1336→              </div>
+  1337→            </>
+  1338→          ) : (
+  1339→            <EmptyState emoji="🔒" title="ویرایش پروفایل مخصوص مدیر حقوق است" hint="پروفایل هر پرسنل از تب «حقوق ماهانه» توسط مدیر قابل ویرایش است" />
+  1340→          )}
+  1341→        </div>
+  1342→      </div>
+  1343→
+  1344→      {/* تأیید افزایش گروهی */}
+  1345→      {raiseOpen && (
+  1346→        <Modal title="تأیید تغییر گروهی پایهٔ حقوق" onClose={() => setRaiseOpen(false)}>
+  1347→          <p className="text-sm leading-6 text-muted-foreground">
+  1348→            {pctNum > 0
+  1349→              ? <>پایهٔ حقوق <b>همهٔ پرونده‌ها</b> {faNum(pctNum)}٪ <b className="text-primary">افزایش</b> می‌یابد.</>
+  1350→              : <>پایهٔ حقوق همهٔ پرونده‌ها {faNum(Math.abs(pctNum))}٪ کاهش می‌یابد.</>}
+  1351→            {' '}پرونده‌هایی که پس از تغییر به حداقل دستمزد مادهٔ ۴۱ ({T(minMonthly)} تومان) نرسند، به‌صورت خودکار رد می‌شوند و شمارشان در نتیجه اعلام می‌گردد.
+  1352→          </p>
+  1353→          <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11px] font-bold leading-5">برای بازگشت، درصد منفیِ همین اندازه را اعمال کنید — با این حال پیش از تأیید، درصد را دقیق بررسی نمایید.</p>
+  1354→          <div className="flex gap-2">
+  1355→            <button disabled={busy} onClick={applyRaise} className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-black text-white disabled:opacity-50">بله، اعمال کن</button>
+  1356→            <button onClick={() => setRaiseOpen(false)} className="rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-muted-foreground">انصراف</button>
+  1357→          </div>
+  1358→        </Modal>
+  1359→      )}
+  1360→
+  1361→      {/* ویرایش پروفایل حقوقی فردی */}
+  1362→      {profRow && (
+  1363→        <ProfileEditModal row={profRow} salaryYear={salaryYear} minMonthly={minMonthly}
+  1364→          onClose={() => setProfEditId(null)} onSaved={onSaved} />
+  1365→      )}
+  1366→    </div>
+  1367→  )
+  1368→}
+  1369→
+  1370→/* ── حقوق پایهٔ جایگاه‌ها — set-position-base (حذف = ارسال صفر) ── */
+  1371→
+  1372→function PositionBaseCard({ positionBase, personnelJobTitles, disabled, onSaved }: {
+  1373→  positionBase: Record<string, number>; personnelJobTitles: string[]; disabled: boolean; onSaved: () => void
+  1374→}) {
+  1375→  const [newTitle, setNewTitle] = useState('')
+  1376→  const [newRial, setNewRial] = useState(0)
+  1377→  const [rowBusy, setRowBusy] = useState(false)
+  1378→  const entries = Object.entries(positionBase)
+  1379→  const uniqueTitles = Array.from(new Set(personnelJobTitles.filter(Boolean)))
+  1380→
+  1381→  const postBase = async (jobTitle: string, rial: number, isDelete = false) => {
+  1382→    setRowBusy(true)
+  1383→    try {
+  1384→      await api('/api/payroll', { method: 'POST', body: { action: 'set-position-base', jobTitle, baseSalary: rial } })
+  1385→      toast.success(isDelete ? `جایگاه «${jobTitle}» حذف شد` : `پایهٔ جایگاه «${jobTitle}» ذخیره شد (${T(rial)} تومان)`)
+  1386→      onSaved()
+  1387→    } catch (e) { toast.error((e as Error).message) } finally { setRowBusy(false) }
+  1388→  }
+  1389→
+  1390→  const add = async () => {
+  1391→    const t = newTitle.trim()
+  1392→    if (!t) { toast.error('عنوان جایگاه را وارد کنید'); return }
+  1393→    if (!newRial) { toast.error('مبلغ پایه را وارد کنید'); return }
+  1394→    await postBase(t, newRial)
+  1395→    setNewTitle(''); setNewRial(0)
+  1396→  }
+  1397→
+  1398→  return (
+  1399→    <div className="rounded-2xl border border-border p-3">
+  1400→      <h4 className="mb-1 flex items-center gap-1 text-sm font-black"><Coins size={14} /> حقوق پایهٔ جایگاه‌ها (تومان)</h4>
+  1401→      <p className="mb-2 text-[10px] leading-4 text-muted-foreground">پرسنلِ تازه‌ساختِ بدون حقوق پایه، پایهٔ جایگاه خود را می‌گیرد (اولویت: پروندهٔ پرسنل ← جایگاه شغلی) · حذف = ارسال صفر.</p>
+  1402→      <div className="scroll-gold max-h-56 space-y-1.5 overflow-y-auto pl-1">
+  1403→        {entries.length === 0 && <p className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">هنوز جایگاهی تعریف نشده است</p>}
+  1404→        {entries.map(([t, rial]) => (
+  1405→          <PositionRow key={t + ':' + rial} jobTitle={t} rial={rial}
+  1406→            userCount={personnelJobTitles.filter((j) => j === t).length} disabled={disabled || rowBusy}
+  1407→            onSave={(r) => postBase(t, r)} onRemove={() => postBase(t, 0, true)} />
+  1408→        ))}
+  1409→      </div>
+  1410→      <datalist id="hz-jobtitles">{uniqueTitles.map((t) => <option key={t} value={t} />)}</datalist>
+  1411→      <div className="mt-2 grid gap-2 rounded-xl border border-border/70 bg-muted/20 p-2 sm:grid-cols-[1fr_130px_auto]">
+  1412→        <input list="hz-jobtitles" value={newTitle} placeholder="عنوان جایگاه — مثلاً صندوقدار"
+  1413→          onChange={(e) => setNewTitle(e.target.value)}
+  1414→          className="rounded-lg border border-input bg-white/90 px-2 py-2 text-xs outline-none focus:border-primary" />
+  1415→        <TomanInput rial={newRial} onRial={setNewRial} ariaLabel="پایهٔ جایگاه جدید (تومان)" className="w-full" />
+  1416→        <button disabled={disabled || rowBusy} onClick={add}
+  1417→          className="flex items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-black text-white disabled:opacity-50">
+  1418→          <Plus size={13} /> افزودن جایگاه
+  1419→        </button>
+  1420→      </div>
+  1421→    </div>
+  1422→  )
+  1423→}
+  1424→
+  1425→function PositionRow({ jobTitle, rial, userCount, disabled, onSave, onRemove }: {
+  1426→  jobTitle: string; rial: number; userCount: number; disabled: boolean; onSave: (rial: number) => void; onRemove: () => void
+  1427→}) {
+  1428→  const [draftRial, setDraftRial] = useState(rial)
+  1429→  const dirty = draftRial !== rial
+  1430→  return (
+  1431→    <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-2 py-1.5">
+  1432→      <div className="min-w-0 flex-1">
+  1433→        <div className="truncate text-xs font-black">{jobTitle}</div>
+  1434→        <div className="text-[10px] tabular-nums text-muted-foreground">
+  1435→          {userCount > 0 ? `${faNum(userCount)} پرسنل با این جایگاه · ` : ''}ذخیره‌شده: {T(rial)} تومان
+  1436→        </div>
+  1437→      </div>
+  1438→      <TomanInput rial={draftRial} onRial={setDraftRial} ariaLabel={`پایهٔ ${jobTitle} (تومان)`} className="w-32" />
+  1439→      <button disabled={!dirty || disabled} onClick={() => onSave(draftRial)} title="ذخیره"
+  1440→        className="rounded-lg bg-primary p-1.5 text-white disabled:opacity-30"><Save size={13} /></button>
+  1441→      <button disabled={disabled} onClick={onRemove} title="حذف جایگاه"
+  1442→        className="rounded-lg border border-rose-200 p-1.5 text-rose-600 transition hover:bg-rose-50 disabled:opacity-40"><Trash2 size={13} /></button>
+  1443→    </div>
+  1444→  )
+  1445→}
+  1446→
+  1447→/* ── ویرایش پروفایل حقوقی فردی — update-profile (تومان در UI، ریال در API) ── */
+  1448→
+  1449→function ProfileEditModal({ row, salaryYear, minMonthly, onClose, onSaved }: {
+  1450→  row: Row; salaryYear: number; minMonthly: number; onClose: () => void; onSaved: () => void
+  1451→}) {
+  1452→  const [draft, setDraft] = useState(() => ({
+  1453→    baseSalary: row.profile.baseSalary, housing: row.profile.housing, foodAllowance: row.profile.foodAllowance,
+  1454→    maritalAllowance: row.profile.maritalAllowance, childAllowance: row.profile.childAllowance,
+  1455→    seniorityBase: row.profile.seniorityBase, childCount: row.profile.childCount,
+  1456→    overtimeDivisor: row.profile.overtimeDivisor, includeBenefitsInOT: row.profile.includeBenefitsInOT,
+  1457→  }))
+  1458→  const [busy, setBusy] = useState(false)
+  1459→  const belowMin = draft.baseSalary > 0 && draft.baseSalary < minMonthly
+  1460→
+  1461→  const save = async () => {
+  1462→    setBusy(true)
+  1463→    try {
+  1464→      await api('/api/payroll', {
+  1465→        method: 'POST',
+  1466→        body: {
+  1467→          action: 'update-profile', personnelId: row.id,
+  1468→          baseSalary: draft.baseSalary, housing: draft.housing, foodAllowance: draft.foodAllowance,
+  1469→          maritalAllowance: draft.maritalAllowance, childAllowance: draft.childAllowance,
+  1470→          seniorityBase: draft.seniorityBase, childCount: draft.childCount,
+  1471→          overtimeDivisor: draft.overtimeDivisor, includeBenefitsInOT: draft.includeBenefitsInOT,
+  1472→        },
+  1473→      })
+  1474→      toast.success(`پروفایل حقوق «${row.name}» به‌روزرسانی شد`)
+  1475→      onSaved(); onClose()
+  1476→    } catch (e) { toast.error((e as Error).message) } finally { setBusy(false) }
+  1477→  }
+  1478→
+  1479→  return (
+  1480→    <Modal title={`ویرایش پروفایل حقوقی — ${row.name}`} onClose={onClose}>
+  1481→      <p className="text-[11px] text-muted-foreground">{row.jobTitle || '—'} · {row.personnelNo} · مقادیر به تومان (موتور محاسبه: ریال)</p>
+  1482→      <TomanField label="حقوق پایهٔ ماهانه (تومان)" rial={draft.baseSalary} onRial={(r) => setDraft({ ...draft, baseSalary: r })} />
+  1483→      {belowMin && (
+  1484→        <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">
+  1485→          ⚠️ پایه از حداقل دستمزد مادهٔ ۴۱ سال {faNum(salaryYear)} ({T(minMonthly)} تومان) کمتر است — هشدار در محاسبهٔ ماه ثبت می‌شود.
+  1486→        </p>
+  1487→      )}
+  1488→      <div className="grid grid-cols-2 gap-2">
+  1489→        <TomanField label="حق مسکن (تومان)" rial={draft.housing} onRial={(r) => setDraft({ ...draft, housing: r })} />
+  1490→        <TomanField label="بن کارگری (تومان)" rial={draft.foodAllowance} onRial={(r) => setDraft({ ...draft, foodAllowance: r })} />
+  1491→        <TomanField label="حق تأهل (تومان)" rial={draft.maritalAllowance} onRial={(r) => setDraft({ ...draft, maritalAllowance: r })} />
+  1492→        <TomanField label="حق اولاد هر فرزند (تومان)" rial={draft.childAllowance} onRial={(r) => setDraft({ ...draft, childAllowance: r })} />
+  1493→        <TomanField label="سنوات روزانه (تومان)" rial={draft.seniorityBase} onRial={(r) => setDraft({ ...draft, seniorityBase: r })} />
+  1494→        <ProfField label="تعداد فرزند" value={draft.childCount} onChange={(v) => setDraft({ ...draft, childCount: v || 0 })} />
+  1495→      </div>
+  1496→      <ProfField label="مخرج مزد ساعتی (قانون: ۲۲۰)" value={draft.overtimeDivisor} onChange={(v) => setDraft({ ...draft, overtimeDivisor: v || 0 })} />
+  1497→      <label className="flex items-center gap-2 rounded-lg bg-muted/40 px-2 py-2 text-xs font-bold">
+  1498→        <input type="checkbox" checked={draft.includeBenefitsInOT} onChange={(e) => setDraft({ ...draft, includeBenefitsInOT: e.target.checked })} />
+  1499→        مزایا (مسکن+بن) در مأخذ اضافه‌کاری لحاظ شود
+  1500→      </label>
+  1501→      <div className="flex gap-2">
+  1502→        <button disabled={busy} onClick={save} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-primary py-2.5 text-sm font-black text-white disabled:opacity-50">
+  1503→          <Save size={14} /> ذخیرهٔ پروفایل
+  1504→        </button>
+  1505→        <button onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-muted-foreground">انصراف</button>
+  1506→      </div>
+  1507→    </Modal>
+  1508→  )
+  1509→}
+  1510→

@@ -1,0 +1,1155 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-gold: var(--gold);
+  --color-pistachio: var(--pistachio);
+  --color-olive: var(--olive);
+  --color-terracotta: var(--terracotta);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.8rem;
+  /* Hyper Zeytoon — Kerman pistachio & gold palette */
+  --background: #faf7ee;
+  --foreground: #1c2a22;
+  --card: #fffdf6;
+  --card-foreground: #1c2a22;
+  --popover: #fffdf6;
+  --popover-foreground: #1c2a22;
+  --primary: #0e7a4a;
+  --primary-foreground: #f7fdf9;
+  --secondary: #e9f0e4;
+  --secondary-foreground: #24402f;
+  --muted: #f1ecdd;
+  --muted-foreground: #6d7a6e;
+  --accent: #f5eccf;
+  --accent-foreground: #6b5310;
+  --destructive: #b3372f;
+  --border: #e4dcc4;
+  --input: #ddd4b8;
+  --ring: #c9a227;
+  --gold: #c9a227;
+  --pistachio: #93c572;
+  --olive: #77934a;
+  --terracotta: #c96f4a;
+  --chart-1: #0e7a4a;
+  --chart-2: #c9a227;
+  --chart-3: #c96f4a;
+  --chart-4: #77934a;
+  --chart-5: #8a5a2b;
+  --sidebar: #0b2e20;
+  --sidebar-foreground: #e9f0e4;
+  --sidebar-primary: #c9a227;
+  --sidebar-primary-foreground: #0b2e20;
+  --sidebar-accent: #143d2b;
+  --sidebar-accent-foreground: #f3ead0;
+  --sidebar-border: #1d5238;
+  --sidebar-ring: #c9a227;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
+  }
+  ::selection {
+    background: rgba(201, 162, 39, 0.35);
+  }
+}
+
+/* ─── Kerman pattern backgrounds (boteh/paisley + girih star) ─── */
+
+.pattern-paisley {
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1.5' opacity='0.16'%3E%3Cpath d='M70 22 C92 34 104 56 98 78 C92 100 70 112 52 106 C36 101 28 84 36 70 C43 58 58 56 64 66 C69 74 63 84 54 82'/%3E%3Ccircle cx='70' cy='70' r='3.5'/%3E%3Cpath d='M70 92 C70 100 64 106 56 106'/%3E%3C/g%3E%3Cg fill='none' stroke='%230e7a4a' stroke-width='1.2' opacity='0.10'%3E%3Cpath d='M14 112 C26 118 32 128 28 138 M126 14 C114 20 108 30 112 40'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 140px 140px;
+}
+
+.pattern-girih {
+  background-color: #0b2e20;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1' opacity='0.14'%3E%3Cpath d='M48 6 L58 26 L80 22 L74 44 L92 56 L74 68 L80 90 L58 86 L48 106 L38 86 L16 90 L22 68 L4 56 L22 44 L16 22 L38 26 Z'/%3E%3Ccircle cx='48' cy='56' r='10'/%3E%3Cpath d='M48 46 L48 66 M38 56 L58 56'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 96px 96px;
+}
+
+.pattern-sand {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%230e7a4a' stroke-width='1' opacity='0.07'%3E%3Cpath d='M0 30 Q15 15 30 30 T60 30'/%3E%3Cpath d='M0 45 Q15 30 30 45 T60 45'/%3E%3Cpath d='M0 15 Q15 0 30 15 T60 15'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 60px 60px;
+}
+
+/* ─── پترن پسته — الگوی بومی پسته (پوست‌گشایی دو نیمه) ─── */
+.pattern-pistachio {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cg fill='none' stroke='%2377934a' stroke-width='1.3' opacity='0.18'%3E%3Cpath d='M44 16 C58 26 62 44 44 60 C26 44 30 26 44 16 Z'/%3E%3Cpath d='M44 20 L44 56'/%3E%3C/g%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1' opacity='0.14'%3E%3Ccircle cx='16' cy='72' r='4'/%3E%3Ccircle cx='72' cy='16' r='4'/%3E%3Cpath d='M8 40 C14 34 20 34 26 40 C20 46 14 46 8 40 Z'/%3E%3Cpath d='M62 60 C68 54 74 54 80 60 C74 66 68 66 62 60 Z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 88px 88px;
+}
+
+/* ─── سرِ طاقی — قاب با سر‌در ایوانی ایرانی (برای کارت‌های مهم) ─── */
+.arch-top {
+  position: relative;
+}
+.arch-top::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: -1px;
+  height: 10px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='10' viewBox='0 0 44 10'%3E%3Cpath d='M0 10 Q11 -6 22 10 Q33 -6 44 10' fill='none' stroke='%23c9a227' stroke-width='1.6' opacity='0.75'/%3E%3C/svg%3E");
+  background-size: 44px 10px;
+  background-repeat: repeat-x;
+  pointer-events: none;
+}
+
+/* ─── جداکننده ترنج — divider مرکب‌دار ─── */
+.toranj-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toranj-divider::before,
+.toranj-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.55), transparent);
+}
+
+/* ─── Luxurious glow cards ─── */
+
+.glow-card {
+  position: relative;
+  border: 1px solid var(--border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 10px 26px -18px rgba(11, 46, 32, 0.45);
+  transition:
+    box-shadow 0.35s ease,
+    transform 0.25s ease,
+    border-color 0.35s ease,
+    padding 0.3s ease;
+}
+.glow-card:hover {
+  border-color: rgba(201, 162, 39, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 0 0 1px rgba(201, 162, 39, 0.28),
+    0 16px 36px -16px rgba(201, 162, 39, 0.4);
+  transform: translateY(-2px);
+}
+
+.gold-glow-border {
+  position: relative;
+  background: linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(135deg, rgba(201, 162, 39, 0.7), rgba(14, 122, 74, 0.5), rgba(201, 162, 39, 0.2)) border-box;
+  border: 1.5px solid transparent;
+}
+
+.shimmer-line {
+  background: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.85), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3.2s linear infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.brand-shine {
+  background: linear-gradient(100deg, #f3ead0 20%, #c9a227 40%, #fdf6dd 50%, #c9a227 60%, #f3ead0 80%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 5s linear infinite;
+}
+@keyframes shine {
+  to { background-position: -200% center; }
+}
+
+.pulse-dot {
+  animation: pulseDot 1.6s ease-in-out infinite;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.45s ease both;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Scrollbars ─── */
+.scroll-gold::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-gold::-webkit-scrollbar-track {
+  background: rgba(201, 162, 39, 0.06);
+  border-radius: 8px;
+}
+.scroll-gold::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(201, 162, 39, 0.55), rgba(14, 122, 74, 0.45));
+  border-radius: 8px;
+}
+.scroll-gold::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 162, 39, 0.8);
+}
+
+/* ─── Touch-friendly stepper buttons ─── */
+.stepper-btn {
+  @apply inline-flex items-center justify-center rounded-xl border border-input bg-white text-lg font-bold;
+  width: 2.75rem;
+  height: 2.75rem;
+  transition: all 0.15s ease;
+}
+.stepper-btn:hover {
+  background: var(--secondary);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.stepper-btn:active {
+  transform: scale(0.92);
+}
+
+/* ─── Print (PDF export via browser) ─── */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+  .print-area {
+    position: fixed !important;
+    inset: 0 !important;
+    background: white !important;
+    padding: 24px !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  /* expand scrollable lists fully on paper */
+  .print-area .scroll-gold {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
+
+/* number inputs without spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* hide arrows on old firefox */
+.rtl-flip:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+/* ─── Luxe tables: zebra + hover ─── */
+.table-luxe thead th {
+  font-weight: 800;
+}
+.table-luxe tbody tr:nth-child(even) {
+  background: rgba(201, 162, 39, 0.045);
+}
+.table-luxe tbody tr {
+  transition: background 0.15s ease;
+}
+.table-luxe tbody tr:hover {
+  background: rgba(14, 122, 74, 0.07);
+}
+
+/* ─── Sidebar group divider ─── */
+.sidebar-divider {
+  height: 1px;
+  background: linear-gradient(to left, transparent, rgba(201, 162, 39, 0.4), transparent);
+}
+
+/* ─── Ornamental section divider (Kerman tile motif) ─── */
+.ornament-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ornament-divider::before,
+.ornament-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to left, transparent, rgba(201, 162, 39, 0.55), transparent);
+}
+.ornament-diamond {
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #c9a227, #0e7a4a);
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18);
+}
+
+/* ─── Morning briefing sheet (printable A4) ─── */
+.briefing-sheet {
+  border: 1.5px solid rgba(201, 162, 39, 0.55);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='0.8' opacity='0.05'%3E%3Cpath d='M40 8 L46 22 L61 20 L52 32 L61 44 L46 42 L40 56 L34 42 L19 44 L28 32 L19 20 L34 22 Z'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, #fffdf6, #fdfaf1);
+  background-size: 80px 80px, auto;
+}
+@media print {
+  .briefing-sheet {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* ─── Notification item slide ─── */
+.notif-item {
+  animation: notifIn 0.3s ease both;
+}
+@keyframes notifIn {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ─── Shelf label sheet (قفسه لیبل) — 24up A4 (70×35mm) ─── */
+.label-sheet {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 14px,
+    rgba(201, 162, 39, 0.05) 14px,
+    rgba(201, 162, 39, 0.05) 15px
+  );
+  padding: 6px;
+  border-radius: 10px;
+}
+.shelf-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 92px;
+  border: 1px dashed rgba(14, 122, 74, 0.4);
+  border-radius: 6px;
+  background: white;
+  padding: 6px 8px;
+  direction: rtl;
+}
+.shelf-label-barcode svg {
+  display: block;
+  max-width: 100%;
+}
+@media print {
+  .label-sheet {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2mm;
+    background: none !important;
+    padding: 0;
+  }
+  .shelf-label {
+    border: 0.4mm dashed #999;
+    min-height: 33mm;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* ─── Micro-interactions: pressable buttons lift + settle ─── */
+button:not([disabled]),
+[role='button']:not([disabled]) {
+  transition-property: transform, box-shadow, background-color, border-color, color, opacity;
+  transition-duration: 0.18s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+button:not([disabled]):active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not([disabled]):active {
+    transform: none;
+  }
+}
+
+/* ─── Glowing pulse for live status dots ─── */
+.glow-dot {
+  box-shadow: 0 0 0 0 rgba(14, 122, 74, 0.5);
+  animation: glowPulse 2.2s ease-out infinite;
+}
+@keyframes glowPulse {
+  0% { box-shadow: 0 0 0 0 rgba(14, 122, 74, 0.45); }
+  70% { box-shadow: 0 0 0 7px rgba(14, 122, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(14, 122, 74, 0); }
+}
+.notif-item:nth-child(2) { animation-delay: 0.04s; }
+.notif-item:nth-child(3) { animation-delay: 0.08s; }
+.notif-item:nth-child(4) { animation-delay: 0.12s; }
+.notif-item:nth-child(5) { animation-delay: 0.16s; }
+
+/* ─── Corner ornament for hero cards ─── */
+.hero-ornament {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.hero-ornament.tl { top: 0; left: 0; }
+.hero-ornament.br { bottom: 0; right: 0; transform: rotate(180deg); }
+
+/* ─── Dark emerald hero (paisley baked in) ───
+   Custom unlayered classes beat Tailwind layered utilities, so hero surfaces
+   must carry their own complete background here (defined AFTER gold-glow-border
+   so this shorthand wins). Never rely on bg-gradient-* utilities next to
+   .pattern-* / .gold-glow-border. */
+.hero-emerald {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23c9a227' stroke-width='1.5' opacity='0.16'%3E%3Cpath d='M70 22 C92 34 104 56 98 78 C92 100 70 112 52 106 C36 101 28 84 36 70 C43 58 58 56 64 66 C69 74 63 84 54 82'/%3E%3Ccircle cx='70' cy='70' r='3.5'/%3E%3Cpath d='M70 92 C70 100 64 106 56 106'/%3E%3C/g%3E%3Cg fill='none' stroke='%2393c572' stroke-width='1.2' opacity='0.10'%3E%3Cpath d='M14 112 C26 118 32 128 28 138 M126 14 C114 20 108 30 112 40'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(to left, #0b2e20, #11402c 52%, #0e7a4a);
+  background-size: 140px 140px, auto;
+}
+
+/* ─── Olive branch decoration for empty states ─── */
+.olive-branch {
+  position: absolute;
+  inset-inline-end: -14px;
+  bottom: -12px;
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+/* ─── Respect motion preferences (a11y) ─── */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-line,
+  .brand-shine,
+  .pulse-dot,
+  .fade-in-up {
+    animation: none !important;
+  }
+  .glow-card,
+  .stepper-btn {
+    transition: none !important;
+  }
+}
+
+/* nicer focus visibility for keyboard users */
+:focus-visible {
+  outline: 2px solid rgba(201, 162, 39, 0.7);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* label-sheet v2 */
+
+/* ─── Round 5: reports & velocity polish ─── */
+/* pulsing fire badge for hot shelf cells (a11y-safe) */
+@keyframes fire-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+.fire-pulse {
+  animation: fire-pulse 2.4s ease-in-out infinite;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fire-pulse { animation: none !important; }
+}
+
+/* report preview sticky header keeps the warm paper tone */
+.table-luxe thead th {
+  border-bottom: 2px solid rgba(201, 162, 39, 0.35);
+}
+.table-luxe tbody tr:nth-child(even) {
+  background: rgba(250, 247, 238, 0.55);
+}
+.table-luxe tbody tr:hover {
+  background: rgba(253, 246, 221, 0.55);
+}
+
+/* archive timeline row entrance */
+.fade-in-up .arch-row { animation-delay: calc(var(--arch-i, 0) * 40ms); }
+
+/* ─── Round 6: daily price-control board ─── */
+
+/* rows verified today glow softly emerald; freshly verified rows pop */
+.row-verified {
+  background: linear-gradient(135deg, rgba(14, 122, 74, 0.055), rgba(250, 247, 238, 0.4) 55%);
+}
+@keyframes verify-pop {
+  0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(14, 122, 74, 0.35); }
+  45% { transform: scale(1.012); box-shadow: 0 0 0 7px rgba(14, 122, 74, 0.16); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(14, 122, 74, 0); }
+}
+.row-just-verified {
+  animation: verify-pop 1.4s ease-out;
+  border-color: rgba(14, 122, 74, 0.45) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-just-verified { animation: none !important; }
+}
+
+/* edited printed-price input gets a gold pen-ready look */
+input.edited-price {
+  border-color: #c9a227 !important;
+  background: #fdf6dd !important;
+}
+
+/* printable daily sheet — walk-the-aisles paper */
+.price-sheet { display: none; }
+@media print {
+  .price-sheet { display: block !important; }
+}
+.price-sheet {
+  color: #1a1a1a;
+  font-family: inherit;
+}
+.price-sheet .sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 3px double #0b2e20;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.price-sheet .sheet-logo {
+  font-size: 34px;
+  line-height: 1;
+}
+.price-sheet .sheet-head h3 {
+  font-size: 17px;
+  font-weight: 900;
+  margin: 0;
+}
+.price-sheet .sheet-head p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #444;
+}
+.price-sheet .sheet-meta {
+  margin-inline-start: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #333;
+  text-align: left;
+}
+.price-sheet .sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.price-sheet .sheet-table th {
+  background: #0b2e20;
+  color: #fff;
+  padding: 6px 8px;
+  font-size: 10px;
+  text-align: right;
+}
+.price-sheet .sheet-table td {
+  border: 1px solid #bbb;
+  padding: 6px 8px;
+  text-align: right;
+}
+.price-sheet .sheet-table tr:nth-child(even) td {
+  background: #f6f3ea;
+}
+.price-sheet .check-cell {
+  width: 22px;
+  border: 1.5px solid #333 !important;
+}
+.price-sheet .write-cell {
+  border: 1.5px dashed #888 !important;
+  background: #fffdf4;
+}
+.price-sheet .mono-cell {
+  font-family: monospace;
+  direction: ltr;
+  text-align: left;
+}
+.price-sheet .sheet-foot {
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: #444;
+  border-top: 1px solid #ccc;
+  padding-top: 8px;
+}
+/* round6 */
+
+/* price sheet is portal'ed to body — while printing hide body's other children and let the sheet flow naturally */
+@media print {
+  .price-sheet { position: static !important; }
+  body.printing-sheet > *:not(.price-sheet) { display: none !important; }
+}
+/* retrigger */
+/* r6b */
+
+/* ═══════════ round 7 — command palette + a11y + micro-polish ═══════════ */
+
+/* Persian-friendly text selection (gold olive tint) */
+::selection {
+  background: rgba(201, 162, 39, 0.32);
+  color: #14532d;
+}
+
+/* accessible keyboard focus — gold ring everywhere, only for keyboard users */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2.5px solid rgba(201, 162, 39, 0.75);
+  outline-offset: 2px;
+  border-radius: 0.65rem;
+}
+
+/* kbd chips (palette hints) */
+kbd {
+  font-family: inherit;
+  letter-spacing: 0.02em;
+}
+
+/* palette entrance */
+@keyframes palette-pop {
+  from { opacity: 0; transform: translateY(-10px) scale(0.975); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes palette-backdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.palette-pop { animation: palette-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+.palette-backdrop { animation: palette-backdrop 0.15s ease-out; }
+
+/* muted-notif bell gentle sway (reduced-motion safe) */
+@keyframes bell-mute-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+.bell-muted { animation: bell-mute-pulse 2.4s ease-in-out infinite; }
+
+/* snooze banner dashed shimmer on hover */
+button:hover.border-dashed.border-\[\#c9a227\]\/50 {
+  background-image: linear-gradient(90deg, transparent, rgba(201, 162, 39, 0.08), transparent);
+  background-size: 200% 100%;
+  animation: dash-shimmer 1.2s linear infinite;
+}
+@keyframes dash-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette-pop, .palette-backdrop, .bell-muted { animation: none; }
+}
+/* r7 */
+
+/* ═══════════ round 8 — shelf labels (لیبل قفسه) + cost sparkline + streak ═══════════ */
+
+/* row picked for label printing — warm gold wash from the start edge */
+.row-picked {
+  background-image: linear-gradient(90deg, rgba(201, 162, 39, 0.08), transparent 55%);
+}
+
+/* shelf-label sheet (PORTAL variant — PriceCheck): hidden on screen; while printing (body.printing-labels) it is the ONLY flow content.
+   Scoped to .label-portal so the Products-modal sheet (which IS a grid) keeps its own layout. */
+.label-portal { display: none; }
+@media print {
+  .label-portal {
+    display: block !important;
+    position: static !important;
+    max-height: none !important;
+    max-width: none !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  body.printing-labels > *:not(.label-portal) { display: none !important; }
+}
+.label-guide {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #555;
+  border-bottom: 1.5px dashed #b5ab8d;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+@media print {
+  .label-guide { font-size: 9px; }
+}
+.label-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.label-card {
+  border: 1px dashed #9a927a; /* scissor cut line */
+  margin: -0.5px;             /* collapse shared cut lines */
+  padding: 5px 7px 4px;
+  height: 36mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+  page-break-inside: avoid;
+  border-radius: 4px;
+}
+.label-brand {
+  align-self: stretch;
+  background: #0b2e20;
+  color: #e9c64a;
+  font-size: 8.5px;
+  font-weight: 900;
+  padding: 1.5px 0 2.5px;
+  border-radius: 3px;
+  margin-bottom: 3px;
+  letter-spacing: 0.02em;
+}
+.label-name {
+  font-size: 10px;
+  font-weight: 800;
+  color: #141414;
+  line-height: 1.3;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.label-price {
+  font-size: 16.5px;
+  font-weight: 900;
+  color: #0b2e20;
+  margin: 2.5px 0 1px;
+  line-height: 1.1;
+}
+.label-price small {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #4a4a4a;
+}
+.label-bc-wrap {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.label-bc { display: block; height: 24px; }
+.label-bcnum {
+  font-family: monospace;
+  font-size: 7.5px;
+  color: #222;
+  letter-spacing: 0.08em;
+}
+.label-no-bc { font-size: 8px; font-weight: 700; color: #999; }
+
+/* screen preview — paper-like board, centered + capped so it never dominates the page (portal variant only) */
+@media screen {
+  .label-portal {
+    display: block;
+    position: relative;
+    max-height: 430px;
+    max-width: 660px;
+    margin: 10px auto;
+    overflow-y: auto;
+    background: #f6f3ea;
+    border: 1.5px dashed rgba(201, 162, 39, 0.55);
+    border-radius: 1rem;
+    padding: 12px;
+    box-shadow: 0 10px 30px rgba(11, 46, 32, 0.14);
+  }
+  .label-portal .label-card { background: #fff; transition: transform 0.18s ease, box-shadow 0.18s ease; }
+  .label-portal .label-card:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(11, 46, 32, 0.18); }
+}
+
+/* ═══════════ round 9 — desktop notifs switch + picked chips + scan pulse + paper texture ═══════════ */
+
+/* gold switch for اعلان دسکتاپ */
+.desk-switch { flex: none; cursor: pointer; }
+.desk-switch[aria-checked='true'] { box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.22), inset 0 1px 2px rgba(255, 255, 255, 0.35); }
+.desk-switch:hover { filter: brightness(1.05); }
+.desk-knob { transition: right 0.18s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* picked label chip — pop-in + soft gold glow */
+.picked-chip {
+  box-shadow: 0 1px 4px rgba(201, 162, 39, 0.25);
+  animation: chip-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes chip-pop {
+  from { opacity: 0; transform: scale(0.82); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* scan button — soft emerald radar pulse inviting the user to scan */
+.scan-pulse { position: relative; }
+.scan-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(14, 122, 74, 0.5);
+  animation: scan-radar 2.6s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes scan-radar {
+  0% { opacity: 0.7; transform: scale(1); }
+  70% { opacity: 0; transform: scale(1.28); }
+  100% { opacity: 0; transform: scale(1.28); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scan-pulse::after { animation: none; }
+  .picked-chip { animation: none; }
+}
+
+/* paper texture for the on-screen label preview — faint fiber lines (portal variant) */
+@media screen {
+  .label-portal {
+    background-image: repeating-linear-gradient(0deg, rgba(11, 46, 32, 0.016) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(201, 162, 39, 0.014) 0 1px, transparent 1px 4px);
+  }
+}
+/* r9 */
+
+/* ───────────────── round 10 — FaPriceInput + Holoo ack wizard ───────────────── */
+
+/* Persian-digit numeric input — gold focus ring, monospaced tabular digits */
+.fa-price-input {
+  background-image: linear-gradient(180deg, rgba(201, 162, 39, 0.045), transparent 55%);
+}
+.fa-price-input:focus {
+  border-color: #c9a227 !important;
+  box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18);
+  background-color: #fffdf6;
+}
+.fa-price-input:disabled {
+  cursor: not-allowed;
+}
+.fa-price-input::placeholder {
+  font-weight: 700;
+  opacity: 0.55;
+}
+
+/* Holoo ack wizard — upload zone shimmer on the dashed border */
+@keyframes ack-dash {
+  to { background-position: 28px 0; }
+}
+.ack-upload {
+  background-image: linear-gradient(90deg, rgba(15, 118, 110, 0.16) 0 8px, transparent 8px 16px);
+  background-size: 28px 2px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  animation: ack-dash 1.1s linear infinite;
+}
+/* r10 */
+
+/* ───────────────── round 11 — quick-label button + ack checkbox polish ───────────────── */
+
+/* quick label reprint button (product detail) — gold sheen sweep on hover */
+.quick-label-btn {
+  position: relative;
+  overflow: hidden;
+}
+.quick-label-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(201, 162, 39, 0.22) 50%, transparent 70%);
+  transform: translateX(130%);
+  transition: transform 0.55s ease;
+  pointer-events: none;
+}
+.quick-label-btn:hover::after {
+  transform: translateX(-130%);
+}
+
+/* ack wizard checkbox — pop when checked */
+.ack-check[aria-checked='true'] {
+  animation: chip-pop 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* cheque split sum mismatch hint */
+.split-sum-ok { color: #0e7a4a; }
+.split-sum-bad { color: #b3372f; font-weight: 900; }
+@media (prefers-reduced-motion: reduce) {
+  .quick-label-btn::after { transition: none; transform: none; }
+  .ack-check[aria-checked='true'] { animation: none; }
+}
+/* r11 */
+
+/* ══════════════════════════════════════════════════════════════════
+   تم شب زیتون (Dark Theme) — سبز عمیق + طلایی، هویت برند حفظ می‌شود
+   فعال‌سازی: next-themes با attribute="class" → html.dark
+   ══════════════════════════════════════════════════════════════════ */
+
+html.dark {
+  --background: #0d1a14;
+  --foreground: #e6efe7;
+  --card: #12241b;
+  --card-foreground: #e6efe7;
+  --popover: #14281e;
+  --popover-foreground: #e6efe7;
+  --primary: #17a05f;
+  --primary-foreground: #f7fdf9;
+  --secondary: #1a2f23;
+  --secondary-foreground: #cfe3d4;
+  --muted: #1a2f23;
+  --muted-foreground: #9cb3a2;
+  --accent: #2a2413;
+  --accent-foreground: #dcbf6d;
+  --destructive: #d0524a;
+  --border: #25402f;
+  --input: #2c4a37;
+  --ring: #c9a227;
+}
+
+html.dark body {
+  background-color: #0d1a14;
+  color: #e6efe7;
+}
+
+/* سطوح کرم/سفید پرکاربرد در ویوها — بازنویسی برای شب */
+html.dark .bg-white { background-color: #14281e; }
+html.dark .bg-white\/60 { background-color: rgba(18, 36, 27, 0.62); }
+html.dark .bg-white\/70 { background-color: rgba(18, 36, 27, 0.72); }
+html.dark .bg-white\/75 { background-color: rgba(18, 36, 27, 0.78); }
+html.dark .bg-white\/80 { background-color: rgba(18, 36, 27, 0.82); }
+html.dark .bg-white\/85 { background-color: rgba(18, 36, 27, 0.88); }
+html.dark .bg-white\/90 { background-color: rgba(18, 36, 27, 0.92); }
+html.dark .bg-white\/95 { background-color: rgba(18, 36, 27, 0.95); }
+
+/* نوار بالای کرم */
+html.dark header.sticky {
+  background-color: rgba(11, 26, 19, 0.92);
+  border-bottom-color: rgba(37, 64, 47, 0.9);
+}
+
+/* زنگ‌های طلایی روشن روی تیره */
+html.dark .bg-\[\#fdf6dd\] { background-color: #26200f; }
+html.dark .bg-\[\#fdf6dd\]\/40 { background-color: rgba(38, 32, 15, 0.45); }
+html.dark .bg-\[\#fdf6dd\]\/50 { background-color: rgba(38, 32, 15, 0.55); }
+html.dark .bg-\[\#fdf6dd\]\/60 { background-color: rgba(38, 32, 15, 0.62); }
+html.dark .bg-\[\#fdf6dd\]\/70 { background-color: rgba(38, 32, 15, 0.7); }
+html.dark .bg-\[\#fffdf6\] { background-color: #14281e; }
+html.dark .bg-\[\#f7efe2\] { background-color: #14281e; }
+html.dark .from-\[\#f7efe2\] { --tw-gradient-from: #14281e; }
+html.dark .to-\[\#fdf6dd\] { --tw-gradient-to: #1a2f23; }
+
+/* قفسهٔ چوبی آرشیو در شب */
+html.dark .bg-gradient-to-b.from-\[\#f7efe2\].to-\[\#fdf6dd\] {
+  background-image: linear-gradient(to bottom, #16291f, #1a2f23);
+}
+
+/* متن‌های قهوه‌ای تیره روی زمینهٔ طلایی تیره — روشن‌تر شوند */
+html.dark .text-\[\#8a5a2b\] { color: #d8a765; }
+html.dark .text-\[\#8a6d10\] { color: #d8bd6a; }
+html.dark .text-\[\#5c7236\] { color: #b4cf8f; }
+
+/* کپی‌های سفید روی کارت‌های روشن */
+html.dark .text-foreground\/85 { color: rgba(230, 239, 231, 0.85); }
+html.dark .text-foreground\/80 { color: rgba(230, 239, 231, 0.8); }
+
+/* glow-card در شب */
+html.dark .glow-card {
+  box-shadow:
+    inset 0 1px 0 rgba(201, 162, 39, 0.08),
+    0 10px 26px -18px rgba(0, 0, 0, 0.7);
+}
+html.dark .glow-card:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(201, 162, 39, 0.08),
+    0 0 0 1px rgba(201, 162, 39, 0.3),
+    0 16px 36px -16px rgba(201, 162, 39, 0.22);
+}
+
+/* پترن شنی پس‌زمینه — سبز روشن روی تیره */
+html.dark .pattern-sand {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill='none' stroke='%2393c572' stroke-width='1' opacity='0.06'%3E%3Cpath d='M0 30 Q15 15 30 30 T60 30'/%3E%3Cpath d='M0 45 Q15 30 30 45 T60 45'/%3E%3Cpath d='M0 15 Q15 0 30 15 T60 15'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* تقویم و ورودی‌ها */
+html.dark input, html.dark select, html.dark textarea {
+  background-color: rgba(18, 36, 27, 0.9);
+  color: #e6efe7;
+  border-color: #2c4a37;
+}
+html.dark input::placeholder, html.dark textarea::placeholder { color: #7d9384; }
+
+/* توست و مودال‌ها تیره‌اندکی روشن‌تر */
+html.dark [role="dialog"], html.dark [data-slot="dialog-content"], html.dark [data-slot="sheet-content"] {
+  background-color: #14281e;
+}
+
+/* ── round-14/15: شخصی‌سازی و تقویم ── */
+/* متغیر اندازهٔ اعداد تقویم — applyPrefsToDom آن را روی html تنظیم می‌کند (sm=11 base=13 lg=15 xl=18).
+ * «سیستمیک»: در jalali-widgets.tsx همهٔ اجزای تقویم (هدر، روزهای هفته، چیپ‌ها، راهنما، تاریخ‌گیر)
+ * با calFontStyle() از همین متغیر می‌خوانند؛ تقویم‌های سفارشی ویوها هم با همان هلپر هم‌خوان می‌شوند. */
+:root {
+  --cal-font: 13px;
+}
+
+/* ابزار عمومی: هر متنی که باید با قلم تقویم مقیاس شود */
+.cal-font-text {
+  font-size: var(--cal-font, 13px);
+}
+
+/* ترنزیشن نرم هنگام تعویض تراکم/قلم — به‌کارگیری: <div class="transition-smooth"> */
+.transition-smooth {
+  transition:
+    padding 0.25s ease,
+    margin 0.25s ease,
+    gap 0.25s ease,
+    font-size 0.25s ease,
+    width 0.25s ease,
+    height 0.25s ease;
+}
+
+/* ═══════════ تراکم نمایش — واقعی و سراسری (data-density روی <html> توسط applyPrefsToDom) ═══════════
+ * هر دو حالت «صریح» تعریف شده‌اند تا جابه‌جایی دلنشین↔جمع‌وجور تغییرِ ملموس باشد:
+ * کارت‌ها، هدر سکشن‌ها، جدول‌ها، فرم‌ها، نوار کنار، مودال‌ها (glow-card)، حاشیه‌ها و فاصله‌ها.
+ * این قواعد لایه‌بندی‌نشده‌اند → بر utilities تایلند (در @layer) مقدم‌اند. */
+
+/* ── دلنشین (پیش‌فرض) — هم‌ارز مقادیر پیش‌فرض تایلند؛ صریح نوشته شده تا سوییچ «واقعی» باشد.
+ *      عمداً کلاس‌به‌کلاس هدف گرفته شده تا کارت‌هایی که پدینگ سفارشی دارند (p-3/p-3.5/p-7 و…)
+ *      در حالت پیش‌فرض دست‌نخورده بمانند (no-op واقعی). ── */
+[data-density='cozy'] .glow-card.p-4 { padding: 1rem; }
+[data-density='cozy'] .glow-card.p-5 { padding: 1.25rem; }
+[data-density='cozy'] .glow-card.p-6 { padding: 1.5rem; }
+[data-density='cozy'] .glow-card .mb-4 { margin-bottom: 1rem; }
+[data-density='cozy'] .gap-3 { gap: 0.75rem; }
+[data-density='cozy'] .gap-4 { gap: 1rem; }
+[data-density='cozy'] .space-y-2 > :not(:last-child) { margin-block-end: 0.5rem; }
+[data-density='cozy'] .space-y-3 > :not(:last-child) { margin-block-end: 0.75rem; }
+[data-density='cozy'] .space-y-4 > :not(:last-child) { margin-block-end: 1rem; }
+[data-density='cozy'] :is(td, th).p-2 { padding-block: 0.5rem; }
+[data-density='cozy'] :is(td, th).p-2\.5 { padding-block: 0.625rem; }
+[data-density='cozy'] :is(td, th).p-1\.5 { padding-block: 0.375rem; }
+[data-density='cozy'] :is(input, select, textarea).py-2\.5 { padding-block: 0.625rem; }
+[data-density='cozy'] nav button { padding-block: 0.625rem; }
+[data-density='cozy'] nav .mb-3 { margin-bottom: 0.75rem; }
+[data-density='cozy'] main { padding-top: 1rem; padding-inline: 1rem; }
+[data-density='cozy'] header .py-3 { padding-block: 0.75rem; }
+@media (min-width: 640px) {
+  [data-density='cozy'] .glow-card.sm\:p-6 { padding: 1.5rem; }
+  [data-density='cozy'] .glow-card.sm\:p-7 { padding: 1.75rem; }
+  [data-density='cozy'] main { padding-top: 1.5rem; padding-inline: 1.5rem; }
+}
+
+/* ── جمع‌وجور — همه‌چیز واقعاً می‌فشارد ── */
+/* کارت‌ها: p-4→p-3 و p-5/p-6→p-4؛ در صفحه‌های بزرگ sm:p-6→sm:p-4 و sm:p-7→sm:p-5.
+ * (مودال‌های glow-card p-5 هم فشرده می‌شوند) */
+[data-density='compact'] .glow-card.p-4 { padding: 0.75rem; }
+[data-density='compact'] .glow-card.p-5 { padding: 1rem; }
+[data-density='compact'] .glow-card.p-6 { padding: 1rem; }
+[data-density='compact'] .glow-card .mb-4 { margin-bottom: 0.75rem; }
+@media (min-width: 640px) {
+  [data-density='compact'] .glow-card.sm\:p-6 { padding: 1rem; }
+  [data-density='compact'] .glow-card.sm\:p-7 { padding: 1.25rem; }
+}
+/* فاصلهٔ گرید/فلکس: gap-3→gap-2، gap-4→gap-3 */
+[data-density='compact'] .gap-3 { gap: 0.5rem; }
+[data-density='compact'] .gap-4 { gap: 0.75rem; }
+/* حاشیهٔ عمودی سکشن‌ها: space-y-4→3، space-y-3→2، space-y-2→1.5 */
+[data-density='compact'] .space-y-2 > :not(:last-child) { margin-block-end: 0.375rem; }
+[data-density='compact'] .space-y-3 > :not(:last-child) { margin-block-end: 0.5rem; }
+[data-density='compact'] .space-y-4 > :not(:last-child) { margin-block-end: 0.75rem; }
+/* جدول‌ها: پدینگ عمودی خانه‌ها ≈ py-2→py-1 */
+[data-density='compact'] :is(td, th).p-2 { padding-block: 0.25rem; }
+[data-density='compact'] :is(td, th).p-2\.5 { padding-block: 0.375rem; }
+[data-density='compact'] :is(td, th).p-1\.5 { padding-block: 0.25rem; }
+/* فرم‌ها: ورودی‌های py-2.5 → py-1.5 */
+[data-density='compact'] :is(input, select, textarea).py-2\.5 { padding-block: 0.375rem; }
+/* نوار کنار: آیتم‌های ناوبری و فاصلهٔ گروه‌ها */
+[data-density='compact'] nav button { padding-block: 0.4rem; }
+[data-density='compact'] nav .mb-3 { margin-bottom: 0.5rem; }
+/* بدنه و نوار بالا */
+[data-density='compact'] main { padding-top: 0.75rem; padding-inline: 0.75rem; }
+[data-density='compact'] header .py-3 { padding-block: 0.5rem; }
+@media (min-width: 640px) {
+  [data-density='compact'] main { padding-top: 1rem; padding-inline: 1rem; }
+}
+
+/* اسکرول‌بار باریک‌تر در تراکم جمع‌وجور */
+[data-density='compact'] .scroll-gold {
+  scrollbar-width: thin;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * چاپ پرتابل (round-19f) — ریشه‌کن‌کردن چاپ خالی داخل مودال‌های مشترک
+ * الگوی قدیمیِ «body * { visibility: hidden }» داخل مودال‌های fixed/overflow-y-auto
+ * (scroll-gold / glow-card) شکست می‌خورد و برگهٔ سفید چاپ می‌شود. راه‌حل:printElement
+ * ناحیهٔ چاپ را به‌صورت کلون مستقیم زیر <body> می‌گذارد (print-portal) و این قواعد
+ * فقط هنگام چاپِ همان پرتال فعال می‌شوند. بقیهٔ جریان‌های چاپ مستقیم (صبح‌نامه،
+ * لیبل قفسه، برگهٔ کنترل قیمت، فیش حقوقی) طبق قواعد قبلی خودشان کار می‌کنند.
+ * ───────────────────────────────────────────────────────────────────────────── */
+.print-portal { display: none; }
+@media print {
+  body.printing-doc > *:not(.print-portal) { display: none !important; }
+  body.printing-doc .print-portal { display: block !important; }
+  .print-portal .print-area {
+    position: static !important; background: #fff !important; color: #000 !important;
+    padding: 16px !important; max-height: none !important; overflow: visible !important;
+    box-shadow: none !important; border: none !important;
+  }
+  .print-portal .no-print { display: none !important; }
+  .print-portal .scroll-gold { max-height: none !important; overflow: visible !important; }
+}

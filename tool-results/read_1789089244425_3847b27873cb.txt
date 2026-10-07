@@ -1,0 +1,672 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useRef, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import * as XLSX from 'xlsx'
+     6→import { api } from '@/lib/client'
+     7→import { faMoney, faNum } from '@/lib/jalali'
+     8→import { SectionCard, Pill, EmptyState, SearchInput, Labeled, stockStatus, CATEGORY_EMOJI, KeyValue } from '@/components/app/ui-bits'
+     9→import { Modal } from '@/components/views/Orders'
+    10→import type { AppCtx } from '@/components/app/ui-bits'
+    11→import { ShoppingBasket, Plus, FileSpreadsheet, Merge, ImagePlus, RefreshCw, Pencil, Search, Sparkles } from 'lucide-react'
+    12→import { cn } from '@/lib/utils'
+    13→
+    14→type Product = {
+    15→  id: string; name: string; barcodes: string[]; holooCode: string; unit: string; brand: string
+    16→  category: string; buyPrice: number; sellPrice: number; sellPrice2: number; stock: number
+    17→  reorderLevel: number; imageUrl: string; providerId: string | null; inHoloo: boolean
+    18→}
+    19→
+    20→export default function ProductsView({ ctx }: { ctx: AppCtx }) {
+    21→  const [products, setProducts] = useState<Product[]>([])
+    22→  const [categories, setCategories] = useState<string[]>([])
+    23→  const [q, setQ] = useState('')
+    24→  const [cat, setCat] = useState('')
+    25→  const [lowOnly, setLowOnly] = useState(false)
+    26→  const [editFor, setEditFor] = useState<Product | null>(null)
+    27→  const [addOpen, setAddOpen] = useState(false)
+    28→  const [importOpen, setImportOpen] = useState(false)
+    29→  const [mergeOpen, setMergeOpen] = useState(false)
+    30→  const [smartOpen, setSmartOpen] = useState(false)
+    31→  const [detailFor, setDetailFor] = useState<Product | null>(null)
+    32→
+    33→  const load = () =>
+    34→    api<{ products: Product[]; categories: string[] }>('/api/products').then((d) => {
+    35→      setProducts(d.products)
+    36→      setCategories(d.categories)
+    37→    })
+    38→  useEffect(() => { load() }, [])
+    39→
+    40→  const filtered = useMemo(
+    41→    () => products.filter((p) =>
+    42→      (!cat || p.category === cat) &&
+    43→      (!lowOnly || p.stock <= p.reorderLevel) &&
+    44→      (!q || p.name.includes(q) || p.brand.includes(q) || p.barcodes.some((b) => b.includes(q)))
+    45→    ),
+    46→    [products, q, cat, lowOnly]
+    47→  )
+    48→
+    49→  const canEdit = ['GM', 'PM', 'OM', 'ACC', 'SK'].includes(ctx.user!.role)
+    50→  const canOrder = ['GM', 'PM', 'OM'].includes(ctx.user!.role)
+    51→  const lowCount = products.filter((p) => p.stock <= p.reorderLevel).length
+    52→
+    53→  return (
+    54→    <div className="space-y-4">
+    55→      <SectionCard
+    56→        title="کالاها و موجودی انبار"
+    57→        subtitle="رنگ هر کارت وضعیت موجودی است: قرمز کمبود جدی، زرد رو به اتمام، سبز مناسب"
+    58→        icon={<ShoppingBasket size={18} />}
+    59→        actions={
+    60→          canEdit && (
+    61→            <div className="flex flex-wrap gap-2">
+    62→              {canOrder && lowCount > 0 && (
+    63→                <button onClick={() => setSmartOpen(true)} className="flex items-center gap-1 rounded-xl bg-gradient-to-l from-[#77934a] to-[#8fa85e] px-3.5 py-2 text-xs font-extrabold text-white shadow-md">
+    64→                  <Sparkles size={14} /> پیش‌نویس هوشمند ({faNum(lowCount)})
+    65→                </button>
+    66→              )}
+    67→              <button onClick={() => setAddOpen(true)} className="flex items-center gap-1 rounded-xl bg-primary px-3.5 py-2 text-xs font-extrabold text-white">
+    68→                <Plus size={14} /> کالای جدید
+    69→              </button>
+    70→              <button onClick={() => setImportOpen(true)} className="flex items-center gap-1 rounded-xl bg-[#0f766e] px-3.5 py-2 text-xs font-extrabold text-white">
+    71→                <FileSpreadsheet size={14} /> ورود از هلو (اکسل)
+    72→              </button>
+    73→              <button onClick={() => setMergeOpen(true)} className="flex items-center gap-1 rounded-xl bg-[#8a5a2b] px-3.5 py-2 text-xs font-extrabold text-white">
+    74→                <Merge size={14} /> ادغام تکراری‌ها
+    75→              </button>
+    76→            </div>
+    77→          )
+    78→        }
+    79→      >
+    80→        <div className="mb-4 flex flex-wrap items-center gap-2">
+    81→          <SearchInput value={q} onChange={setQ} placeholder="نام، برند یا بارکد…" className="w-full sm:w-64" />
+    82→          <button onClick={() => setLowOnly((v) => !v)} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold', lowOnly ? 'border-[#b3372f] bg-[#b3372f] text-white' : 'border-border bg-card')}>
+    83→            فقط کم‌موجودی‌ها
+    84→          </button>
+    85→          <div className="flex flex-wrap gap-1.5">
+    86→            <FilterChip active={!cat} label="همه دسته‌ها" onClick={() => setCat('')} />
+    87→            {categories.map((c) => <FilterChip key={c} active={cat === c} label={`${CATEGORY_EMOJI[c] || '📦'} ${c}`} onClick={() => setCat(c)} />)}
+    88→          </div>
+    89→        </div>
+    90→
+    91→        <div className="scroll-gold grid max-h-[64vh] grid-cols-2 gap-3 overflow-y-auto pl-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+    92→          {filtered.map((p) => {
+    93→            const st = stockStatus(p.stock, p.reorderLevel)
+    94→            return (
+    95→              <div key={p.id} className="glow-card group flex flex-col rounded-2xl bg-white/85 p-3">
+    96→                <button onClick={() => setDetailFor(p)} className="mb-2 flex h-24 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-secondary to-muted text-4xl">
+    97→                  {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover" /> : CATEGORY_EMOJI[p.category] || '📦'}
+    98→                </button>
+    99→                <p className="line-clamp-2 min-h-9 text-xs font-extrabold leading-4">{p.name}</p>
+   100→                <p className="mt-0.5 text-[10px] text-muted-foreground">{p.brand || '—'} • {p.category}</p>
+   101→                <div className="mt-1.5 flex items-center justify-between">
+   102→                  <span className="text-[11px] font-bold text-[#8a6d10]">{faMoney(p.sellPrice)}</span>
+   103→                  <span className="text-xs font-black" style={{ color: st.color }}>{faNum(p.stock)}</span>
+   104→                </div>
+   105→                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+   106→                  <div className="h-full rounded-full" style={{ width: `${Math.min(100, (p.stock / Math.max(p.reorderLevel * 2, 1)) * 100)}%`, background: st.color }} />
+   107→                </div>
+   108→                {canEdit && (
+   109→                  <button onClick={() => setEditFor(p)} className="mt-2 flex items-center justify-center gap-1 rounded-lg bg-muted/70 py-1.5 text-[10px] font-bold text-muted-foreground transition hover:bg-muted group-hover:text-primary">
+   110→                    <Pencil size={11} /> ویرایش
+   111→                  </button>
+   112→                )}
+   113→              </div>
+   114→            )
+   115→          })}
+   116→        </div>
+   117→        {filtered.length === 0 && <EmptyState emoji="🔍" title="کالایی یافت نشد" />}
+   118→      </SectionCard>
+   119→
+   120→      {(editFor || addOpen) && (
+   121→        <ProductEditModal
+   122→          product={editFor}
+   123→          onClose={() => { setEditFor(null); setAddOpen(false) }}
+   124→          onSaved={() => { setEditFor(null); setAddOpen(false); load() }}
+   125→        />
+   126→      )}
+   127→
+   128→      {importOpen && <ImportWizard onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load() }} />}
+   129→      {mergeOpen && <MergeWizard products={products} onClose={() => setMergeOpen(false)} onDone={() => { setMergeOpen(false); load() }} />}
+   130→      {detailFor && <ProductDetailModal product={detailFor} onClose={() => setDetailFor(null)} />}
+   131→      {smartOpen && (
+   132→        <SmartReorderModal
+   133→          products={products}
+   134→          onClose={() => setSmartOpen(false)}
+   135→          onDone={(created) => {
+   136→            setSmartOpen(false)
+   137→            load()
+   138→            toast.success(`${created} سفارش پیش‌نویس ساخته شد — از بخش سفارش‌ها ارسال کنید`)
+   139→            ctx.navigate('orders')
+   140→          }}
+   141→        />
+   142→      )}
+   143→    </div>
+   144→  )
+   145→}
+   146→
+   147→function FilterChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+   148→  return (
+   149→    <button onClick={onClick} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', active ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70 hover:bg-secondary')}>
+   150→      {label}
+   151→    </button>
+   152→  )
+   153→}
+   154→
+   155→/* ───────────────── Smart reorder: low-stock → DRAFT orders per provider ───────────────── */
+   156→
+   157→type ProviderRow = { id: string; name: string }
+   158→
+   159→function SmartReorderModal({ products, onClose, onDone }: { products: Product[]; onClose: () => void; onDone: (created: number) => void }) {
+   160→  const [providers, setProviders] = useState<ProviderRow[]>([])
+   161→  const [qtys, setQtys] = useState<Record<string, number>>({})
+   162→  const [excluded, setExcluded] = useState<Record<string, boolean>>({}) // by providerId
+   163→  const [skipped, setSkipped] = useState<Record<string, boolean>>({}) // per product
+   164→  const [busy, setBusy] = useState(false)
+   165→
+   166→  useEffect(() => {
+   167→    api<{ providers: ProviderRow[] }>('/api/providers').then((d) => setProviders(d.providers)).catch(() => {})
+   168→  }, [])
+   169→
+   170→  const low = useMemo(() => products.filter((p) => p.stock <= p.reorderLevel), [products])
+   171→  const suggested = (p: Product) => Math.max(p.reorderLevel * 2 - p.stock, 1)
+   172→
+   173→  // initialize suggestion quantities once
+   174→  useEffect(() => {
+   175→    if (Object.keys(qtys).length === 0 && low.length > 0) {
+   176→      const init: Record<string, number> = {}
+   177→      for (const p of low) init[p.id] = suggested(p)
+   178→      setQtys(init)
+   179→    }
+   180→  }, [low.length])
+   181→
+   182→  const groups = useMemo(() => {
+   183→    const m = new Map<string, Product[]>()
+   184→    for (const p of low) {
+   185→      const key = p.providerId || '_none'
+   186→      if (!m.has(key)) m.set(key, [])
+   187→      m.get(key)!.push(p)
+   188→    }
+   189→    return [...m.entries()]
+   190→  }, [low])
+   191→
+   192→  const activeGroups = groups.filter(([pid]) => !excluded[pid])
+   193→  const activeItems = activeGroups.flatMap(([, ps]) => ps).filter((p) => !skipped[p.id])
+   194→  const estTotal = activeItems.reduce((s, p) => s + (qtys[p.id] || 0) * p.buyPrice, 0)
+   195→
+   196→  const create = async () => {
+   197→    if (activeItems.length === 0) return
+   198→    setBusy(true)
+   199→    const d = new Date()
+   200→    d.setDate(d.getDate() + 2)
+   201→    const deliveryDate = d.toISOString().slice(0, 10)
+   202→    let created = 0
+   203→    try {
+   204→      for (const [pid, ps] of activeGroups) {
+   205→        const items = ps.filter((p) => !skipped[p.id])
+   206→        if (items.length === 0) continue
+   207→        const prov = providers.find((x) => x.id === pid)
+   208→        await api('/api/orders', {
+   209→          method: 'POST',
+   210→          body: {
+   211→            providerId: pid,
+   212→            providerName: prov?.name || 'بدون تأمین‌کننده',
+   213→            status: 'DRAFT',
+   214→            deliveryDate,
+   215→            notes: 'پیش‌نویس هوشمند — بر اساس نقطه سفارش و موجودی فعلی',
+   216→            items: items.map((p) => ({ productId: p.id, qty: qtys[p.id] || suggested(p), unitBuyPrice: p.buyPrice })),
+   217→          },
+   218→        })
+   219→        created++
+   220→      }
+   221→      onDone(created)
+   222→    } catch (e: any) {
+   223→      toast.error(e.message)
+   224→    } finally {
+   225→      setBusy(false)
+   226→    }
+   227→  }
+   228→
+   229→  return (
+   230→    <Modal title="پیش‌نویس هوشمند سفارش 🤖" onClose={onClose} wide>
+   231→      <p className="mb-4 rounded-xl border border-[#77934a]/30 bg-[#e9f0e4]/60 p-3 text-[11px] leading-5">
+   232→        سامانه {faNum(low.length)} کالای رسیده به نقطه سفارش را پیدا کرده و بر اساس «دو برابر نقطه سفارش منهای موجودی فعلی» پیشنهاد تعداد می‌دهد.
+   233→        تعدادها را اصلاح کنید، تأمین‌کننده‌های غیرضروری را بردارید و سفارش‌های پیش‌نویس را یک‌جا بسازید — بعد از بخش سفارش‌ها ارسالشان کنید.
+   234→      </p>
+   235→
+   236→      {low.length === 0 ? (
+   237→        <EmptyState emoji="🌿" title="همه موجودی‌ها سالم‌اند" hint="فعلاً کالایی به نقطه سفارش نرسیده" />
+   238→      ) : (
+   239→        <div className="scroll-gold max-h-[52vh] space-y-3 overflow-y-auto pl-1">
+   240→          {groups.map(([pid, ps]) => {
+   241→            const prov = providers.find((x) => x.id === pid)
+   242→            const isExcluded = !!excluded[pid]
+   243→            const groupTotal = ps.reduce((s, p) => s + (qtys[p.id] || 0) * p.buyPrice, 0)
+   244→            return (
+   245→              <div key={pid} className={cn('rounded-2xl border p-3 transition', isExcluded ? 'border-border bg-muted/40 opacity-60' : 'glow-card border-[#77934a]/30 bg-white/80')}>
+   246→                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   247→                  <label className="flex cursor-pointer items-center gap-2">
+   248→                    <input
+   249→                      type="checkbox"
+   250→                      checked={!isExcluded}
+   251→                      onChange={(e) => setExcluded((x) => ({ ...x, [pid]: !e.target.checked }))}
+   252→                      className="h-4 w-4 accent-[#77934a]"
+   253→                    />
+   254→                    <span className="text-sm font-black">🚚 {prov?.name || 'بدون تأمین‌کننده مشخص'}</span>
+   255→                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-[#5c7236]">{faNum(ps.length)} قلم</span>
+   256→                  </label>
+   257→                  <span className="text-[11px] font-black text-[#8a6d10]">{faMoney(groupTotal)} تومان</span>
+   258→                </div>
+   259→                <div className="grid gap-1.5 sm:grid-cols-2">
+   260→                  {ps.map((p) => (
+   261→                    <div key={p.id} className={cn('flex items-center justify-between gap-2 rounded-xl border border-border/70 px-2.5 py-2', skipped[p.id] && 'opacity-40')}>
+   262→                      <label className="flex min-w-0 cursor-pointer items-center gap-2">
+   263→                        <input
+   264→                          type="checkbox"
+   265→                          checked={!skipped[p.id]}
+   266→                          disabled={isExcluded}
+   267→                          onChange={(e) => setSkipped((x) => ({ ...x, [p.id]: !e.target.checked }))}
+   268→                          className="h-3.5 w-3.5 accent-[#0e7a4a]"
+   269→                        />
+   270→                        <span className="min-w-0">
+   271→                          <span className="block truncate text-[11px] font-bold">{p.name}</span>
+   272→                          <span className="block text-[9px] text-muted-foreground">
+   273→                            موجودی {faNum(p.stock)} • نقطه سفارش {faNum(p.reorderLevel)} {p.stock === 0 ? '• 🔴 ناموجود' : ''}
+   274→                          </span>
+   275→                        </span>
+   276→                      </label>
+   277→                      <span className="flex shrink-0 items-center gap-1">
+   278→                        <button
+   279→                          disabled={isExcluded}
+   280→                          onClick={() => setQtys((q) => ({ ...q, [p.id]: Math.max((q[p.id] || 1) - 1, 1) }))}
+   281→                          className="stepper-btn !h-8 !w-8 text-sm disabled:opacity-30"
+   282→                        >
+   283→                          −
+   284→                        </button>
+   285→                        <span className="w-10 text-center text-xs font-black">{faNum(qtys[p.id] || 0)}</span>
+   286→                        <button
+   287→                          disabled={isExcluded}
+   288→                          onClick={() => setQtys((q) => ({ ...q, [p.id]: (q[p.id] || 0) + 1 }))}
+   289→                          className="stepper-btn !h-8 !w-8 text-sm disabled:opacity-30"
+   290→                        >
+   291→                          +
+   292→                        </button>
+   293→                      </span>
+   294→                    </div>
+   295→                  ))}
+   296→                </div>
+   297→              </div>
+   298→            )
+   299→          })}
+   300→        </div>
+   301→      )}
+   302→
+   303→      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+   304→        <div className="text-[11px] font-bold text-muted-foreground">
+   305→          {faNum(activeItems.length)} قلم در {faNum(activeGroups.length)} سفارش پیش‌نویس • برآورد خرید: <b className="text-[#8a6d10]">{faMoney(estTotal)} تومان</b>
+   306→        </div>
+   307→        <div className="flex gap-2">
+   308→          <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-xs font-bold">انصراف</button>
+   309→          <button
+   310→            onClick={create}
+   311→            disabled={busy || activeItems.length === 0}
+   312→            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg disabled:opacity-40"
+   313→          >
+   314→            <Sparkles size={14} /> {busy ? 'در حال ساخت…' : `ساخت ${faNum(activeGroups.length)} سفارش پیش‌نویس`}
+   315→          </button>
+   316→        </div>
+   317→      </div>
+   318→    </Modal>
+   319→  )
+   320→}
+   321→
+   322→/* ───────────────── Product edit + image tools ───────────────── */
+   323→
+   324→function ProductEditModal({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
+   325→  const [form, setForm] = useState<any>(null)
+   326→  const [imgSearching, setImgSearching] = useState(false)
+   327→  const [imgQuery, setImgQuery] = useState('')
+   328→  const [imgResults, setImgResults] = useState<{ url: string }[]>([])
+   329→  const fileRef = useRef<HTMLInputElement>(null)
+   330→  const [busy, setBusy] = useState(false)
+   331→
+   332→  useEffect(() => {
+   333→    if (product) setForm({ ...product, barcodes: product.barcodes.join(', ') })
+   334→    else setForm({ name: '', barcodes: '', holooCode: '', unit: 'عدد', brand: '', category: 'عمومی', buyPrice: '', sellPrice: '', sellPrice2: '', stock: '0', reorderLevel: '12', imageUrl: '', notes: '' })
+   335→  }, [product])
+   336→
+   337→  if (!form) return null
+   338→  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }))
+   339→
+   340→  const searchImages = async () => {
+   341→    if (!imgQuery.trim()) return
+   342→    setImgSearching(true)
+   343→    try {
+   344→      const res = await api<{ images: { url: string }[] }>('/api/products/image-search', { method: 'POST', body: { query: imgQuery } })
+   345→      setImgResults(res.images)
+   346→      if (!res.images.length) toast.error('تصویری پیدا نشد — می‌توانید آدرس تصویر دستی وارد کنید یا فایل آپلود کنید')
+   347→    } catch (e: any) { toast.error(e.message) } finally { setImgSearching(false) }
+   348→  }
+   349→
+   350→  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+   351→    const file = e.target.files?.[0]
+   352→    if (!file) return
+   353→    if (file.size > 400_000) return toast.error('حجم تصویر باید کمتر از ۴۰۰ کیلوبایت باشد')
+   354→    const reader = new FileReader()
+   355→    reader.onload = () => set('imageUrl', reader.result)
+   356→    reader.readAsDataURL(file)
+   357→  }
+   358→
+   359→  const save = async () => {
+   360→    if (!form.name?.trim()) return toast.error('نام کالا الزامی است')
+   361→    setBusy(true)
+   362→    const body = {
+   363→      ...form,
+   364→      barcodes: String(form.barcodes).split(',').map((s: string) => s.trim()).filter(Boolean),
+   365→    }
+   366→    try {
+   367→      if (product) await api(`/api/products/${product.id}`, { method: 'PATCH', body })
+   368→      else await api('/api/products', { method: 'POST', body })
+   369→      toast.success('کالا ذخیره شد ✅')
+   370→      onSaved()
+   371→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   372→  }
+   373→
+   374→  return (
+   375→    <Modal title={product ? `ویرایش «${product.name}»` : 'کالای جدید'} onClose={onClose} wide>
+   376→      <div className="grid gap-3 sm:grid-cols-2">
+   377→        <Labeled label="نام کالا *"><input value={form.name} onChange={(e) => set('name', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   378→        <Labeled label="بارکدها (با کاما جدا کنید)"><input value={form.barcodes} onChange={(e) => set('barcodes', e.target.value)} className="w-full rounded-xl border border-input p-3 font-mono text-sm" dir="ltr" /></Labeled>
+   379→        <Labeled label="کد هلو"><input value={form.holooCode} onChange={(e) => set('holooCode', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   380→        <Labeled label="برند"><input value={form.brand} onChange={(e) => set('brand', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   381→        <Labeled label="دسته"><input value={form.category} onChange={(e) => set('category', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   382→        <Labeled label="واحد"><input value={form.unit} onChange={(e) => set('unit', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   383→        <Labeled label="قیمت خرید (تومان)"><input type="number" value={form.buyPrice} onChange={(e) => set('buyPrice', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   384→        <Labeled label="قیمت فروش (تومان)"><input type="number" value={form.sellPrice} onChange={(e) => set('sellPrice', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   385→        <Labeled label="قیمت فروش با تخفیف"><input type="number" value={form.sellPrice2} onChange={(e) => set('sellPrice2', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   386→        <Labeled label="موجودی انبار"><input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   387→        <Labeled label="حد سفارش مجدد (زیر این عدد، قرمز می‌شود)"><input type="number" value={form.reorderLevel} onChange={(e) => set('reorderLevel', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   388→      </div>
+   389→
+   390→      {/* image section */}
+   391→      <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   392→        <p className="mb-2 flex items-center gap-1.5 text-xs font-black"><ImagePlus size={14} /> تصویر کالا</p>
+   393→        <div className="mb-2 flex items-center gap-2">
+   394→          {form.imageUrl ? (
+   395→            <img src={form.imageUrl} alt="تصویر کالا" className="h-16 w-16 rounded-xl object-cover" />
+   396→          ) : (
+   397→            <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-secondary text-2xl">🖼️</span>
+   398→          )}
+   399→          <input value={form.imageUrl} onChange={(e) => set('imageUrl', e.target.value)} placeholder="یا آدرس اینترنتی تصویر…" className="flex-1 rounded-xl border border-input p-2.5 text-xs" dir="ltr" />
+   400→          <button onClick={() => fileRef.current?.click()} className="rounded-xl bg-secondary px-3 py-2.5 text-[11px] font-bold">📁 از دستگاه</button>
+   401→          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onUpload} />
+   402→        </div>
+   403→        <div className="flex gap-2">
+   404→          <input value={imgQuery} onChange={(e) => setImgQuery(e.target.value)} placeholder="جستجوی عکس در اینترنت: مثلاً بسته شیر پگاه…" className="flex-1 rounded-xl border border-input p-2.5 text-xs" />
+   405→          <button onClick={searchImages} disabled={imgSearching} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-[11px] font-extrabold text-white disabled:opacity-50">
+   406→            {imgSearching ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />} جستجو
+   407→          </button>
+   408→        </div>
+   409→        {imgResults.length > 0 && (
+   410→          <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+   411→            {imgResults.map((r, i) => (
+   412→              <button key={i} onClick={() => { set('imageUrl', r.url); setImgResults([]); toast.success('تصویر انتخاب شد') }} className="overflow-hidden rounded-xl border-2 border-transparent transition hover:border-primary">
+   413→                <img src={r.url} alt={`گزینه ${i + 1}`} className="h-20 w-full object-cover" />
+   414→              </button>
+   415→            ))}
+   416→          </div>
+   417→        )}
+   418→      </div>
+   419→
+   420→      <button onClick={save} disabled={busy} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   421→        {busy ? 'در حال ذخیره…' : 'ذخیره ✅'}
+   422→      </button>
+   423→    </Modal>
+   424→  )
+   425→}
+   426→
+   427→function ProductDetailModal({ product, onClose }: { product: Product; onClose: () => void }) {
+   428→  const [history, setHistory] = useState<any>(null)
+   429→  useEffect(() => {
+   430→    api<{ history: any }>(`/api/products/${product.id}`).then((d) => setHistory(d.history)).catch(() => {})
+   431→  }, [product.id])
+   432→  const margin = product.buyPrice > 0 ? Math.round(((product.sellPrice - product.buyPrice) / product.buyPrice) * 100) : 0
+   433→  return (
+   434→    <Modal title={product.name} onClose={onClose}>
+   435→      <div className="flex items-center gap-3">
+   436→        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-20 w-20 rounded-xl object-cover" /> : <span className="flex h-20 w-20 items-center justify-center rounded-xl bg-secondary text-3xl">{CATEGORY_EMOJI[product.category] || '📦'}</span>}
+   437→        <div className="flex-1 space-y-1 text-xs">
+   438→          <p><b>برند:</b> {product.brand || '—'}</p>
+   439→          <p><b>دسته:</b> {product.category}</p>
+   440→          <p><b>بارکد:</b> <span className="font-mono" dir="ltr">{product.barcodes.join(', ') || '—'}</span></p>
+   441→        </div>
+   442→      </div>
+   443→      <div className="grid grid-cols-2 gap-2">
+   444→        <KeyValue k="قیمت خرید" v={`${faMoney(product.buyPrice)}`} />
+   445→        <KeyValue k="قیمت فروش" v={`${faMoney(product.sellPrice)}`} />
+   446→        <KeyValue k="حاشیه سود" v={<span style={{ color: margin < 10 ? '#b3372f' : margin < 25 ? '#a16207' : '#0e7a4a' }}>{faNum(margin)}٪</span>} />
+   447→        <KeyValue k="موجودی" v={faNum(product.stock)} />
+   448→      </div>
+   449→      {history && (
+   450→        <div className="rounded-xl bg-muted/40 p-3 text-xs">
+   451→          <p className="font-black">📊 ماه اخیر:</p>
+   452→          <p className="mt-1">{faNum(history.orderedLastMonth)} عدد سفارش در {faNum(history.ordersLastMonth)} سفارش</p>
+   453→          {history.lastOrders.slice(0, 4).map((o: any, i: number) => (
+   454→            <p key={i} className="mt-0.5 text-[11px] text-muted-foreground">{o.code} — {faNum(o.qty)} عدد</p>
+   455→          ))}
+   456→        </div>
+   457→      )}
+   458→    </Modal>
+   459→  )
+   460→}
+   461→
+   462→/* ───────────────── Holoo XLS import wizard ───────────────── */
+   463→
+   464→type ImportRow = { name: string; barcode: string; holooCode: string; buyPrice: number; sellPrice: number; stock: number; unit: string; brand: string; category: string; duplicate: boolean; dupWith?: string }
+   465→
+   466→function ImportWizard({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+   467→  const [rows, setRows] = useState<ImportRow[]>([])
+   468→  const [existing, setExisting] = useState<Product[]>([])
+   469→  const [mode, setMode] = useState<'skip' | 'update'>('update')
+   470→  const [busy, setBusy] = useState(false)
+   471→  const [result, setResult] = useState<any>(null)
+   472→
+   473→  useEffect(() => {
+   474→    api<{ products: Product[] }>('/api/products').then((d) => setExisting(d.products))
+   475→  }, [])
+   476→
+   477→  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   478→    const file = e.target.files?.[0]
+   479→    if (!file) return
+   480→    try {
+   481→      const buf = await file.arrayBuffer()
+   482→      const wb = XLSX.read(buf, { type: 'array' })
+   483→      const ws = wb.Sheets[wb.SheetNames[0]]
+   484→      const json = XLSX.utils.sheet_to_json<any>(ws, { defval: '' })
+   485→      const mapped: ImportRow[] = json.map((r: any) => {
+   486→        // try to map common Holoo columns (Persian/English), with fallbacks
+   487→        const get = (...keys: string[]) => {
+   488→          for (const k of keys) {
+   489→            const found = Object.keys(r).find((rk) => rk.trim() === k || rk.includes(k))
+   490→            if (found && r[found] !== '') return r[found]
+   491→          }
+   492→          return ''
+   493→        }
+   494→        const name = String(get('کالا', 'شرح کالا', 'نام کالا', 'شرح', 'name', 'product', 'کالای موجود') || '').trim()
+   495→        const barcode = String(get('بارکد', 'کد بارکد', 'barcode', 'بارکد کالا') || '').trim()
+   496→        const row: ImportRow = {
+   497→          name,
+   498→          barcode,
+   499→          holooCode: String(get('کد هلو', 'کد کالا', 'کد', 'holooCode', 'code') || ''),
+   500→          buyPrice: Number(String(get('قیمت خرید', 'بهای خرید', 'خرید', 'buyPrice')).replace(/[^\d.]/g, '')) || 0,
+   501→          sellPrice: Number(String(get('قیمت فروش', 'فروش', 'sellPrice', 'قیمت')).replace(/[^\d.]/g, '')) || 0,
+   502→          stock: Number(String(get('موجودی', 'تعداد', 'stock', 'شمار')).replace(/[^\d.]/g, '')) || 0,
+   503→          unit: String(get('واحد', 'unit') || 'عدد'),
+   504→          brand: String(get('برند', 'برند کالا', 'brand') || ''),
+   505→          category: String(get('دسته', 'گروه', 'category') || 'عمومی'),
+   506→          duplicate: false,
+   507→        }
+   508→        return row
+   509→      }).filter((r: ImportRow) => r.name)
+   510→
+   511→      // duplicate detection
+   512→      const byBarcode = new Map<string, Product>()
+   513→      const byName = new Map<string, Product>()
+   514→      for (const p of existing) {
+   515→        for (const b of p.barcodes) byBarcode.set(b, p)
+   516→        byName.set(p.name.trim().toLowerCase(), p)
+   517→      }
+   518→      for (const r of mapped) {
+   519→        const hit = (r.barcode && byBarcode.get(r.barcode)) || byName.get(r.name.toLowerCase())
+   520→        if (hit) { r.duplicate = true; r.dupWith = hit.name }
+   521→      }
+   522→      setRows(mapped)
+   523→      if (!mapped.length) toast.error('سطر قابل‌نگاشت پیدا نشد — ستون‌های «نام کالا» و «بارکد» را بررسی کنید')
+   524→      else toast.success(`${faNum(mapped.length)} سطر خوانده شد، ${faNum(mapped.filter((x) => x.duplicate).length)} مورد تکراری تشخیص داده شد`)
+   525→    } catch (err: any) {
+   526→      toast.error('خواندن فایل ناموفق بود: ' + err.message)
+   527→    }
+   528→  }
+   529→
+   530→  const doImport = async () => {
+   531→    setBusy(true)
+   532→    try {
+   533→      const res = await api<any>('/api/products/import', { method: 'POST', body: { items: rows, mode } })
+   534→      setResult(res)
+   535→      toast.success(`درون‌ریزی انجام شد: ${faNum(res.created)} جدید، ${faNum(res.updated)} به‌روزرسانی، ${faNum(res.skipped)} ردشد`)
+   536→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   537→  }
+   538→
+   539→  return (
+   540→    <Modal title="ورود کالاها از فایل اکسل هلو" onClose={onClose} wide>
+   541→      {!rows.length ? (
+   542→        <div className="rounded-2xl border-2 border-dashed border-[#c9a227]/50 bg-[#fdf6dd]/40 p-8 text-center">
+   543→          <FileSpreadsheet size={40} className="mx-auto mb-3 text-[#8a6d10]" />
+   544→          <p className="text-sm font-black">فایل اکسل خروجی هلو را انتخاب کنید (.xls / .xlsx / .csv)</p>
+   545→          <p className="mx-auto mt-1 max-w-md text-[11px] leading-5 text-muted-foreground">
+   546→            ستون‌های رایج هلو (نام کالا، بارکد، کد، قیمت خرید، قیمت فروش، موجودی) به‌طور خودکار شناسایی می‌شوند و تکراری‌ها مشخص می‌گردند.
+   547→          </p>
+   548→          <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-white">
+   549→            📁 انتخاب فایل اکسل
+   550→            <input type="file" accept=".xls,.xlsx,.csv" hidden onChange={onFile} />
+   551→          </label>
+   552→        </div>
+   553→      ) : result ? (
+   554→        <div className="space-y-3 text-center">
+   555→          <p className="text-3xl">🎉</p>
+   556→          <p className="text-sm font-black">درون‌ریزی کامل شد</p>
+   557→          <div className="grid grid-cols-3 gap-2">
+   558→            <KeyValue k="جدید" v={faNum(result.created)} />
+   559→            <KeyValue k="به‌روزرسانی" v={faNum(result.updated)} />
+   560→            <KeyValue k="ردشده" v={faNum(result.skipped)} />
+   561→          </div>
+   562→          {result.log?.length > 0 && (
+   563→            <div className="scroll-gold max-h-40 overflow-y-auto rounded-xl bg-muted/40 p-3 text-right text-[11px]">
+   564→              {result.log.map((l: string, i: number) => <p key={i}>• {l}</p>)}
+   565→            </div>
+   566→          )}
+   567→          <button onClick={onDone} className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">بستن</button>
+   568→        </div>
+   569→      ) : (
+   570→        <>
+   571→          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+   572→            <p className="text-xs font-bold">{faNum(rows.length)} سطر خوانده شد — {faNum(rows.filter((r) => r.duplicate).length)} تکراری</p>
+   573→            <div className="flex gap-1.5">
+   574→              <button onClick={() => setMode('update')} className={cn('rounded-lg px-3 py-1.5 text-[11px] font-bold', mode === 'update' ? 'bg-primary text-white' : 'border')}>به‌روزرسانی تکراری‌ها</button>
+   575→              <button onClick={() => setMode('skip')} className={cn('rounded-lg px-3 py-1.5 text-[11px] font-bold', mode === 'skip' ? 'bg-primary text-white' : 'border')}>ردکردن تکراری‌ها</button>
+   576→            </div>
+   577→          </div>
+   578→          <div className="scroll-gold max-h-72 overflow-y-auto rounded-xl border border-border">
+   579→            <table className="w-full text-right text-[11px]">
+   580→              <thead className="sticky top-0 bg-secondary">
+   581→                <tr>
+   582→                  <th className="p-2">کالا</th><th className="p-2">بارکد</th><th className="p-2">خرید</th><th className="p-2">فروش</th><th className="p-2">موجودی</th><th className="p-2">وضعیت</th>
+   583→                </tr>
+   584→              </thead>
+   585→              <tbody>
+   586→                {rows.map((r, i) => (
+   587→                  <tr key={i} className={cn('border-t border-border/50', r.duplicate && 'bg-[#fef9c3]/50')}>
+   588→                    <td className="max-w-40 truncate p-2 font-bold">{r.name}</td>
+   589→                    <td className="p-2 font-mono" dir="ltr">{r.barcode || '—'}</td>
+   590→                    <td className="p-2">{r.buyPrice ? faMoney(r.buyPrice) : '—'}</td>
+   591→                    <td className="p-2">{r.sellPrice ? faMoney(r.sellPrice) : '—'}</td>
+   592→                    <td className="p-2">{r.stock || '—'}</td>
+   593→                    <td className="p-2">{r.duplicate ? <Pill label="تکراری" color="#a16207" /> : <Pill label="جدید" color="#0e7a4a" />}</td>
+   594→                  </tr>
+   595→                ))}
+   596→              </tbody>
+   597→            </table>
+   598→          </div>
+   599→          <button onClick={doImport} disabled={busy} className="mt-3 w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   600→            {busy ? 'در حال درون‌ریزی…' : `شروع درون‌ریزی (${faNum(rows.length)} کالا)`}
+   601→          </button>
+   602→        </>
+   603→      )}
+   604→    </Modal>
+   605→  )
+   606→}
+   607→
+   608→/* ───────────────── Duplicate merge wizard ───────────────── */
+   609→
+   610→function MergeWizard({ products, onClose, onDone }: { products: Product[]; onClose: () => void; onDone: () => void }) {
+   611→  const groups = useMemo(() => {
+   612→    const byName = new Map<string, Product[]>()
+   613→    for (const p of products) {
+   614→      const key = p.name.replace(/\s+/g, ' ').trim().toLowerCase()
+   615→      const norm = key.replace(/[يیكک]/g, (m) => (m === 'ي' || m === 'ی' ? 'ی' : 'ک'))
+   616→      if (!byName.has(norm)) byName.set(norm, [])
+   617→      byName.get(norm)!.push(p)
+   618→    }
+   619→    return [...byName.values()].filter((g) => g.length > 1)
+   620→  }, [products])
+   621→  const [primary, setPrimary] = useState<Record<string, string>>({})
+   622→
+   623→  const merge = async (groupName: string, ids: string[]) => {
+   624→    const primaryId = primary[groupName] || ids[0]
+   625→    try {
+   626→      await api('/api/products/merge', { method: 'POST', body: { primaryId, duplicateIds: ids.filter((i) => i !== primaryId) } })
+   627→      toast.success('ادغام انجام شد ✅ — موجودی و بارکد‌ها ترکیب شدند')
+   628→      onDone()
+   629→    } catch (e: any) { toast.error(e.message) }
+   630→  }
+   631→
+   632→  return (
+   633→    <Modal title="پاک‌سازی کالاهای تکراری" onClose={onClose} wide>
+   634→      {groups.length === 0 ? (
+   635→        <div className="py-6 text-center text-sm text-muted-foreground">
+   636→          <p className="text-3xl">✨</p>
+   637→          <p className="mt-2 font-bold">تکراری‌ای پیدا نشد — انبار تمیز است!</p>
+   638→        </div>
+   639→      ) : (
+   640→        <div className="space-y-4">
+   641→          <p className="rounded-xl bg-accent/60 p-3 text-[11px] leading-5">
+   642→            برای هر گروه تکراری، کالای «اصلی» را انتخاب کنید. موجودی‌ها جمع و همه بارکدها زیر کالای اصلی نگه‌داری می‌شوند و تکراری‌ها غیرفعال می‌گردند.
+   643→          </p>
+   644→          <div className="scroll-gold max-h-80 space-y-3 overflow-y-auto">
+   645→            {groups.map((g, gi) => {
+   646→              const key = `g${gi}`
+   647→              return (
+   648→                <div key={key} className="rounded-2xl border border-border p-3">
+   649→                  <p className="mb-2 text-xs font-black">{g[0].name.replace(/\s+/g, ' ').trim()} <span className="text-muted-foreground">({faNum(g.length)} مورد)</span></p>
+   650→                  <div className="grid gap-1.5">
+   651→                    {g.map((p) => (
+   652→                      <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-xl bg-muted/40 p-2 text-xs">
+   653→                        <input type="radio" name={key} defaultChecked={!primary[key] || primary[key] === p.id} onChange={() => setPrimary((s) => ({ ...s, [key]: p.id }))} />
+   654→                        <span className="flex-1 font-bold">{p.name}</span>
+   655→                        <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">{p.barcodes.join(', ') || '—'}</span>
+   656→                        <span>موجودی: {faNum(p.stock)}</span>
+   657→                      </label>
+   658→                    ))}
+   659→                  </div>
+   660→                  <button onClick={() => merge(key, g.map((p) => p.id))} className="mt-2 rounded-lg bg-[#8a5a2b] px-4 py-1.5 text-[11px] font-extrabold text-white">
+   661→                    ادغام این گروه
+   662→                  </button>
+   663→                </div>
+   664→              )
+   665→            })}
+   666→          </div>
+   667→        </div>
+   668→      )}
+   669→    </Modal>
+   670→  )
+   671→}
+   672→

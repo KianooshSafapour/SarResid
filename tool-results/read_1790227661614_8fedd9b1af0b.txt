@@ -1,0 +1,1016 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faMoney, faNum } from '@/lib/jalali'
+     7→import {
+     8→  SectionCard, Pill, EmptyState, Labeled, SearchInput, stockStatus, CATEGORY_EMOJI,
+     9→} from '@/components/app/ui-bits'
+    10→import type { AppCtx } from '@/components/app/ui-bits'
+    11→import { Modal } from '@/components/views/Orders'
+    12→import { cn } from '@/lib/utils'
+    13→import {
+    14→  ArrowRight, Info, LayoutGrid, Minus, Move, Plus, Save, Send, Trash2, Truck, X, ZoomIn, ZoomOut,
+    15→} from 'lucide-react'
+    16→
+    17→type PmProduct = {
+    18→  id: string; name: string; stock: number; reorderLevel: number; imageUrl: string
+    19→  category: string; sellPrice?: number; sales30?: number
+    20→}
+    21→/** سلول ذخیره‌شده: رشتهٔ productId (قرارداد قدیمی) | null | { id, qty } */
+    22→type CellVal = string | null | { id: string; qty?: number }
+    23→/** فیسینگ نرمال‌شدهٔ ادیتور */
+    24→type Facing = { id: string; qty: number } | null
+    25→type Planogram = {
+    26→  id: string; name: string; section: string; rows: number; cols: number
+    27→  layout: CellVal[][]; layoutFull?: CellVal[][]; status: string; cells: number
+    28→}
+    29→
+    30→const PL_STATUS: Record<string, { label: string; color: string }> = {
+    31→  DRAFT: { label: 'پیش‌نویس', color: '#6b7280' },
+    32→  PUBLISHED: { label: 'منتشرشده', color: '#0e7a4a' },
+    33→  ARCHIVE: { label: 'آرشیو', color: '#8a5a2b' },
+    34→}
+    35→const MANAGERS = ['GM', 'PM', 'OM']
+    36→
+    37→/* ── هندسهٔ بوم قفسه (px) — مختصات صریح LTR، مستقل از جهت سند ── */
+    38→const FACING_W = 44
+    39→const FACING_H = 84
+    40→const BOARD_H = 12
+    41→const ROW_GAP = 18
+    42→const ROW_PITCH = FACING_H + BOARD_H + ROW_GAP
+    43→const ZOOM_MIN = 0.6
+    44→const ZOOM_MAX = 1.6
+    45→const ZOOM_STEP = 0.2
+    46→const WOOD_BG = 'linear-gradient(180deg,#ead9b4 0%,#dcc79a 55%,#c9b17e 100%)'
+    47→const GOLD_RAIL = 'linear-gradient(90deg,#b8901f,#e2c25c,#c9a227,#e2c25c,#b8901f)'
+    48→const PRICE_RAIL = 'linear-gradient(90deg,#c9a22726,#e2c25c4d,#c9a22726)'
+    49→
+    50→/** رنگ پایدار برای هر دستهٔ کالا (پالت برند — بدون آبی) */
+    51→const CAT_PALETTE = ['#0e7a4a', '#77934a', '#c9a227', '#c96f4a', '#b3372f', '#8a5a2b', '#5c7236', '#a16207']
+    52→function catColor(cat: string): string {
+    53→  let h = 0
+    54→  for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) >>> 0
+    55→  return CAT_PALETTE[h % CAT_PALETTE.length]
+    56→}
+    57→
+    58→const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10))
+    59→
+    60→function toFacing(cell: CellVal): Facing {
+    61→  if (typeof cell === 'string' && cell) return { id: cell, qty: 1 }
+    62→  if (cell && typeof cell === 'object' && typeof cell.id === 'string' && cell.id)
+    63→    return { id: cell.id, qty: Math.min(99, Math.max(1, Math.round(Number(cell.qty) || 1))) }
+    64→  return null
+    65→}
+    66→
+    67→/** normalize layout matrix to exact rows×cols facings (API may return ragged/empty) */
+    68→function normalizeFacing(layout: CellVal[][] | undefined, rows: number, cols: number): Facing[][] {
+    69→  const out: Facing[][] = []
+    70→  for (let r = 0; r < rows; r++) {
+    71→    const row: Facing[] = []
+    72→    for (let c = 0; c < cols; c++) row.push(toFacing(layout?.[r]?.[c] ?? null))
+    73→    out.push(row)
+    74→  }
+    75→  return out
+    76→}
+    77→
+    78→/** ذخیره: qty=1 → رشتهٔ ساده (سازگار با FloorPlan)، غیر از آن → شیء */
+    79→function serializeFacing(f: Facing): CellVal {
+    80→  if (!f) return null
+    81→  return f.qty === 1 ? f.id : { id: f.id, qty: f.qty }
+    82→}
+    83→
+    84→/** ماتریس رشته‌ای قدیمی برای پیش‌نمایش فهرست */
+    85→function normalize(layout: CellVal[][] | undefined, rows: number, cols: number): (string | null)[][] {
+    86→  const out: (string | null)[][] = []
+    87→  for (let r = 0; r < rows; r++) {
+    88→    const row: (string | null)[] = []
+    89→    for (let c = 0; c < cols; c++) {
+    90→      const cell = layout?.[r]?.[c]
+    91→      row.push(typeof cell === 'string' ? cell || null : cell && typeof cell === 'object' ? cell.id || null : null)
+    92→    }
+    93→    out.push(row)
+    94→  }
+    95→  return out
+    96→}
+    97→
+    98→export default function PlanogramView({ ctx }: { ctx: AppCtx }) {
+    99→  const isManager = MANAGERS.includes(ctx.user!.role)
+   100→
+   101→  const [plans, setPlans] = useState<Planogram[]>([])
+   102→  const [pmap, setPmap] = useState<Record<string, PmProduct>>({})
+   103→  const [loading, setLoading] = useState(true)
+   104→  const [editingId, setEditingId] = useState<string | null>(null)
+   105→  const [draft, setDraft] = useState<Facing[][]>([])
+   106→  const [busy, setBusy] = useState(false)
+   107→  const [newOpen, setNewOpen] = useState(false)
+   108→  const [pickerCell, setPickerCell] = useState<{ r: number; c: number } | null>(null)
+   109→  const [clearCell, setClearCell] = useState<{ r: number; c: number } | null>(null)
+   110→  const [detailCell, setDetailCell] = useState<{ r: number; c: number } | null>(null)
+   111→  const [confirmDel, setConfirmDel] = useState(false)
+   112→  const [skId, setSkId] = useState<string | null>(null)
+   113→  // انتخاب برای جابه‌جایی (لمسی) + درگ (دسکتاپ) + بزرگ‌نمایی
+   114→  const [sel, setSel] = useState<{ r: number; c: number } | null>(null)
+   115→  const [moveSrc, setMoveSrc] = useState<{ r: number; c: number } | null>(null)
+   116→  const [dragSrc, setDragSrc] = useState<{ r: number; c: number } | null>(null)
+   117→  const [dragOver, setDragOver] = useState<{ r: number; c: number } | null>(null)
+   118→  const [zoom, setZoom] = useState(1)
+   119→  const canvasOuterRef = useRef<HTMLDivElement>(null)
+   120→
+   121→  const editing = plans.find((p) => p.id === editingId) || null
+   122→  const editCols = editing?.cols ?? 0
+   123→
+   124→  const load = async () => {
+   125→    try {
+   126→      const d = await api<{ planograms: Planogram[]; productMap: Record<string, PmProduct> }>('/api/planograms')
+   127→      setPlans(d.planograms || [])
+   128→      setPmap(d.productMap || {})
+   129→    } catch (e: any) {
+   130→      toast.error(e.message)
+   131→    } finally {
+   132→      setLoading(false)
+   133→    }
+   134→  }
+   135→  useEffect(() => { load() }, [])
+   136→
+   137→  // enter editor → fresh draft copy
+   138→  useEffect(() => {
+   139→    if (editing) setDraft(normalizeFacing(editing.layoutFull ?? editing.layout, editing.rows, editing.cols))
+   140→    setSel(null); setMoveSrc(null); setDragSrc(null); setDragOver(null); setDetailCell(null); setPickerCell(null); setClearCell(null)
+   141→  }, [editingId])
+   142→
+   143→  // بزرگ‌نمایی اولیه: اگر بوم در عرض صفحه جا شود ۱۰۰٪، وگرنه کوچک تا بدون اسکرول افقی بیفتد
+   144→  useEffect(() => {
+   145→    if (!editingId) return
+   146→    const el = canvasOuterRef.current
+   147→    const need = editCols * FACING_W
+   148→    if (!el || need <= 0) { setZoom(1); return }
+   149→    const avail = el.clientWidth - 26
+   150→    const fit = avail > 0 ? Math.floor((avail / need) * 10) / 10 : 1
+   151→    setZoom(Math.max(ZOOM_MIN, Math.min(1, fit)))
+   152→  }, [editingId, editCols])
+   153→
+   154→  const dirty = useMemo(
+   155→    () =>
+   156→      !!editing &&
+   157→      JSON.stringify(draft) !==
+   158→        JSON.stringify(normalizeFacing(editing.layoutFull ?? editing.layout, editing.rows, editing.cols)),
+   159→    [editing, draft]
+   160→  )
+   161→
+   162→  const filledCount = useMemo(() => draft.flat().filter(Boolean).length, [draft])
+   163→  const unitCount = useMemo(() => draft.flat().reduce((s, f) => s + (f?.qty || 0), 0), [draft])
+   164→
+   165→  /** red / yellow / green product counts for the open planogram */
+   166→  const tally = useMemo(() => {
+   167→    const t: Record<'red' | 'yellow' | 'green', number> = { red: 0, yellow: 0, green: 0 }
+   168→    for (const row of draft) {
+   169→      for (const f of row) {
+   170→        if (!f) continue
+   171→        const p = pmap[f.id]
+   172→        if (!p) continue
+   173→        t[stockStatus(p.stock, p.reorderLevel).key]++
+   174→      }
+   175→    }
+   176→    return t
+   177→  }, [draft, pmap])
+   178→
+   179→  const saveLayout = async () => {
+   180→    if (!editing || busy) return
+   181→    setBusy(true)
+   182→    try {
+   183→      await api(`/api/planograms/${editing.id}`, {
+   184→        method: 'PATCH',
+   185→        body: { layout: draft.map((row) => row.map(serializeFacing)) },
+   186→      })
+   187→      toast.success('چیدمان ذخیره شد ✅')
+   188→      await load()
+   189→    } catch (e: any) {
+   190→      toast.error(e.message)
+   191→    } finally {
+   192→      setBusy(false)
+   193→    }
+   194→  }
+   195→
+   196→  const publish = async () => {
+   197→    if (!editing || busy) return
+   198→    setBusy(true)
+   199→    try {
+   200→      await api(`/api/planograms/${editing.id}`, { method: 'PATCH', body: { status: 'PUBLISHED' } })
+   201→      toast.success('پلانوگرام برای چیدمان‌دارها منتشر شد 📣')
+   202→      await load()
+   203→    } catch (e: any) {
+   204→      toast.error(e.message)
+   205→    } finally {
+   206→      setBusy(false)
+   207→    }
+   208→  }
+   209→
+   210→  const removePlan = async () => {
+   211→    if (!editing || busy) return
+   212→    setBusy(true)
+   213→    try {
+   214→      await api(`/api/planograms/${editing.id}`, { method: 'DELETE' })
+   215→      toast.success('پلانوگرام حذف شد 🗑️')
+   216→      setConfirmDel(false)
+   217→      setEditingId(null)
+   218→      await load()
+   219→    } catch (e: any) {
+   220→      toast.error(e.message)
+   221→    } finally {
+   222→      setBusy(false)
+   223→    }
+   224→  }
+   225→
+   226→  /** merchandiser → storekeeper refill request */
+   227→  const requestRefill = async (product: PmProduct, planName: string) => {
+   228→    let sk = skId
+   229→    if (!sk) {
+   230→      try {
+   231→        const d = await api<{ users: { id: string; role: string; active: boolean }[] }>('/api/users')
+   232→        sk = d.users.find((u) => u.role === 'SK' && u.active)?.id || null
+   233→        if (sk) setSkId(sk)
+   234→      } catch (e: any) {
+   235→        toast.error(e.message)
+   236→        return
+   237→      }
+   238→    }
+   239→    if (!sk) {
+   240→      toast.error('کاربر «سرپرست انبار» در سامانه یافت نشد')
+   241→      return
+   242→    }
+   243→    try {
+   244→      await api('/api/tasks', {
+   245→        method: 'POST',
+   246→        body: {
+   247→          title: `تأمین ${product.name} برای قفسه ${planName}`,
+   248→          assignedToId: sk,
+   249→          type: 'TASK',
+   250→          priority: 'HIGH',
+   251→          description: 'درخواست از پلانوگرام',
+   252→        },
+   253→      })
+   254→      toast.success('درخواست برای انبار ارسال شد 📦')
+   255→      ctx.refreshNotifications()
+   256→    } catch (e: any) {
+   257→      toast.error(e.message)
+   258→    }
+   259→  }
+   260→
+   261→  const setFacing = (r: number, c: number, f: Facing) =>
+   262→    setDraft((d) => d.map((row, ri) => (ri !== r ? row : row.map((x, ci) => (ci === c ? f : x)))))
+   263→
+   264→  /** جابه‌جایی/تعویض دو فیسینگ (مقصد خالی = انتقال، پر = تعویض) */
+   265→  const moveCells = (src: { r: number; c: number }, dst: { r: number; c: number }) => {
+   266→    if (src.r === dst.r && src.c === dst.c) return false
+   267→    setDraft((d) => {
+   268→      const next = d.map((row) => [...row])
+   269→      const a = next[src.r]?.[src.c] ?? null
+   270→      const b = next[dst.r]?.[dst.c] ?? null
+   271→      if (!a) return d
+   272→      next[dst.r][dst.c] = a
+   273→      next[src.r][src.c] = b
+   274→      return next
+   275→    })
+   276→    return true
+   277→  }
+   278→
+   279→  const handleFacingTap = (r: number, c: number) => {
+   280→    const f = draft[r]?.[c] || null
+   281→    if (!isManager) {
+   282→      if (f) setDetailCell({ r, c })
+   283→      return
+   284→    }
+   285→    if (moveSrc) {
+   286→      const moved = moveCells(moveSrc, { r, c })
+   287→      if (moved) toast.success('کالا جابه‌جا شد — برای ثبت «ذخیره چیدمان» را بزنید')
+   288→      setMoveSrc(null)
+   289→      setSel(null)
+   290→      return
+   291→    }
+   292→    if (f) setSel(sel && sel.r === r && sel.c === c ? null : { r, c })
+   293→    else setPickerCell({ r, c })
+   294→  }
+   295→
+   296→  /* ── HTML5 drag & drop (دسکتاپ) — hit-area با transform مقیاس می‌شود ── */
+   297→  const onDragStartCell = (e: DragEvent, r: number, c: number) => {
+   298→    if (!isManager || !draft[r]?.[c]) { e.preventDefault(); return }
+   299→    e.dataTransfer.setData('text/plain', `${r}:${c}`)
+   300→    e.dataTransfer.effectAllowed = 'move'
+   301→    setDragSrc({ r, c })
+   302→    setSel(null)
+   303→  }
+   304→  const onDragOverCell = (e: DragEvent, r: number, c: number) => {
+   305→    if (!isManager || !dragSrc) return
+   306→    e.preventDefault()
+   307→    e.dataTransfer.dropEffect = 'move'
+   308→    setDragOver({ r, c })
+   309→  }
+   310→  const onDropCell = (e: DragEvent, r: number, c: number) => {
+   311→    e.preventDefault()
+   312→    const raw = e.dataTransfer.getData('text/plain') || ''
+   313→    const [sr, sc] = raw.split(':').map(Number)
+   314→    const src = dragSrc || (Number.isFinite(sr) && Number.isFinite(sc) ? { r: sr, c: sc } : null)
+   315→    if (src && draft[src.r]?.[src.c]) {
+   316→      const moved = moveCells(src, { r, c })
+   317→      if (moved) toast.success('کالا جابه‌جا شد — برای ثبت «ذخیره چیدمان» را بزنید')
+   318→    }
+   319→    setDragSrc(null)
+   320→    setDragOver(null)
+   321→  }
+   322→
+   323→  if (loading) {
+   324→    return <div className="py-16 text-center text-sm text-muted-foreground">در حال بارگذاری پلانوگرام‌ها…</div>
+   325→  }
+   326→
+   327→  /* ─────────────────────────── EDITOR ─────────────────────────── */
+   328→  if (editing) {
+   329→    const st = PL_STATUS[editing.status] || PL_STATUS.DRAFT
+   330→    const canvasW = Math.max(1, editing.cols) * FACING_W
+   331→    const canvasH = Math.max(1, editing.rows) * ROW_PITCH
+   332→    const selProduct = sel ? pmap[draft[sel.r]?.[sel.c]?.id || ''] : undefined
+   333→    const detailFacing = detailCell ? draft[detailCell.r]?.[detailCell.c] || null : null
+   334→    const detailProduct = detailFacing ? pmap[detailFacing.id] : undefined
+   335→    const clearProduct = clearCell ? pmap[draft[clearCell.r]?.[clearCell.c]?.id || ''] : undefined
+   336→
+   337→    return (
+   338→      <div className="space-y-4">
+   339→        <style dangerouslySetInnerHTML={{
+   340→          __html: `@media print{.plano-noprint{display:none!important}.plano-print-card{box-shadow:none!important;background:#fff!important}.plano-canvas-outer{overflow:visible!important;max-height:none!important;background:#fff!important;border-color:#d4c9a8!important}}`,
+   341→        }} />
+   342→
+   343→        {/* editor header */}
+   344→        <div className="glow-card fade-in-up flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-4">
+   345→          <div className="flex items-center gap-3">
+   346→            <button
+   347→              onClick={() => setEditingId(null)}
+   348→              className="plano-noprint flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-white/80 text-foreground/70 hover:border-primary/50"
+   349→              title="بازگشت به فهرست"
+   350→              aria-label="بازگشت به فهرست"
+   351→            >
+   352→              <ArrowRight size={16} />
+   353→            </button>
+   354→            <div>
+   355→              <div className="flex flex-wrap items-center gap-2">
+   356→                <h1 className="text-base font-black text-foreground sm:text-lg">{editing.name}</h1>
+   357→                <Pill label={st.label} color={st.color} />
+   358→                {dirty && <Pill label="تغییرات ذخیره‌نشده" color="#a16207" />}
+   359→              </div>
+   360→              <p className="mt-0.5 text-[11px] text-muted-foreground">
+   361→                {editing.section && <>قسمت: {editing.section} • </>}
+   362→                {faNum(editing.rows)} قفسه × {faNum(editing.cols)} فیسینگ • {faNum(filledCount)} فیسینگ پر • {faNum(unitCount)} عدد کالا
+   363→              </p>
+   364→            </div>
+   365→          </div>
+   366→          {isManager && (
+   367→            <div className="plano-noprint flex flex-wrap items-center gap-2">
+   368→              <button
+   369→                onClick={saveLayout}
+   370→                disabled={!dirty || busy}
+   371→                className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white disabled:opacity-40"
+   372→              >
+   373→                <Save size={14} /> ذخیره چیدمان
+   374→              </button>
+   375→              {editing.status !== 'PUBLISHED' && (
+   376→                <button
+   377→                  onClick={publish}
+   378→                  disabled={busy}
+   379→                  className="flex items-center gap-1.5 rounded-xl bg-[#77934a] px-4 py-2.5 text-xs font-extrabold text-white disabled:opacity-40"
+   380→                >
+   381→                  <Send size={14} /> انتشار برای چیدمان‌دارها
+   382→                </button>
+   383→              )}
+   384→              <button
+   385→                onClick={() => setConfirmDel(true)}
+   386→                disabled={busy}
+   387→                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#b3372f]/10 text-[#b3372f] hover:bg-[#b3372f]/20"
+   388→                title="حذف پلانوگرام"
+   389→                aria-label="حذف پلانوگرام"
+   390→              >
+   391→                <Trash2 size={15} />
+   392→              </button>
+   393→            </div>
+   394→          )}
+   395→        </div>
+   396→
+   397→        {/* grid */}
+   398→        <SectionCard
+   399→          title="شبکهٔ قفسه"
+   400→          subtitle={
+   401→            isManager
+   402→              ? 'کالا را بکشید و رها کنید یا لمس کنید و مقصد را بزنید • «+» = افزودن کالا • تعداد و حذف از دکمهٔ «جزئیات»'
+   403→              : 'روی هر کالا بزنید تا جزئیات و دکمهٔ «درخواست از انبار» را ببینید'
+   404→          }
+   405→          icon={<LayoutGrid size={18} />}
+   406→        >
+   407→          {/* summary strip */}
+   408→          <div className="plano-noprint mb-3 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+   409→            <span className="rounded-full bg-[#b3372f]/10 px-3 py-1.5 text-[#b3372f]">
+   410→              ● کمبود جدی: {faNum(tally.red)}
+   411→            </span>
+   412→            <span className="rounded-full bg-[#b8860b]/10 px-3 py-1.5 text-[#8a6d10]">
+   413→              ● رو به اتمام: {faNum(tally.yellow)}
+   414→            </span>
+   415→            <span className="rounded-full bg-[#0e7a4a]/10 px-3 py-1.5 text-[#0e7a4a]">
+   416→              ● موجودی مناسب: {faNum(tally.green)}
+   417→            </span>
+   418→            <span className="rounded-full bg-[#c96f4a]/10 px-3 py-1.5 text-[#c96f4a]" title="کالاهای قفسه با ۸ فروش یا بیشتر در ۳۰ روز اخیر">
+   419→              🔥 پرفروش: {faNum(draft.flat().filter((f) => f && pmap[f.id] && (pmap[f.id].sales30 || 0) >= 8).length)}
+   420→            </span>
+   421→            <span className="mr-auto text-[9px] font-bold text-muted-foreground">
+   422→              نوار رنگی = موجودی • نقطهٔ رنگی = دسته • نوار طلایی = قیمت • ×۲ = تعداد فیسینگ
+   423→            </span>
+   424→          </div>
+   425→
+   426→          {/* zoom toolbar */}
+   427→          {isManager && (
+   428→            <div className="plano-noprint mb-3 flex flex-wrap items-center gap-2">
+   429→              <div className="flex items-center gap-1 rounded-xl border border-border bg-white/80 p-1">
+   430→                <button
+   431→                  onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
+   432→                  disabled={zoom <= ZOOM_MIN + 0.001}
+   433→                  className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground/70 hover:bg-muted disabled:opacity-30"
+   434→                  title="کوچک‌نمایی"
+   435→                  aria-label="کوچک‌نمایی"
+   436→                >
+   437→                  <ZoomOut size={14} />
+   438→                </button>
+   439→                <button
+   440→                  onClick={() => setZoom(1)}
+   441→                  className="min-w-12 rounded-lg px-1 text-center text-[10px] font-black text-foreground/80 hover:bg-muted"
+   442→                  title="بازنشانی بزرگ‌نمایی به ۱۰۰٪"
+   443→                >
+   444→                  {faNum(Math.round(zoom * 100))}٪
+   445→                </button>
+   446→                <button
+   447→                  onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
+   448→                  disabled={zoom >= ZOOM_MAX - 0.001}
+   449→                  className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground/70 hover:bg-muted disabled:opacity-30"
+   450→                  title="بزرگ‌نمایی"
+   451→                  aria-label="بزرگ‌نمایی"
+   452→                >
+   453→                  <ZoomIn size={14} />
+   454→                </button>
+   455→              </div>
+   456→              <span className="text-[9px] font-bold text-muted-foreground">بزرگ‌نمایی ۶۰٪ تا ۱۶۰٪ — برای بازگشت روی درصد بزنید</span>
+   457→            </div>
+   458→          )}
+   459→
+   460→          {/* empty planogram (no shelf rows) */}
+   461→          {editing.rows < 1 || editing.cols < 1 ? (
+   462→            <EmptyState
+   463→              emoji="🧱"
+   464→              title="قفسه‌ای بسازید تا کالاها را بچینید"
+   465→              hint="این پلانوگرام ردیف یا فیسینگی ندارد — از دکمهٔ «پلانوگرام جدید» یک قفسه با ردیف و فیسینگ بسازید"
+   466→            />
+   467→          ) : (
+   468→            <div
+   469→              ref={canvasOuterRef}
+   470→              className="plano-canvas-outer scroll-gold overflow-x-auto rounded-2xl border border-border/70 p-3 shadow-inner"
+   471→              style={{ background: 'linear-gradient(180deg,#f7f2e3,#efe7d2)' }}
+   472→            >
+   473→              {/* جعبهٔ مقیاس‌شده: ابعاد بیرونی = بوم × بزرگ‌نمایی تا hit-area درست بماند */}
+   474→              <div className="relative" style={{ width: Math.round(canvasW * zoom), height: Math.round(canvasH * zoom) }}>
+   475→                {/* بوم LTR با مختصات صریح left/top — مستقل از RTL سند؛ متن‌ها داخل فیسینگ RTL هستند */}
+   476→                <div
+   477→                  dir="ltr"
+   478→                  className="absolute left-0 top-0 origin-top-left"
+   479→                  style={{ width: canvasW, height: canvasH, transform: `scale(${zoom})` }}
+   480→                >
+   481→                  {draft.map((row, ri) => {
+   482→                    const rowFilled = row.filter(Boolean).length
+   483→                    return (
+   484→                      <div
+   485→                        key={ri}
+   486→                        className="fade-in-up absolute left-0"
+   487→                        style={{ top: ri * ROW_PITCH, width: canvasW, height: FACING_H + BOARD_H, animationDelay: `${ri * 45}ms` }}
+   488→                      >
+   489→                        {/* لایهٔ فیسینگ‌ها — position صریح */}
+   490→                        <div className="relative" style={{ height: FACING_H, width: canvasW }}>
+   491→                          {row.map((f, ci) => {
+   492→                            const p = f ? pmap[f.id] : undefined
+   493→                            const ss = p ? stockStatus(p.stock, p.reorderLevel) : null
+   494→                            const isSelected = !!sel && sel.r === ri && sel.c === ci
+   495→                            const isMoveSrc = !!moveSrc && moveSrc.r === ri && moveSrc.c === ci
+   496→                            const isDragOver = !!dragOver && dragOver.r === ri && dragOver.c === ci
+   497→                            const isDragSrc = !!dragSrc && dragSrc.r === ri && dragSrc.c === ci
+   498→                            return (
+   499→                              <div
+   500→                                key={ci}
+   501→                                dir="rtl"
+   502→                                title={p ? `${p.name} — موجودی ${faNum(p.stock)} (${ss?.label})${(p.sales30 || 0) >= 3 ? ` • فروش ماه: ${faNum(p.sales30 || 0)}` : ''}${f && f.qty > 1 ? ` • ${faNum(f.qty)} عدد روی قفسه` : ''}` : 'خانهٔ خالی'}
+   503→                                draggable={isManager && !!p}
+   504→                                onDragStart={(e) => onDragStartCell(e, ri, ci)}
+   505→                                onDragOver={(e) => onDragOverCell(e, ri, ci)}
+   506→                                onDragEnd={() => { setDragSrc(null); setDragOver(null) }}
+   507→                                onDrop={(e) => onDropCell(e, ri, ci)}
+   508→                                onClick={() => handleFacingTap(ri, ci)}
+   509→                                className={cn(
+   510→                                  'absolute flex select-none flex-col items-center overflow-hidden rounded-lg border transition',
+   511→                                  isManager && (p ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'),
+   512→                                  p
+   513→                                    ? 'border-border bg-white/90 shadow-sm hover:border-primary/60 hover:shadow-md'
+   514→                                    : cn(
+   515→                                        'border-dashed bg-white/40',
+   516→                                        isManager ? 'border-border/80' : 'border-border/60',
+   517→                                        moveSrc && isManager && 'border-solid border-primary/50 bg-primary/5'
+   518→                                      ),
+   519→                                  isSelected && 'ring-2 ring-[#c9a227] ring-offset-1',
+   520→                                  isMoveSrc && 'border-2 border-dashed border-[#0e7a4a] opacity-70',
+   521→                                  isDragOver && 'ring-2 ring-[#c96f4a] bg-[#c96f4a]/10',
+   522→                                  isDragSrc && 'opacity-40',
+   523→                                  p && (p.sales30 || 0) >= 8 && 'ring-1 ring-[#c96f4a]/60'
+   524→                                )}
+   525→                                style={{ left: ci * FACING_W + 1, top: 1, width: FACING_W - 2, height: FACING_H - 2 }}
+   526→                              >
+   527→                                {p ? (
+   528→                                  <>
+   529→                                    {(p.sales30 || 0) >= 8 && (
+   530→                                      <span className="fire-pulse absolute left-0.5 top-0.5 rounded-full bg-[#c96f4a]/90 px-1 text-[7px] shadow-sm" title="پرفروش — ۸ عدد یا بیشتر در ماه">🔥</span>
+   531→                                    )}
+   532→                                    {f && f.qty > 1 && (
+   533→                                      <span className="absolute right-0.5 top-0.5 rounded bg-[#77934a] px-1 py-px text-[7px] font-black leading-3 text-white" title={`${faNum(f.qty)} عدد در این فیسینگ`}>×{faNum(f.qty)}</span>
+   534→                                    )}
+   535→                                    <span className="mt-1.5 text-[15px] leading-none">{CATEGORY_EMOJI[p.category] || '📦'}</span>
+   536→                                    <span className="w-full truncate px-0.5 text-center text-[8px] font-bold leading-[10px] text-foreground/90">{p.name}</span>
+   537→                                    <span className="text-[7.5px] font-black leading-3" style={{ color: ss?.color }}>
+   538→                                      {faNum(p.stock)} عدد
+   539→                                    </span>
+   540→                                    <span
+   541→                                      className="h-1.5 w-1.5 rounded-full ring-1 ring-black/10"
+   542→                                      style={{ background: catColor(p.category) }}
+   543→                                      title={`دسته: ${p.category}`}
+   544→                                    />
+   545→                                    {/* نوار وضعیت موجودی + ریل طلایی قیمت (لبهٔ قفسه) */}
+   546→                                    <span className="absolute inset-x-0 bottom-[12px] h-[3px]" style={{ background: ss?.color || '#6b7280' }} />
+   547→                                    <span
+   548→                                      className="absolute inset-x-0 bottom-0 flex h-[12px] items-center justify-center border-t border-[#c9a227]/40 text-[7px] font-black text-[#8a6d10]"
+   549→                                      style={{ background: PRICE_RAIL }}
+   550→                                      title={(p.sellPrice || 0) > 0 ? `قیمت: ${faMoney(p.sellPrice)} تومان` : 'بدون قیمت'}
+   551→                                    >
+   552→                                      {(p.sellPrice || 0) > 0 ? faMoney(p.sellPrice) : '—'}
+   553→                                    </span>
+   554→                                  </>
+   555→                                ) : isManager ? (
+   556→                                  <span className="flex h-full w-full flex-col items-center justify-center gap-0.5 text-muted-foreground/60">
+   557→                                    <Plus size={13} />
+   558→                                    <span className="text-[8px] font-bold">افزودن</span>
+   559→                                  </span>
+   560→                                ) : (
+   561→                                  <span className="flex h-full w-full flex-col items-center justify-center text-muted-foreground/40">
+   562→                                    <span className="text-[8px] font-bold">خالی</span>
+   563→                                  </span>
+   564→                                )}
+   565→                              </div>
+   566→                            )
+   567→                          })}
+   568→                        </div>
+   569→                        {/* تختهٔ چوبی قفسه + ریل طلایی لیبل */}
+   570→                        <div
+   571→                          className="relative rounded-[4px] border border-[#b99e69]"
+   572→                          style={{ height: BOARD_H, width: canvasW + 12, marginInline: -6, background: WOOD_BG }}
+   573→                        >
+   574→                          <span className="absolute inset-x-0 top-0 h-[3px] rounded-t-[4px]" style={{ background: GOLD_RAIL }} />
+   575→                          <span dir="rtl" className="absolute right-1.5 top-[2px] text-[7.5px] font-black leading-[8px] text-[#7a5a28]">
+   576→                            قفسهٔ {faNum(ri + 1)}
+   577→                          </span>
+   578→                          {canvasW >= 190 && (
+   579→                            <span dir="rtl" className="absolute left-1.5 top-[2px] text-[7.5px] font-black leading-[8px] text-[#8a6d10]/80">
+   580→                              {faNum(rowFilled)} کالا
+   581→                            </span>
+   582→                          )}
+   583→                        </div>
+   584→                      </div>
+   585→                    )
+   586→                  })}
+   587→                </div>
+   588→              </div>
+   589→            </div>
+   590→          )}
+   591→
+   592→          {/* hint: empty planogram with rows but zero products */}
+   593→          {editing.rows >= 1 && editing.cols >= 1 && filledCount === 0 && isManager && (
+   594→            <p className="plano-noprint mt-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2 text-center text-[11px] font-bold text-muted-foreground">
+   595→              همهٔ فیسینگ‌ها خالی است — روی «+ افزودن» هر خانه بزنید و کالا بگذارید 🧺
+   596→            </p>
+   597→          )}
+   598→
+   599→          {/* move-mode hint bar */}
+   600→          {moveSrc && (
+   601→            <div className="plano-noprint mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#0e7a4a]/40 bg-[#0e7a4a]/10 p-2.5">
+   602→              <p className="text-[11px] font-black text-[#0e7a4a]">
+   603→                حالا خانهٔ مقصد را لمس کنید (خانهٔ پر = تعویض جای دو کالا) — لمس همان خانه = لغو
+   604→              </p>
+   605→              <button onClick={() => setMoveSrc(null)} className="rounded-lg border border-border bg-white/80 px-3 py-1.5 text-[10px] font-bold">
+   606→                لغو جابه‌جایی
+   607→              </button>
+   608→            </div>
+   609→          )}
+   610→
+   611→          {/* selected-facing action bar */}
+   612→          {!moveSrc && sel && isManager && (
+   613→            <div className="plano-noprint mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#c9a227]/50 bg-[#c9a227]/10 p-2.5">
+   614→              <span className="text-xl leading-none">{selProduct ? CATEGORY_EMOJI[selProduct.category] || '📦' : '📦'}</span>
+   615→              <span className="min-w-0 flex-1 truncate text-[11px] font-black text-foreground">
+   616→                {selProduct ? selProduct.name : 'کالای ناشناس'}
+   617→              </span>
+   618→              <button
+   619→                onClick={() => { setMoveSrc(sel); setSel(null) }}
+   620→                className="flex items-center gap-1 rounded-lg bg-[#77934a] px-3 py-1.5 text-[10px] font-black text-white hover:opacity-90"
+   621→              >
+   622→                <Move size={12} /> جابه‌جایی
+   623→              </button>
+   624→              <button
+   625→                onClick={() => { setDetailCell(sel); setSel(null) }}
+   626→                className="flex items-center gap-1 rounded-lg border border-border bg-white/80 px-3 py-1.5 text-[10px] font-black text-foreground/80 hover:border-primary/50"
+   627→              >
+   628→                <Info size={12} /> جزئیات
+   629→              </button>
+   630→              <button
+   631→                onClick={() => { setClearCell(sel); setSel(null) }}
+   632→                className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-3 py-1.5 text-[10px] font-black text-[#b3372f] hover:bg-[#b3372f]/20"
+   633→              >
+   634→                <Trash2 size={12} /> خالی‌کردن
+   635→              </button>
+   636→              <button
+   637→                onClick={() => setSel(null)}
+   638→                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+   639→                title="بستن"
+   640→                aria-label="بستن نوار انتخاب"
+   641→              >
+   642→                <X size={13} />
+   643→              </button>
+   644→            </div>
+   645→          )}
+   646→        </SectionCard>
+   647→
+   648→        {/* facing detail modal */}
+   649→        {detailCell && (
+   650→          <Modal title="فیسینگ قفسه" onClose={() => setDetailCell(null)}>
+   651→            {detailFacing ? (
+   652→              <div className="space-y-3">
+   653→                <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-3">
+   654→                  <span className="text-2xl">{detailProduct ? CATEGORY_EMOJI[detailProduct.category] || '📦' : '📦'}</span>
+   655→                  <div className="min-w-0">
+   656→                    <p className="truncate text-sm font-black">{detailProduct ? detailProduct.name : 'کالای ناشناس'}</p>
+   657→                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+   658→                      {detailProduct && (
+   659→                        <>
+   660→                          <span className="inline-flex items-center gap-1">
+   661→                            <span className="h-2 w-2 rounded-full" style={{ background: catColor(detailProduct.category) }} />
+   662→                            {detailProduct.category}
+   663→                          </span>
+   664→                          {' • '}
+   665→                          <span style={{ color: stockStatus(detailProduct.stock, detailProduct.reorderLevel).color }}>
+   666→                            {faNum(detailProduct.stock)} عدد — {stockStatus(detailProduct.stock, detailProduct.reorderLevel).label}
+   667→                          </span>
+   668→                          {(detailProduct.sellPrice || 0) > 0 && <> • {faMoney(detailProduct.sellPrice)} تومان</>}
+   669→                          {(detailProduct.sales30 || 0) >= 3 && <> • فروش ماه: {faNum(detailProduct.sales30 || 0)}</>}
+   670→                        </>
+   671→                      )}
+   672→                    </p>
+   673→                  </div>
+   674→                </div>
+   675→
+   676→                {isManager && (
+   677→                  <div className="flex items-center justify-between rounded-xl border border-border bg-white/80 p-2">
+   678→                    <span className="text-[11px] font-bold text-foreground/80">تعداد در این فیسینگ</span>
+   679→                    <div className="flex items-center gap-1.5">
+   680→                      <button
+   681→                        onClick={() => detailFacing && setFacing(detailCell.r, detailCell.c, { id: detailFacing.id, qty: Math.max(1, detailFacing.qty - 1) })}
+   682→                        disabled={!detailFacing || detailFacing.qty <= 1}
+   683→                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-foreground/80 hover:bg-border disabled:opacity-30"
+   684→                        title="کم کردن"
+   685→                        aria-label="کم کردن تعداد"
+   686→                      >
+   687→                        <Minus size={14} />
+   688→                      </button>
+   689→                      <span className="min-w-10 text-center text-sm font-black">{faNum(detailFacing?.qty || 1)}</span>
+   690→                      <button
+   691→                        onClick={() => detailFacing && setFacing(detailCell.r, detailCell.c, { id: detailFacing.id, qty: Math.min(99, detailFacing.qty + 1) })}
+   692→                        disabled={!detailFacing || detailFacing.qty >= 99}
+   693→                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-foreground/80 hover:bg-border disabled:opacity-30"
+   694→                        title="اضافه کردن"
+   695→                        aria-label="اضافه کردن تعداد"
+   696→                      >
+   697→                        <Plus size={14} />
+   698→                      </button>
+   699→                    </div>
+   700→                  </div>
+   701→                )}
+   702→
+   703→                <div className="flex gap-2">
+   704→                  {isManager ? (
+   705→                    <>
+   706→                      <button
+   707→                        onClick={() => { setPickerCell({ r: detailCell.r, c: detailCell.c }); setDetailCell(null) }}
+   708→                        className="flex-1 rounded-xl bg-[#77934a] py-2.5 text-xs font-extrabold text-white"
+   709→                      >
+   710→                        تغییر کالا
+   711→                      </button>
+   712→                      <button
+   713→                        onClick={() => { setClearCell({ r: detailCell.r, c: detailCell.c }); setDetailCell(null) }}
+   714→                        className="flex-1 rounded-xl bg-[#b3372f] py-2.5 text-xs font-extrabold text-white"
+   715→                      >
+   716→                        خالی‌کردن خانه
+   717→                      </button>
+   718→                    </>
+   719→                  ) : (
+   720→                    detailProduct && (
+   721→                      <button
+   722→                        onClick={() => { requestRefill(detailProduct, editing.name); setDetailCell(null) }}
+   723→                        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#77934a] py-2.5 text-xs font-extrabold text-white"
+   724→                      >
+   725→                        <Truck size={14} /> درخواست از انبار
+   726→                      </button>
+   727→                    )
+   728→                  )}
+   729→                </div>
+   730→                {isManager && <p className="text-center text-[11px] text-muted-foreground">تغییرات پس از «ذخیره چیدمان» ثبت می‌شود</p>}
+   731→              </div>
+   732→            ) : (
+   733→              <p className="text-sm text-muted-foreground">این خانه خالی است.</p>
+   734→            )}
+   735→          </Modal>
+   736→        )}
+   737→
+   738→        {/* clear cell modal (managers) */}
+   739→        {clearCell && (
+   740→          <Modal title="خانهٔ قفسه" onClose={() => setClearCell(null)}>
+   741→            {clearProduct ? (
+   742→              <>
+   743→                <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-3">
+   744→                  <span className="text-2xl">{CATEGORY_EMOJI[clearProduct.category] || '📦'}</span>
+   745→                  <div>
+   746→                    <p className="text-sm font-black">{clearProduct.name}</p>
+   747→                    <p className="text-[11px] text-muted-foreground">
+   748→                      موجودی {faNum(clearProduct.stock)} — {stockStatus(clearProduct.stock, clearProduct.reorderLevel).label}
+   749→                    </p>
+   750→                  </div>
+   751→                </div>
+   752→                <button
+   753→                  onClick={() => { setFacing(clearCell.r, clearCell.c, null); setClearCell(null); setSel(null) }}
+   754→                  className="w-full rounded-xl bg-[#b3372f] py-2.5 text-xs font-extrabold text-white"
+   755→                >
+   756→                  خالی‌کردن خانه
+   757→                </button>
+   758→                <p className="text-center text-[11px] text-muted-foreground">تغییر پس از «ذخیره چیدمان» ثبت می‌شود</p>
+   759→              </>
+   760→            ) : (
+   761→              <p className="text-sm text-muted-foreground">این خانه خالی است.</p>
+   762→            )}
+   763→          </Modal>
+   764→        )}
+   765→
+   766→        {/* product picker modal (managers) */}
+   767→        {pickerCell && (
+   768→          <ProductPicker
+   769→            pmap={pmap}
+   770→            onPick={(pid) => {
+   771→              setFacing(pickerCell.r, pickerCell.c, { id: pid, qty: 1 })
+   772→              setPickerCell(null)
+   773→              setSel(null)
+   774→            }}
+   775→            onClose={() => setPickerCell(null)}
+   776→          />
+   777→        )}
+   778→
+   779→        {/* delete confirm */}
+   780→        {confirmDel && (
+   781→          <Modal title="حذف پلانوگرام" onClose={() => setConfirmDel(false)}>
+   782→            <p className="text-sm text-foreground/80">
+   783→              «{editing.name}» و کل چیدمان آن برای همیشه حذف می‌شود. مطمئن هستید؟
+   784→            </p>
+   785→            <div className="flex gap-2">
+   786→              <button
+   787→                onClick={removePlan}
+   788→                disabled={busy}
+   789→                className="flex-1 rounded-xl bg-[#b3372f] py-2.5 text-xs font-extrabold text-white disabled:opacity-50"
+   790→              >
+   791→                حذف قطعی
+   792→              </button>
+   793→              <button onClick={() => setConfirmDel(false)} className="flex-1 rounded-xl border py-2.5 text-xs font-bold">
+   794→                انصراف
+   795→              </button>
+   796→            </div>
+   797→          </Modal>
+   798→        )}
+   799→      </div>
+   800→    )
+   801→  }
+   802→
+   803→  /* ─────────────────────────── LIST ─────────────────────────── */
+   804→  return (
+   805→    <div className="space-y-4">
+   806→      <SectionCard
+   807→        title="پلانوگرام قفسه‌ها"
+   808→        subtitle={
+   809→          isManager
+   810→            ? 'طراحی چیدمان قفسه‌ها (ردیف × فیسینگ)، انتشار برای چیدمان‌دارها و پایش موجودی هر خانه'
+   811→            : 'چیدمان قفسه‌ها را ببینید و برای تأمین هر کالا از انبار درخواست بفرستید'
+   812→        }
+   813→        icon={<LayoutGrid size={18} />}
+   814→        actions={
+   815→          isManager && (
+   816→            <button
+   817→              onClick={() => setNewOpen(true)}
+   818→              className="plano-noprint flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-extrabold text-white"
+   819→            >
+   820→              <Plus size={14} /> پلانوگرام جدید
+   821→            </button>
+   822→          )
+   823→        }
+   824→      >
+   825→        {plans.length === 0 ? (
+   826→          <EmptyState
+   827→            emoji="🧱"
+   828→            title="پلانوگرامی ثبت نشده"
+   829→            hint={isManager ? 'با دکمهٔ «پلانوگرام جدید» اولین چیدمان قفسه را بسازید' : 'هنوز مدیریتی پلانوگرامی منتشر نکرده است'}
+   830→          />
+   831→        ) : (
+   832→          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+   833→            {plans.map((pl, idx) => {
+   834→              const st = PL_STATUS[pl.status] || PL_STATUS.DRAFT
+   835→              const norm = normalize(pl.layout, pl.rows, pl.cols)
+   836→              const red = norm.flat().filter((id) => id && pmap[id] && stockStatus(pmap[id].stock, pmap[id].reorderLevel).key === 'red').length
+   837→              const green = norm.flat().filter((id) => id && pmap[id] && stockStatus(pmap[id].stock, pmap[id].reorderLevel).key === 'green').length
+   838→              return (
+   839→                <button
+   840→                  key={pl.id}
+   841→                  type="button"
+   842→                  onClick={() => setEditingId(pl.id)}
+   843→                  className="glow-card fade-in-up rounded-2xl bg-card p-4 text-right transition-all hover:-translate-y-0.5"
+   844→                  style={{ animationDelay: `${Math.min(idx * 45, 360)}ms` }}
+   845→                >
+   846→                  <div className="flex items-start justify-between gap-2">
+   847→                    <div>
+   848→                      <p className="text-sm font-black text-foreground">{pl.name}</p>
+   849→                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+   850→                        {pl.section ? `قسمت: ${pl.section} • ` : ''}
+   851→                        {faNum(pl.rows)} قفسه × {faNum(pl.cols)} فیسینگ • {faNum(pl.cells)} کالا
+   852→                      </p>
+   853→                    </div>
+   854→                    <Pill label={st.label} color={st.color} />
+   855→                  </div>
+   856→                  {/* mini preview */}
+   857→                  <div className="mt-3 grid gap-0.5" style={{ gridTemplateColumns: `repeat(${pl.cols}, 1fr)`, maxWidth: 150 }}>
+   858→                    {norm.flat().map((id, i) => {
+   859→                      const p = id ? pmap[id] : undefined
+   860→                      return (
+   861→                        <span
+   862→                          key={i}
+   863→                          className="h-1.5 rounded-sm"
+   864→                          style={{ background: p ? stockStatus(p.stock, p.reorderLevel).color : '#e7e1cf' }}
+   865→                        />
+   866→                      )
+   867→                    })}
+   868→                  </div>
+   869→                  <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
+   870→                    <span className="rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[#b3372f]">قرمز {faNum(red)}</span>
+   871→                    <span className="rounded-full bg-[#0e7a4a]/10 px-2 py-0.5 text-[#0e7a4a]">سبز {faNum(green)}</span>
+   872→                  </div>
+   873→                </button>
+   874→              )
+   875→            })}
+   876→          </div>
+   877→        )}
+   878→      </SectionCard>
+   879→
+   880→      {newOpen && (
+   881→        <NewPlanogramModal
+   882→          onClose={() => setNewOpen(false)}
+   883→          onCreated={async (id) => { setNewOpen(false); await load(); setEditingId(id) }}
+   884→        />
+   885→      )}
+   886→    </div>
+   887→  )
+   888→}
+   889→
+   890→/* ─────────────────────────── new planogram modal ─────────────────────────── */
+   891→function NewPlanogramModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+   892→  const [form, setForm] = useState({ name: '', section: '', rows: '3', cols: '6' })
+   893→  const [busy, setBusy] = useState(false)
+   894→  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
+   895→
+   896→  const save = async () => {
+   897→    if (!form.name.trim()) return toast.error('نام پلانوگرام الزامی است')
+   898→    const rows = Math.min(12, Math.max(1, Number(form.rows) || 3))
+   899→    const cols = Math.min(40, Math.max(1, Number(form.cols) || 6))
+   900→    setBusy(true)
+   901→    try {
+   902→      const res = await api<{ planogram: Planogram }>('/api/planograms', {
+   903→        method: 'POST',
+   904→        body: { name: form.name.trim(), section: form.section.trim(), rows, cols },
+   905→      })
+   906→      toast.success('پلانوگرام ساخته شد — حالا فیسینگ‌ها را پر کنید 🧱')
+   907→      onCreated(res.planogram.id)
+   908→    } catch (e: any) {
+   909→      toast.error(e.message)
+   910→      setBusy(false)
+   911→    }
+   912→  }
+   913→
+   914→  return (
+   915→    <Modal title="پلانوگرام جدید" onClose={onClose}>
+   916→      <Labeled label="نام پلانوگرام *">
+   917→        <input
+   918→          value={form.name}
+   919→          onChange={(e) => set('name', e.target.value)}
+   920→          placeholder="مثلاً: قفسه لبنیات — ردیف شرقی"
+   921→          className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm"
+   922→        />
+   923→      </Labeled>
+   924→      <Labeled label="قسمت فروشگاه">
+   925→        <input
+   926→          value={form.section}
+   927→          onChange={(e) => set('section', e.target.value)}
+   928→          placeholder="مثلاً: لبنیات"
+   929→          className="w-full rounded-xl border border-input bg-white/90 p-3 text-sm"
+   930→        />
+   931→      </Labeled>
+   932→      <div className="grid grid-cols-2 gap-3">
+   933→        <Labeled label="تعداد قفسه / ردیف (۱ تا ۱۲)">
+   934→          <input
+   935→            type="number" dir="ltr" min={1} max={12}
+   936→            value={form.rows}
+   937→            onChange={(e) => set('rows', e.target.value)}
+   938→            className="w-full rounded-xl border border-input bg-white/90 p-3 text-center text-sm font-black"
+   939→          />
+   940→        </Labeled>
+   941→        <Labeled label="فیسینگ در هر قفسه (۱ تا ۴۰)">
+   942→          <input
+   943→            type="number" dir="ltr" min={1} max={40}
+   944→            value={form.cols}
+   945→            onChange={(e) => set('cols', e.target.value)}
+   946→            className="w-full rounded-xl border border-input bg-white/90 p-3 text-center text-sm font-black"
+   947→          />
+   948→        </Labeled>
+   949→      </div>
+   950→      <button onClick={save} disabled={busy} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   951→        {busy ? '…' : 'ساخت پلانوگرام 🧱'}
+   952→      </button>
+   953→    </Modal>
+   954→  )
+   955→}
+   956→
+   957→/* ─────────────────────────── product picker (lazy list) ─────────────────────────── */
+   958→function ProductPicker({
+   959→  pmap, onPick, onClose,
+   960→}: { pmap: Record<string, PmProduct>; onPick: (id: string) => void; onClose: () => void }) {
+   961→  const [q, setQ] = useState('')
+   962→  const [visible, setVisible] = useState(24)
+   963→
+   964→  const all = useMemo(() => {
+   965→    const list = Object.values(pmap)
+   966→    if (!q.trim()) return list
+   967→    const needle = q.trim()
+   968→    return list.filter((p) => p.name.includes(needle) || p.category.includes(needle))
+   969→  }, [pmap, q])
+   970→
+   971→  const shown = all.slice(0, visible)
+   972→
+   973→  return (
+   974→    <Modal title="انتخاب کالا برای فیسینگ قفسه" onClose={onClose}>
+   975→      <SearchInput value={q} onChange={(v) => { setQ(v); setVisible(24) }} placeholder="جستجوی نام کالا یا دسته…" />
+   976→      <div className="scroll-gold max-h-[46vh] space-y-1.5 overflow-y-auto pl-1">
+   977→        {shown.length === 0 && <EmptyState emoji="🔍" title="کالایی پیدا نشد" hint="عبارت دیگری را امتحان کنید" />}
+   978→        {shown.map((p) => {
+   979→          const ss = stockStatus(p.stock, p.reorderLevel)
+   980→          return (
+   981→            <button
+   982→              key={p.id}
+   983→              type="button"
+   984→              onClick={() => onPick(p.id)}
+   985→              className="flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-white/80 p-2.5 text-right transition hover:border-primary/60"
+   986→            >
+   987→              <span className="flex min-w-0 items-center gap-2">
+   988→                <span className="text-lg">{CATEGORY_EMOJI[p.category] || '📦'}</span>
+   989→                <span className="min-w-0">
+   990→                  <span className="block truncate text-xs font-bold text-foreground">{p.name}</span>
+   991→                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+   992→                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: catColor(p.category) }} />
+   993→                    {p.category}
+   994→                  </span>
+   995→                </span>
+   996→              </span>
+   997→              <span className="shrink-0 text-left">
+   998→                <span className="block text-[10px] font-bold" style={{ color: ss.color }}>{ss.label}</span>
+   999→                <span className="block text-[10px] text-muted-foreground">{faNum(p.stock)} عدد</span>
+  1000→              </span>
+  1001→            </button>
+  1002→          )
+  1003→        })}
+  1004→      </div>
+  1005→      {visible < all.length && (
+  1006→        <button
+  1007→          onClick={() => setVisible((v) => v + 24)}
+  1008→          className="w-full rounded-xl border py-2.5 text-xs font-extrabold text-foreground/70 hover:border-primary/50"
+  1009→        >
+  1010→          نمایش بیشتر ({faNum(all.length - visible)} کالای دیگر)
+  1011→        </button>
+  1012→      )}
+  1013→    </Modal>
+  1014→  )
+  1015→}
+  1016→

@@ -1,0 +1,652 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useEffect, useMemo, useRef, useState } from 'react'
+     4→     4→import { createPortal } from 'react-dom'
+     5→     5→import { toast } from 'sonner'
+     6→     6→import * as XLSX from 'xlsx'
+     7→     7→import JsBarcode from 'jsbarcode'
+     8→     8→import { api } from '@/lib/client'
+     9→     9→import { faMoney, faNum, formatJalaliFull, todayIso } from '@/lib/jalali'
+    10→    10→import { EmptyState } from '@/components/app/ui-bits'
+    11→    11→import type { AppCtx } from '@/components/app/ui-bits'
+    12→    12→import { CATEGORY_EMOJI } from '@/lib/constants'
+    13→    13→import { cn } from '@/lib/utils'
+    14→    14→import { BadgePercent, Printer, Download, CheckCircle2, Save, TriangleAlert, TrendingUp, Search, Tag, Flame, X } from 'lucide-react'
+    15→    15→
+    16→    16→/**
+    17→    17→ * تابلوی کنترل قیمت روزانه — پاسخ مستقیم به تورم روزانه ایران
+    18→    18→ * هر روز: قیمت چاپ‌شده را با آخرین هزینه خرید واقعی مقایسه کنید، تیک بزنید یا قیمت جدید ثبت کنید.
+    19→    19→ * margin = (printed − latest cost) / latest cost × 100 — قرمز <۱۰٪، زرد <۲۵٪، سبز ≥۲۵٪
+    20→    20→ */
+    21→    21→type Row = {
+    22→    22→  id: string
+    23→    23→  name: string
+    24→    24→  barcodes: string[]
+    25→    25→  category: string
+    26→    26→  unit: string
+    27→    27→  stock: number
+    28→    28→  sellPrice: number
+    29→    29→  cost: number
+    30→    30→  deltaPct: number | null
+    31→    31→  margin: number | null
+    32→    32→  tone: 'red' | 'yellow' | 'green' | 'none'
+    33→    33→  lastPriceCheck: string
+    34→    34→  lastCheckedPrice: number
+    35→    35→  daysSince: number | null
+    36→    36→  checkedToday: boolean
+    37→    37→  costHistory: { price: number; j: string }[]
+    38→    38→}
+    39→    39→
+    40→    40→type Summary = {
+    41→    41→  total: number
+    42→    42→  checkedToday: number
+    43→    43→  remaining: number
+    44→    44→  red: number
+    45→    45→  yellow: number
+    46→    46→  green: number
+    47→    47→  avgMargin: number
+    48→    48→  streak: number
+    49→    49→}
+    50→    50→
+    51→    51→const TONE = {
+    52→    52→  red: { color: '#b3372f', bg: '#fee2e2', label: 'بحرانی' },
+    53→    53→  yellow: { color: '#a16207', bg: '#fef9c3', label: 'کم‌حاشیه' },
+    54→    54→  green: { color: '#0e7a4a', bg: '#dcfce7', label: 'سود مناسب' },
+    55→    55→  none: { color: '#6b7280', bg: '#f3f4f6', label: 'بدون قیمت' },
+    56→    56→}
+    57→    57→
+    58→    58→const FILTERS = [
+    59→    59→  { key: 'todo', label: '⏳ مانده امروز' },
+    60→    60→  { key: 'red', label: '🔴 بحرانی' },
+    61→    61→  { key: 'yellow', label: '🟡 کم‌حاشیه' },
+    62→    62→  { key: 'green', label: '🟢 مناسب' },
+    63→    63→  { key: 'checked', label: '✅ کنترل‌شده امروز' },
+    64→    64→  { key: 'all', label: 'همه' },
+    65→    65→] as const
+    66→    66→
+    67→    67→function lastCheckLabel(row: Row) {
+    68→    68→  if (row.checkedToday) return 'امروز کنترل شد ✓'
+    69→    69→  if (row.daysSince === null) return 'هرگز کنترل نشده'
+    70→    70→  if (row.daysSince === 1) return 'دیروز'
+    71→    71→  if (row.daysSince > 1) return `${faNum(row.daysSince)} روز پیش`
+    72→    72→  return '—'
+    73→    73→}
+    74→    74→
+    75→    75→/** tiny inline SVG trend of the product's last purchase costs — the inflation story at a glance */
+    76→    76→function CostSpark({ points }: { points: { price: number; j: string }[] }) {
+    77→    77→  if (points.length < 2) return null
+    78→    78→  const w = 56
+    79→    79→  const h = 20
+    80→    80→  const pad = 2
+    81→    81→  const min = Math.min(...points.map((p) => p.price))
+    82→    82→  const max = Math.max(...points.map((p) => p.price))
+    83→    83→  const span = max - min || 1
+    84→    84→  const step = (w - pad * 2) / (points.length - 1)
+    85→    85→  const coords = points.map((p, i) => [pad + i * step, h - pad - ((p.price - min) / span) * (h - pad * 2)] as const)
+    86→    86→  const d = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' ')
+    87→    87→  const up = points[points.length - 1].price >= points[0].price
+    88→    88→  const tip = points.map((p) => `${p.j}: ${faMoney(p.price)}`).join(' | ')
+    89→    89→  const gid = `spark-${points.length}-${min}-${max}`
+    90→    90→  return (
+    91→    91→    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="spark-line shrink-0" role="img" aria-label="روند هزینه خرید">
+    92→    92→      <title>{tip}</title>
+    93→    93→      <defs>
+    94→    94→        <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
+    95→    95→          <stop offset="0%" stopColor={up ? '#c9a227' : '#0e7a4a'} />
+    96→    96→          <stop offset="100%" stopColor={up ? '#b3372f' : '#12905a'} />
+    97→    97→        </linearGradient>
+    98→    98→      </defs>
+    99→    99→      <path d={d} fill="none" stroke={`url(#${gid})`} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+   100→   100→      <circle cx={coords[coords.length - 1][0]} cy={coords[coords.length - 1][1]} r="2.2" fill={up ? '#b3372f' : '#0e7a4a'} />
+   101→   101→    </svg>
+   102→   102→  )
+   103→   103→}
+   104→   104→
+   105→   105→/** Code128 barcode rendered into a small SVG via JsBarcode — for the shelf label */
+   106→   106→function LabelBarcode({ value }: { value: string }) {
+   107→   107→  const ref = useRef<SVGSVGElement>(null)
+   108→   108→  useEffect(() => {
+   109→   109→    if (ref.current && value) {
+   110→   110→      try {
+   111→   111→        JsBarcode(ref.current, value, {
+   112→   112→          format: 'CODE128',
+   113→   113→          displayValue: false,
+   114→   114→          height: 30,
+   115→   115→          width: 1.05,
+   116→   116→          margin: 0,
+   117→   117→          lineColor: '#111111',
+   118→   118→        })
+   119→   119→      } catch {
+   120→   120→        /* invalid chars — leave the svg empty, the numeric text below is the fallback */
+   121→   121→      }
+   122→   122→    }
+   123→   123→  }, [value])
+   124→   124→  return <svg ref={ref} className="label-bc" />
+   125→   125→}
+   126→   126→
+   127→   127→export default function PriceCheckView({ ctx }: { ctx: AppCtx }) {
+   128→   128→  const [rows, setRows] = useState<Row[]>([])
+   129→   129→  const [summary, setSummary] = useState<Summary | null>(null)
+   130→   130→  const [loading, setLoading] = useState(true)
+   131→   131→  const [err, setErr] = useState('')
+   132→   132→  const [search, setSearch] = useState('')
+   133→   133→  const [cat, setCat] = useState('')
+   134→   134→  const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('todo')
+   135→   135→  const [edits, setEdits] = useState<Record<string, string>>({}) // productId → edited printed price
+   136→   136→  const [busy, setBusy] = useState<Record<string, boolean>>({})
+   137→   137→  const [justVerified, setJustVerified] = useState<Record<string, boolean>>({})
+   138→   138→  const [picked, setPicked] = useState<Set<string>>(new Set()) // rows selected for shelf labels
+   139→   139→
+   140→   140→  const load = async () => {
+   141→   141→    setLoading(true)
+   142→   142→    setErr('')
+   143→   143→    try {
+   144→   144→      const d = await api<{ rows: Row[]; summary: Summary }>('/api/price-check')
+   145→   145→      setRows(d.rows)
+   146→   146→      setSummary(d.summary)
+   147→   147→    } catch (e: any) {
+   148→   148→      setErr(e.message || 'خطا در دریافت تابلو')
+   149→   149→    } finally {
+   150→   150→      setLoading(false)
+   151→   151→    }
+   152→   152→  }
+   153→   153→
+   154→   154→  useEffect(() => {
+   155→   155→    load()
+   156→   156→  }, [])
+   157→   157→
+   158→   158→  const categories = useMemo(() => Array.from(new Set(rows.map((r) => r.category))).sort(), [rows])
+   159→   159→
+   160→   160→  const list = useMemo(() => {
+   161→   161→    const q = search.trim().toLowerCase()
+   162→   162→    let out = rows.filter((r) => {
+   163→   163→      if (cat && r.category !== cat) return false
+   164→   164→      if (q && !(r.name.toLowerCase().includes(q) || r.barcodes.some((b) => b.includes(q)))) return false
+   165→   165→      if (filter === 'todo') return !r.checkedToday
+   166→   166→      if (filter === 'checked') return r.checkedToday
+   167→   167→      if (filter === 'red') return r.tone === 'red' && !r.checkedToday
+   168→   168→      if (filter === 'yellow') return r.tone === 'yellow' && !r.checkedToday
+   169→   169→      if (filter === 'green') return r.tone === 'green' && !r.checkedToday
+   170→   170→      return true
+   171→   171→    })
+   172→   172→    const prio = (r: Row) => (r.checkedToday ? 3 : r.tone === 'red' ? 0 : r.tone === 'yellow' ? 1 : r.tone === 'none' ? 2 : 2)
+   173→   173→    out = [...out].sort((a, b) => {
+   174→   174→      const p = prio(a) - prio(b)
+   175→   175→      if (p !== 0) return p
+   176→   176→      if (!a.checkedToday) return (a.margin ?? 999) - (b.margin ?? 999)
+   177→   177→      return a.name.localeCompare(b.name, 'fa')
+   178→   178→    })
+   179→   179→    return out
+   180→   180→  }, [rows, search, cat, filter])
+   181→   181→
+   182→   182→  const setEdit = (id: string, v: string) => setEdits((e) => ({ ...e, [id]: v }))
+   183→   183→
+   184→   184→  const togglePick = (id: string) =>
+   185→   185→    setPicked((s) => {
+   186→   186→      const n = new Set(s)
+   187→   187→      if (n.has(id)) n.delete(id)
+   188→   188→      else n.add(id)
+   189→   189→      return n
+   190→   190→    })
+   191→   191→
+   192→   192→  const post = async (productIds: string[], action: 'verify' | 'reprice', sellPrice?: number) => {
+   193→   193→    const res = await api<{ ok: boolean; streak?: number }>('/api/price-check', { method: 'POST', body: { productIds, action, sellPrice } })
+   194→   194→    const streak = typeof res?.streak === 'number' ? res.streak : null
+   195→   195→    if (streak !== null) setSummary((s) => (s && streak !== s.streak ? { ...s, streak } : s))
+   196→   196→  }
+   197→   197→
+   198→   198→  // the products whose labels are printed — selected rows, in board order
+   199→   199→  const pickedRows = useMemo(() => rows.filter((r) => picked.has(r.id)), [rows, picked])
+   200→   200→
+   201→   201→  const verify = async (row: Row) => {
+   202→   202→    setBusy((b) => ({ ...b, [row.id]: true }))
+   203→   203→    try {
+   204→   204→      await post([row.id], 'verify')
+   205→   205→      setPicked((s) => {
+   206→   206→        if (!s.has(row.id)) return s
+   207→   207→        const n = new Set(s)
+   208→   208→        n.delete(row.id)
+   209→   209→        return n
+   210→   210→      })
+   211→   211→      setRows((arr) => arr.map((r) => (r.id === row.id ? { ...r, checkedToday: true, lastPriceCheck: todayIso(), lastCheckedPrice: r.sellPrice } : r)))
+   212→   212→      setSummary((s) => (s ? { ...s, checkedToday: s.checkedToday + 1, remaining: Math.max(0, s.remaining - 1), red: row.tone === 'red' ? Math.max(0, s.red - 1) : s.red, yellow: row.tone === 'yellow' ? Math.max(0, s.yellow - 1) : s.yellow } : s))
+   213→   213→      setJustVerified((j) => ({ ...j, [row.id]: true }))
+   214→   214→      setTimeout(() => setJustVerified((j) => ({ ...j, [row.id]: false })), 1600)
+   215→   215→      toast.success(`«${row.name}» کنترل شد ✅`)
+   216→   216→    } catch (e: any) {
+   217→   217→      toast.error(e.message)
+   218→   218→    } finally {
+   219→   219→      setBusy((b) => ({ ...b, [row.id]: false }))
+   220→   220→    }
+   221→   221→  }
+   222→   222→
+   223→   223→  const reprice = async (row: Row) => {
+   224→   224→    const v = Number(edits[row.id])
+   225→   225→    if (!v || v <= 0) return toast.error('قیمت جدید را وارد کنید')
+   226→   226→    setBusy((b) => ({ ...b, [row.id]: true }))
+   227→   227→    try {
+   228→   228→      await post([row.id], 'reprice', v)
+   229→   229→      setRows((arr) => arr.map((r) => (r.id === row.id ? { ...r, sellPrice: v, checkedToday: true, lastPriceCheck: todayIso(), lastCheckedPrice: v } : r)))
+   230→   230→      toast.info(`یادآوری: لیبل قفسه «${row.name}» را هم عوض کنید 🏷️`, { description: 'کالا را انتخاب و «چاپ لیبل قفسه» را بزنید' })
+   231→   231→      setEdits((e) => {
+   232→   232→        const n = { ...e }
+   233→   233→        delete n[row.id]
+   234→   234→        return n
+   235→   235→      })
+   236→   236→      setSummary((s) => (s ? { ...s, checkedToday: s.checkedToday + 1, remaining: Math.max(0, s.remaining - 1) } : s))
+   237→   237→      setJustVerified((j) => ({ ...j, [row.id]: true }))
+   238→   238→      setTimeout(() => setJustVerified((j) => ({ ...j, [row.id]: false })), 1600)
+   239→   239→      toast.success(`قیمت چاپ‌شده «${row.name}» روی ${faMoney(v)} تومان ثبت شد ✅`)
+   240→   240→    } catch (e: any) {
+   241→   241→      toast.error(e.message)
+   242→   242→    } finally {
+   243→   243→      setBusy((b) => ({ ...b, [row.id]: false }))
+   244→   244→    }
+   245→   245→  }
+   246→   246→
+   247→   247→  const verifyAllGreen = async () => {
+   248→   248→    const ids = rows.filter((r) => !r.checkedToday && r.tone === 'green').map((r) => r.id)
+   249→   249→    if (!ids.length) return toast.info('کالای سبزِ کنترل‌نشده‌ای نیست')
+   250→   250→    try {
+   251→   251→      await post(ids, 'verify')
+   252→   252→      const today = todayIso()
+   253→   253→      setRows((arr) => arr.map((r) => (ids.includes(r.id) ? { ...r, checkedToday: true, lastPriceCheck: today, lastCheckedPrice: r.sellPrice } : r)))
+   254→   254→      setSummary((s) => (s ? { ...s, checkedToday: s.checkedToday + ids.length, remaining: Math.max(0, s.remaining - ids.length), green: Math.max(0, s.green - ids.length) } : s))
+   255→   255→      toast.success(`${faNum(ids.length)} کالای سبز یکجا تأیید شد ✅`)
+   256→   256→    } catch (e: any) {
+   257→   257→      toast.error(e.message)
+   258→   258→    }
+   259→   259→  }
+   260→   260→
+   261→   261→  const downloadXls = () => {
+   262→   262→    const aoa: (string | number)[][] = [
+   263→   263→      [`تابلوی کنترل قیمت روزانه — ${formatJalaliFull(todayIso())}`],
+   264→   264→      [],
+   265→   265→      ['کالا', 'بارکد', 'دسته', 'آخرین هزینه خرید', 'تغییر هزینه', 'قیمت چاپ‌شده', 'حاشیه سود ٪', 'وضعیت', 'آخرین کنترل'],
+   266→   266→    ]
+   267→   267→    for (const r of list) {
+   268→   268→      aoa.push([
+   269→   269→        r.name,
+   270→   270→        r.barcodes[0] || '',
+   271→   271→        r.category,
+   272→   272→        r.cost,
+   273→   273→        r.deltaPct === null ? '—' : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct}%`,
+   274→   274→        r.sellPrice,
+   275→   275→        r.margin ?? '—',
+   276→   276→        r.checkedToday ? 'کنترل‌شده امروز' : TONE[r.tone].label,
+   277→   277→        lastCheckLabel(r),
+   278→   278→      ])
+   279→   279→    }
+   280→   280→    const ws = XLSX.utils.aoa_to_sheet(aoa)
+   281→   281→    const wb = XLSX.utils.book_new()
+   282→   282→    XLSX.utils.book_append_sheet(wb, ws, 'کنترل قیمت')
+   283→   283→    XLSX.writeFile(wb, `price-check-${todayIso()}.xlsx`)
+   284→   284→    toast.success('فایل اکسل کنترل قیمت دانلود شد')
+   285→   285→  }
+   286→   286→
+   287→   287→  const printSheet = () => {
+   288→   288→    // constrain page height while printing so the fixed print-area yields exactly one page
+   289→   289→    document.body.classList.add('printing-sheet')
+   290→   290→    const cleanup = () => {
+   291→   291→      document.body.classList.remove('printing-sheet')
+   292→   292→      window.removeEventListener('afterprint', cleanup)
+   293→   293→    }
+   294→   294→    window.addEventListener('afterprint', cleanup)
+   295→   295→    window.print()
+   296→   296→    setTimeout(cleanup, 2000) // fallback if afterprint doesn't fire
+   297→   297→  }
+   298→   298→
+   299→   299→  // shelf labels — same sibling-hiding approach as the paper sheet, via body.printing-labels
+   300→   300→  const printLabels = () => {
+   301→   301→    if (!pickedRows.length) return toast.error('اول کالاها را با تیک انتخاب کنید')
+   302→   302→    document.body.classList.add('printing-labels')
+   303→   303→    const cleanup = () => {
+   304→   304→      document.body.classList.remove('printing-labels')
+   305→   305→      window.removeEventListener('afterprint', cleanup)
+   306→   306→    }
+   307→   307→    window.addEventListener('afterprint', cleanup)
+   308→   308→    window.print()
+   309→   309→    setTimeout(cleanup, 2000)
+   310→   310→  }
+   311→   311→
+   312→   312→  // rows still needing physical verification today → the paper sheet
+   313→   313→  const sheetRows = rows.filter((r) => !r.checkedToday)
+   314→   314→
+   315→   315→  return (
+   316→   316→    <div className="space-y-4">
+   317→   317→      {/* ─── hero ─── */}
+   318→   318→      <div className="pattern-girih relative overflow-hidden rounded-3xl bg-gradient-to-l from-[#0b2e20] via-[#11563a] to-[#0b2e20] p-5 text-white shadow-xl sm:p-6">
+   319→   319→        <div className="relative flex flex-wrap items-center justify-between gap-3">
+   320→   320→          <div className="flex items-center gap-3">
+   321→   321→            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#c9a227]/20 text-[#e9c64a] shadow-inner">
+   322→   322→              <BadgePercent size={26} />
+   323→   323→            </div>
+   324→   324→            <div>
+   325→   325→              <h2 className="text-lg font-black sm:text-xl">تابلوی کنترل قیمت روزانه</h2>
+   326→   326→              <p className="mt-0.5 text-[11px] font-bold text-white/75 sm:text-xs">{formatJalaliFull(todayIso())} — پاسخ سریع به تورم: قیمت چاپ‌شده در برابر آخرین هزینه خرید</p>
+   327→   327→              {summary && summary.streak > 0 && (
+   328→   328→                <span
+   329→   329→                  className="fire-pulse mt-1.5 inline-flex items-center gap-1 rounded-full bg-[#c9a227]/25 px-2.5 py-0.5 text-[10px] font-black text-[#ffd968] ring-1 ring-[#c9a227]/50"
+   330→   330→                  title="روزهای پشت‌سرهم که کنترل قیمت کامل شده — از آرشیو صبح‌نامه‌ها"
+   331→   331→                >
+   332→   332→                  <Flame size={11} /> {faNum(summary.streak)} روز متوالی کنترل کامل
+   333→   333→                </span>
+   334→   334→              )}
+   335→   335→            </div>
+   336→   336→          </div>
+   337→   337→          <div className="no-print flex flex-wrap gap-2">
+   338→   338→            {pickedRows.length > 0 && (
+   339→   339→              <button onClick={printLabels} className="flex items-center gap-1.5 rounded-xl bg-[#e9c64a] px-3.5 py-2 text-[11px] font-extrabold text-[#0b2e20] shadow-md transition hover:bg-[#f2d35c]">
+   340→   340→                <Tag size={14} /> چاپ لیبل قفسه ({faNum(pickedRows.length)})
+   341→   341→              </button>
+   342→   342→            )}
+   343→   343→            <button onClick={verifyAllGreen} title="همه کالاهایی که حاشیه‌شان سبز است و امروز کنترل نشده‌اند، یکجا تأیید کن" className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3.5 py-2 text-[11px] font-extrabold text-white backdrop-blur transition hover:bg-white/20">
+   344→   344→              <CheckCircle2 size={14} /> تأیید یکجای سبزها
+   345→   345→            </button>
+   346→   346→            <button onClick={downloadXls} className="flex items-center gap-1.5 rounded-xl bg-[#c9a227] px-3.5 py-2 text-[11px] font-extrabold text-[#0b2e20] shadow-md transition hover:bg-[#d9b23a]">
+   347→   347→              <Download size={14} /> اکسل
+   348→   348→            </button>
+   349→   349→            <button onClick={printSheet} className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3.5 py-2 text-[11px] font-extrabold text-white backdrop-blur transition hover:bg-white/20">
+   350→   350→              <Printer size={14} /> برگه کاغذی
+   351→   351→            </button>
+   352→   352→          </div>
+   353→   353→        </div>
+   354→   354→      </div>
+   355→   355→
+   356→   356→      {/* ─── stat strip ─── */}
+   357→   357→      {summary && (
+   358→   358→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 [&>*:last-child]:max-[500px]:col-span-2">
+   359→   359→          {[
+   360→   360→            { label: 'کل کالاها', value: summary.total, tone: 'bg-secondary/70 text-foreground', ring: 'ring-border' },
+   361→   361→            { label: 'امروز کنترل‌شده ✓', value: summary.checkedToday, tone: 'bg-[#0e7a4a]/10 text-[#0e7a4a]', ring: 'ring-[#0e7a4a]/25' },
+   362→   362→            { label: 'مانده امروز ⏳', value: summary.remaining, tone: 'bg-[#c9a227]/10 text-[#8a6d10]', ring: 'ring-[#c9a227]/30' },
+   363→   363→            { label: 'حاشیه بحرانی 🔴', value: summary.red, tone: 'bg-[#b3372f]/10 text-[#b3372f]', ring: 'ring-[#b3372f]/25' },
+   364→   364→            { label: 'میانگین حاشیه', value: `${faNum(summary.avgMargin)}٪`, tone: 'bg-[#77934a]/10 text-[#5a7038]', ring: 'ring-[#77934a]/30' },
+   365→   365→          ].map((s) => (
+   366→   366→            <div key={s.label} className={cn('rounded-2xl px-4 py-3 ring-1 transition hover:-translate-y-0.5 hover:shadow-md', s.tone, s.ring)}>
+   367→   367→              <p className="text-lg font-black">{typeof s.value === 'number' ? faNum(s.value) : s.value}</p>
+   368→   368→              <p className="mt-0.5 text-[11px] font-bold opacity-80">{s.label}</p>
+   369→   369→            </div>
+   370→   370→          ))}
+   371→   371→        </div>
+   372→   372→      )}
+   373→   373→
+   374→   374→      {/* ─── toolbar ─── */}
+   375→   375→      <div className="no-print space-y-2.5 rounded-2xl border border-border bg-card p-3.5 shadow-sm">
+   376→   376→        <div className="flex flex-wrap items-center gap-2">
+   377→   377→          <div className="relative min-w-52 flex-1">
+   378→   378→            <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+   379→   379→            <input
+   380→   380→              value={search}
+   381→   381→              onChange={(e) => setSearch(e.target.value)}
+   382→   382→              placeholder="جست‌وجوی نام یا بارکد…"
+   383→   383→              className="w-full rounded-xl border border-input bg-white py-2.5 pl-3 pr-9 text-xs font-bold outline-none focus:border-[#c9a227]"
+   384→   384→            />
+   385→   385→          </div>
+   386→   386→          <div className="flex flex-wrap gap-1.5">
+   387→   387→            {FILTERS.map((f) => (
+   388→   388→              <button
+   389→   389→                key={f.key}
+   390→   390→                onClick={() => setFilter(f.key)}
+   391→   391→                className={cn(
+   392→   392→                  'rounded-full border px-3 py-1.5 text-[11px] font-bold transition',
+   393→   393→                  filter === f.key ? 'border-[#c9a227] bg-[#8a6d10] text-white shadow-md shadow-[#c9a227]/25' : 'border-border bg-card text-foreground/70 hover:bg-secondary'
+   394→   394→                )}
+   395→   395→              >
+   396→   396→                {f.label}
+   397→   397→              </button>
+   398→   398→            ))}
+   399→   399→          </div>
+   400→   400→        </div>
+   401→   401→        <div className="flex flex-wrap items-center gap-2 border-t border-dashed border-border pt-2.5">
+   402→   402→          <span className="text-[10px] font-bold text-muted-foreground">🏷️ چاپ لیبل:</span>
+   403→   403→          <button
+   404→   404→            onClick={() => setPicked(new Set(list.filter((r) => !r.checkedToday).map((r) => r.id)))}
+   405→   405→            className="rounded-full border border-[#c9a227]/40 bg-[#c9a227]/10 px-3 py-1 text-[10px] font-bold text-[#8a6d10] transition hover:bg-[#c9a227]/20"
+   406→   406→          >
+   407→   407→            انتخاب همه مانده‌های همین فهرست
+   408→   408→          </button>
+   409→   409→          {pickedRows.length > 0 && (
+   410→   410→            <button
+   411→   411→              onClick={() => setPicked(new Set())}
+   412→   412→              className="flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-[10px] font-bold text-foreground/60 transition hover:bg-secondary"
+   413→   413→            >
+   414→   414→              <X size={11} /> پاک کردن انتخاب ({faNum(pickedRows.length)})
+   415→   415→            </button>
+   416→   416→          )}
+   417→   417→          {pickedRows.length > 0 && (
+   418→   418→            <button
+   419→   419→              onClick={printLabels}
+   420→   420→              className="flex items-center gap-1 rounded-full bg-[#e9c64a] px-3 py-1 text-[10px] font-extrabold text-[#0b2e20] shadow transition hover:bg-[#f2d35c]"
+   421→   421→            >
+   422→   422→              <Printer size={11} /> چاپ {faNum(pickedRows.length)} لیبل
+   423→   423→            </button>
+   424→   424→          )}
+   425→   425→        </div>
+   426→   426→        {categories.length > 1 && (
+   427→   427→          <div className="flex flex-wrap gap-1.5">
+   428→   428→            <button onClick={() => setCat('')} className={cn('rounded-full border px-3 py-1 text-[10px] font-bold transition', !cat ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/60 hover:bg-secondary')}>
+   429→   429→              همه دسته‌ها
+   430→   430→            </button>
+   431→   431→            {categories.map((c) => (
+   432→   432→              <button key={c} onClick={() => setCat(c === cat ? '' : c)} className={cn('rounded-full border px-3 py-1 text-[10px] font-bold transition', c === cat ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/60 hover:bg-secondary')}>
+   433→   433→                {CATEGORY_EMOJI[c] || '📦'} {c}
+   434→   434→              </button>
+   435→   435→            ))}
+   436→   436→          </div>
+   437→   437→        )}
+   438→   438→      </div>
+   439→   439→
+   440→   440→      {/* ─── board ─── */}
+   441→   441→      {loading ? (
+   442→   442→        <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-muted" />)}</div>
+   443→   443→      ) : err ? (
+   444→   444→        <EmptyState emoji="⚠️" title="خطا در بارگذاری" hint={err} />
+   445→   445→      ) : list.length === 0 ? (
+   446→   446→        <EmptyState emoji="🎉" title="همه چیز کنترل شده!" hint="امروز هیچ کالایی در این فیلتر نیست — دستِ همه درد نکند" />
+   447→   447→      ) : (
+   448→   448→        <div className="space-y-2.5">
+   449→   449→          {list.map((r) => {
+   450→   450→            const tone = TONE[r.tone]
+   451→   451→            const edited = edits[r.id] !== undefined && edits[r.id] !== '' && Number(edits[r.id]) !== r.sellPrice
+   452→   452→            const isPicked = picked.has(r.id)
+   453→   453→            return (
+   454→   454→              <div
+   455→   455→                key={r.id}
+   456→   456→                className={cn(
+   457→   457→                  'price-row glow-card rounded-2xl border bg-card p-3.5 shadow-sm transition hover:shadow-md',
+   458→   458→                  isPicked ? 'border-[#c9a227] row-picked ring-1 ring-[#c9a227]/40' : r.checkedToday ? 'border-[#0e7a4a]/30 row-verified' : 'border-border',
+   459→   459→                  justVerified[r.id] && 'row-just-verified'
+   460→   460→                )}
+   461→   461→              >
+   462→   462→                <div className="flex flex-wrap items-center gap-3">
+   463→   463→                  {/* label-print picker */}
+   464→   464→                  <button
+   465→   465→                    onClick={() => togglePick(r.id)}
+   466→   466→                    role="checkbox"
+   467→   467→                    aria-checked={isPicked}
+   468→   468→                    aria-label={`انتخاب ${r.name} برای چاپ لیبل قفسه`}
+   469→   469→                    className={cn(
+   470→   470→                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 transition',
+   471→   471→                      isPicked ? 'border-[#c9a227] bg-[#c9a227] text-white shadow-md shadow-[#c9a227]/30' : 'border-border bg-white text-transparent hover:border-[#c9a227]/60'
+   472→   472→                    )}
+   473→   473→                    title="انتخاب برای چاپ لیبل قفسه"
+   474→   474→                  >
+   475→   475→                    <CheckCircle2 size={14} />
+   476→   476→                  </button>
+   477→   477→
+   478→   478→                  {/* identity */}
+   479→   479→                  <div className="flex min-w-44 flex-1 items-center gap-3">
+   480→   480→                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-2xl">{CATEGORY_EMOJI[r.category] || '📦'}</span>
+   481→   481→                    <div className="min-w-0">
+   482→   482→                      <p className="truncate text-sm font-black">{r.name}</p>
+   483→   483→                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+   484→   484→                        {r.barcodes[0] && <span className="font-mono text-[9px] text-muted-foreground" dir="ltr">{r.barcodes[0]}</span>}
+   485→   485→                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[9px] font-bold text-foreground/60">{CATEGORY_EMOJI[r.category] || '📦'} {r.category}</span>
+   486→   486→                        {r.stock === 0 && <span className="rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[9px] font-bold text-[#b3372f]">ناموجود</span>}
+   487→   487→                      </div>
+   488→   488→                    </div>
+   489→   489→                  </div>
+   490→   490→
+   491→   491→                  {/* cost + inflation delta + trend spark */}
+   492→   492→                  <div className="min-w-28 text-center">
+   493→   493→                    <p className="text-[9px] font-bold text-muted-foreground">آخرین هزینه خرید</p>
+   494→   494→                    <p className="text-sm font-black text-foreground/85">{r.cost > 0 ? faMoney(r.cost) : '—'}</p>
+   495→   495→                    <div className="mt-0.5 flex items-center justify-center gap-1.5">
+   496→   496→                      {r.deltaPct !== null && (
+   497→   497→                        <span className={cn('flex items-center gap-0.5 text-[9px] font-black', r.deltaPct > 0 ? 'text-[#b3372f]' : 'text-[#0e7a4a]')} title="تغییر هزینه نسبت به خرید قبلی">
+   498→   498→                          {r.deltaPct > 0 ? <TrendingUp size={10} /> : <TrendingUp size={10} className="rotate-180" />}
+   499→   499→                          {r.deltaPct > 0 ? '+' : ''}{faNum(r.deltaPct)}٪
+   500→   500→                        </span>
+   501→   501→                      )}
+   502→   502→                      {r.costHistory.length >= 2 && <CostSpark points={r.costHistory} />}
+   503→   503→                    </div>
+   504→   504→                  </div>
+   505→   505→
+   506→   506→                  {/* printed price (editable) */}
+   507→   507→                  <div className="min-w-32 text-center">
+   508→   508→                    <p className="text-[9px] font-bold text-muted-foreground">قیمت چاپ‌شده (تومان)</p>
+   509→   509→                    <input
+   510→   510→                      type="number"
+   511→   511→                      value={edits[r.id] ?? (r.sellPrice || '')}
+   512→   512→                      onChange={(e) => setEdit(r.id, e.target.value)}
+   513→   513→                      disabled={r.checkedToday}
+   514→   514→                      className={cn(
+   515→   515→                        'mt-0.5 w-28 rounded-xl border-2 px-2 py-1.5 text-center text-sm font-black outline-none transition',
+   516→   516→                        edited ? 'border-[#c9a227] bg-[#fdf6dd]' : 'border-border bg-white focus:border-[#c9a227]',
+   517→   517→                        r.checkedToday && 'opacity-70'
+   518→   518→                      )}
+   519→   519→                    />
+   520→   520→                  </div>
+   521→   521→
+   522→   522→                  {/* margin pill */}
+   523→   523→                  <div className="min-w-24 text-center">
+   524→   524→                    <p className="text-[9px] font-bold text-muted-foreground">حاشیه سود</p>
+   525→   525→                    {r.margin !== null ? (
+   526→   526→                      <span className="mt-0.5 inline-block rounded-full px-3 py-1 text-xs font-black" style={{ color: tone.color, background: tone.bg }} title={tone.label}>
+   527→   527→                        {faNum(r.margin)}٪
+   528→   528→                      </span>
+   529→   529→                    ) : (
+   530→   530→                      <span className="mt-0.5 inline-block text-xs text-muted-foreground">—</span>
+   531→   531→                    )}
+   532→   532→                  </div>
+   533→   533→
+   534→   534→                  {/* last check + actions */}
+   535→   535→                  <div className="flex min-w-40 flex-1 items-center justify-end gap-2">
+   536→   536→                    <span
+   537→   537→                      className={cn(
+   538→   538→                        'rounded-full px-2.5 py-1 text-[10px] font-bold',
+   539→   539→                        r.checkedToday ? 'bg-[#0e7a4a]/10 text-[#0e7a4a]' : r.daysSince === null ? 'bg-[#b3372f]/10 text-[#b3372f]' : 'bg-secondary text-foreground/60'
+   540→   540→                      )}
+   541→   541→                    >
+   542→   542→                      {lastCheckLabel(r)}
+   543→   543→                    </span>
+   544→   544→                    {edited ? (
+   545→   545→                      <button
+   546→   546→                        onClick={() => reprice(r)}
+   547→   547→                        disabled={busy[r.id]}
+   548→   548→                        className="flex items-center gap-1 rounded-xl bg-[#8a6d10] px-3.5 py-2 text-[11px] font-extrabold text-white shadow-md shadow-[#c9a227]/25 transition hover:bg-[#a3851a] disabled:opacity-50"
+   549→   549→                      >
+   550→   550→                        <Save size={13} /> ثبت قیمت جدید
+   551→   551→                      </button>
+   552→   552→                    ) : (
+   553→   553→                      <button
+   554→   554→                        onClick={() => verify(r)}
+   555→   555→                        disabled={r.checkedToday || busy[r.id]}
+   556→   556→                        className={cn(
+   557→   557→                          'flex items-center gap-1 rounded-xl px-3.5 py-2 text-[11px] font-extrabold transition disabled:opacity-60',
+   558→   558→                          r.checkedToday ? 'cursor-default bg-[#0e7a4a]/10 text-[#0e7a4a]' : 'bg-primary text-white shadow-md shadow-primary/25 hover:bg-[#12905a]'
+   559→   559→                        )}
+   560→   560→                      >
+   561→   561→                        <CheckCircle2 size={13} /> {r.checkedToday ? 'کنترل شد' : 'کنترل شد ✓'}
+   562→   562→                      </button>
+   563→   563→                    )}
+   564→   564→                  </div>
+   565→   565→                </div>
+   566→   566→              </div>
+   567→   567→            )
+   568→   568→          })}
+   569→   569→        </div>
+   570→   570→      )}
+   571→   571→
+   572→   572→      {/* ─── legend ─── */}
+   573→   573→      <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-secondary/60 p-3 text-[11px] font-bold text-foreground/70">
+   574→   574→        <span className="flex items-center gap-1.5"><TriangleAlert size={13} className="text-[#b3372f]" /> قرمز: حاشیه زیر {faNum(10)}٪ — باید قیمت جدید بچسبانید</span>
+   575→   575→        <span className="rounded-full bg-[#a16207]/10 px-2 py-0.5 text-[#a16207]">زرد: زیر {faNum(25)}٪ — قابل بهبود</span>
+   576→   576→        <span className="rounded-full bg-[#0e7a4a]/10 px-2 py-0.5 text-[#0e7a4a]">سبز: {faNum(25)}٪ و بالاتر</span>
+   577→   577→        <span>▲ قرمز روی «آخرین هزینه» یعنی تأمین‌کننده گران‌تر از قبل فروخته — سیگنال تورم</span>
+   578→   578→        <span className="flex items-center gap-1.5"><Tag size={13} className="text-[#c9a227]" /> با تیک کنار هر کالا، لیبل قفسه چاپ کنید</span>
+   579→   579→      </div>
+   580→   580→
+   581→   581→      {/* ─── printable shelf-label sheet (لیبل قفسه) — portal to body; body.printing-labels makes it the only flow content ─── */}
+   582→   582→      {typeof document !== 'undefined' && pickedRows.length > 0 && createPortal(
+   583→   583→        <div className="label-sheet print-area scroll-gold" id="label-sheet">
+   584→   584→          <div className="label-guide">
+   585→   585→            <span>🫒 هایپر زیتون — لیبل قفسه ({faNum(pickedRows.length)} قلم) — {formatJalaliFull(todayIso())}</span>
+   586→   586→            <span>هر برگه A۴: ۲۱ لیبل — با قیچی روی خط‌چین ببُرید</span>
+   587→   587→          </div>
+   588→   588→          <div className="label-grid">
+   589→   589→            {pickedRows.map((r) => (
+   590→   590→              <div className="label-card" key={r.id}>
+   591→   591→                <div className="label-brand">🫒 هایپر زیتون</div>
+   592→   592→                <p className="label-name">{r.name}</p>
+   593→   593→                <div className="label-price">{r.sellPrice > 0 ? faMoney(r.sellPrice) : '—'} <small>تومان</small></div>
+   594→   594→                <div className="label-bc-wrap">
+   595→   595→                  {r.barcodes[0] ? <LabelBarcode value={r.barcodes[0]} /> : <span className="label-no-bc">بدون بارکد</span>}
+   596→   596→                  <span className="label-bcnum" dir="ltr">{r.barcodes[0] || ''}</span>
+   597→   597→                </div>
+   598→   598→              </div>
+   599→   599→            ))}
+   600→   600→          </div>
+   601→   601→        </div>,
+   602→   602→        document.body
+   603→   603→      )}
+   604→   604→
+   605→   605→      {/* ─── printable paper sheet (برگه گشتن در فروشگاه) — portal به body تا در چاپ، تنها محتوای صفحه باشد ─── */}
+   606→   606→      {typeof document !== 'undefined' && createPortal(
+   607→   607→        <div className="price-sheet print-area" id="price-sheet">
+   608→   608→        <div className="sheet-head">
+   609→   609→          <div className="sheet-logo">🫒</div>
+   610→   610→          <div>
+   611→   611→            <h3>هایپر زیتون — برگه کنترل قیمت روزانه</h3>
+   612→   612→            <p>{formatJalaliFull(todayIso())}</p>
+   613→   613→          </div>
+   614→   614→          <div className="sheet-meta">
+   615→   615→            <span>مانده: {faNum(sheetRows.length)} قلم</span>
+   616→   616→            <span>امضای کنترل‌کننده: ....................</span>
+   617→   617→          </div>
+   618→   618→        </div>
+   619→   619→        <table className="sheet-table">
+   620→   620→          <thead>
+   621→   621→            <tr>
+   622→   622→              <th className="w-8">☐</th>
+   623→   623→              <th>کالا</th>
+   624→   624→              <th className="w-28">بارکد</th>
+   625→   625→              <th className="w-24">آخرین هزینه</th>
+   626→   626→              <th className="w-24">قیمت چاپ‌شده فعلی</th>
+   627→   627→              <th className="w-16">حاشیه</th>
+   628→   628→              <th className="w-20">وضعیت</th>
+   629→   629→            </tr>
+   630→   630→          </thead>
+   631→   631→          <tbody>
+   632→   632→            {sheetRows.map((r) => (
+   633→   633→              <tr key={r.id}>
+   634→   634→                <td className="check-cell"></td>
+   635→   635→                <td className="name-cell">{r.name}</td>
+   636→   636→                <td className="mono-cell" dir="ltr">{r.barcodes[0] || '—'}</td>
+   637→   637→                <td>{r.cost > 0 ? faMoney(r.cost) : '—'}</td>
+   638→   638→                <td className="write-cell">{r.sellPrice > 0 ? faMoney(r.sellPrice) : '............'}</td>
+   639→   639→                <td>{r.margin !== null ? `${faNum(r.margin)}٪` : '—'}</td>
+   640→   640→                <td style={{ color: TONE[r.tone].color, fontWeight: 800 }}>{TONE[r.tone].label}</td>
+   641→   641→              </tr>
+   642→   642→            ))}
+   643→   643→          </tbody>
+   644→   644→        </table>
+   645→   645→        <p className="sheet-foot">قیمت‌های اصلاح‌شده را همان‌جا روی برگه بنویسید و پس از چسباندن برچسب، در سامانه «ثبت قیمت جدید» بزنید — صبح‌ بخیر باغ زیتون 🌿</p>
+   646→   646→        </div>,
+   647→   647→        document.body
+   648→   648→      )}
+   649→   649→    </div>
+   650→   650→  )
+   651→   651→}
+   652→   652→

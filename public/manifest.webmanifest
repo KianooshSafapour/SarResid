@@ -1,0 +1,15 @@
+{
+  "name": "سررسید | SarResid — سامانه مدیریت عملیات فروشگاه",
+  "short_name": "هایپر زیتون",
+  "description": "پلتفرم یکپارچه مدیریت عملیات، سفارش، انبار و آرشیو اسناد هایپر زیتون کرمان",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7ee",
+  "theme_color": "#0b2e20",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,731 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import {
+     7→  faMoney, faNum, formatJalaliFull, formatJalaliShort, jalaliToIso, todayIso, toJalaliParts,
+     8→  addDaysIso, daysBetween, weekdayName, jMonthLength, jMonthStartWeekday, J_MONTHS,
+     9→} from '@/lib/jalali'
+    10→import {
+    11→  resolveFlex, dueAlternatives, flexKeysFor, weekStartIso, SCOPE_LABELS, SEASON_NAMES, flexScopeDesc,
+    12→  type FlexRuleLite,
+    13→} from '@/lib/flex'
+    14→import { CHEQUE_STATUSES } from '@/lib/constants'
+    15→import { SectionCard, Pill, EmptyState, Labeled, KeyValue, FaPriceInput } from '@/components/app/ui-bits'
+    16→import { JalaliDatePicker, useHolidays } from '@/components/app/jalali-widgets'
+    17→import { formatHijri, isoToHijri } from '@/lib/hijri'
+    18→import { Modal } from '@/components/views/Orders'
+    19→import { SciExplain } from '@/components/app/SciExplain'
+    20→import type { AppCtx } from '@/components/app/ui-bits'
+    21→import { Banknote, Plus, CheckCircle2, XCircle, Scissors, Handshake, AlertTriangle, CalendarDays, SlidersHorizontal, Sparkles, CalendarCheck } from 'lucide-react'
+    22→import { cn } from '@/lib/utils'
+    23→
+    24→type Cheque = {
+    25→  id: string; number: string; amount: number; orderCode: string; recipientName: string; recipientPhone: string
+    26→  writtenAt: string; dueDate: string; periodDays: number; status: string; ownerNote: string; createdByName: string
+    27→  history: any[]; isFriday: boolean; overdue: boolean
+    28→}
+    29→
+    30→const WEEKDAY_SHORT = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج']
+    31→function wdShort(iso: string): string {
+    32→  const d = new Date(iso + 'T12:00:00').getDay()
+    33→  return WEEKDAY_SHORT[d === 6 ? 0 : d + 1]
+    34→}
+    35→/** compact money for calendar cells: ۸۵م / ۱٫۲م / ۹۵۰ه */
+    36→function faMoneyShort(v: number): string {
+    37→  if (v >= 1_000_000_000) return `${faNum((v / 1_000_000_000).toFixed(1))} میلیارد`
+    38→  if (v >= 1_000_000) return `${faNum(Math.round(v / 1_000_000))}م`
+    39→  if (v >= 1000) return `${faNum(Math.round(v / 1000))}ه`
+    40→  return faNum(v)
+    41→}
+    42→
+    43→export default function ChequesView({ ctx }: { ctx: AppCtx }) {
+    44→  const [cheques, setCheques] = useState<Cheque[]>([])
+    45→  const [flexRules, setFlexRules] = useState<FlexRuleLite[]>([])
+    46→  const [createOpen, setCreateOpen] = useState(false)
+    47→  const [flexOpen, setFlexOpen] = useState(false)
+    48→  const [filter, setFilter] = useState('')
+    49→
+    50→  const load = () =>
+    51→    Promise.all([
+    52→      api<{ cheques: Cheque[] }>('/api/cheques').then((d) => setCheques(d.cheques)),
+    53→      api<{ rules: FlexRuleLite[] }>('/api/cheques/flexibility').then((d) => setFlexRules(d.rules)),
+    54→    ])
+    55→  useEffect(() => { load() }, [])
+    56→
+    57→  const holidays = useHolidays()
+    58→  const role = ctx.user!.role
+    59→  const canCreate = ['GM', 'OM', 'ACC'].includes(role)
+    60→  const canFlex = ['GM', 'OM', 'ACC', 'OWNER'].includes(role)
+    61→  const isOwner = role === 'OWNER'
+    62→
+    63→  const stats = {
+    64→    pending: cheques.filter((c) => c.status === 'PENDING_OWNER'),
+    65→    signed: cheques.filter((c) => c.status === 'SIGNED'),
+    66→    delivered: cheques.filter((c) => c.status === 'DELIVERED'),
+    67→    cleared: cheques.filter((c) => c.status === 'CLEARED'),
+    68→  }
+    69→
+    70→  // calendar state: month view with per-day cheque totals + selected-day detail
+    71→  const now = toJalaliParts(todayIso())
+    72→  const [calJy, setCalJy] = useState(now.jy)
+    73→  const [calJm, setCalJm] = useState(now.jm)
+    74→  const [selDay, setSelDay] = useState<string | null>(null)
+    75→
+    76→  const byDate = useMemo(() => {
+    77→    const m = new Map<string, Cheque[]>()
+    78→    for (const c of cheques) {
+    79→      if (['CLEARED', 'REJECTED', 'RETURNED'].includes(c.status)) continue
+    80→      if (!m.has(c.dueDate)) m.set(c.dueDate, [])
+    81→      m.get(c.dueDate)!.push(c)
+    82→    }
+    83→    return m
+    84→  }, [cheques])
+    85→
+    86→  const monthTotal = useMemo(() => {
+    87→    let sum = 0
+    88→    for (const [iso, cs] of byDate) {
+    89→      const { jy, jm } = toJalaliParts(iso)
+    90→      if (jy === calJy && jm === calJm) sum += cs.reduce((s, c) => s + c.amount, 0)
+    91→    }
+    92→    return sum
+    93→  }, [byDate, calJy, calJm])
+    94→
+    95→  const filtered = cheques.filter((c) => !filter || c.status === filter)
+    96→
+    97→  const act = async (id: string, body: any, msg: string) => {
+    98→    try {
+    99→      await api(`/api/cheques/${id}`, { method: 'PATCH', body })
+   100→      toast.success(msg)
+   101→      await load()
+   102→      ctx.refreshNotifications()
+   103→    } catch (e: any) { toast.error(e.message) }
+   104→  }
+   105→
+   106→  const selCheques = selDay ? byDate.get(selDay) || [] : []
+   107→  const selFlex = selDay ? resolveFlex(flexRules, selDay) : null
+   108→
+   109→  return (
+   110→    <div className="space-y-4">
+   111→      {/* KPI row */}
+   112→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   113→        {[
+   114→          { l: 'در انتظار امضای مالک', v: stats.pending.length, a: stats.pending.reduce((s, c) => s + c.amount, 0), c: '#a16207' },
+   115→          { l: 'امضاشده — آماده تحویل', v: stats.signed.length, a: stats.signed.reduce((s, c) => s + c.amount, 0), c: '#0e7a4a' },
+   116→          { l: 'تحویل‌شده — در جریان وصول', v: stats.delivered.length, a: stats.delivered.reduce((s, c) => s + c.amount, 0), c: '#1e40af' },
+   117→          { l: 'پاس‌شده', v: stats.cleared.length, a: stats.cleared.reduce((s, c) => s + c.amount, 0), c: '#3f6212' },
+   118→        ].map((s) => (
+   119→          <div key={s.l} className="glow-card rounded-2xl bg-card p-4">
+   120→            <p className="text-xl font-black" style={{ color: s.c }}>{faNum(s.v)}</p>
+   121→            <p className="mt-0.5 text-xs font-bold">{s.l}</p>
+   122→            <p className="text-[10px] text-muted-foreground">{faMoney(s.a)} تومان</p>
+   123→          </div>
+   124→        ))}
+   125→      </div>
+   126→
+   127→      {/* calendar + list */}
+   128→      <div className="grid gap-4 lg:grid-cols-5">
+   129→        <SectionCard
+   130→          title="تقویم سررسید چک‌ها و پرداخت‌ها"
+   131→          subtitle={`جمع سررسیدهای این ماه: ${faMoney(monthTotal)} تومان — روی هر روز بزنید`}
+   132→          icon={<CalendarDays size={18} />}
+   133→          actions={<SciExplain k="hijrical" />}
+   134→          className="lg:col-span-2"
+   135→        >
+   136→          <div className="flex justify-center [&_[data-cal]]:!w-full">
+   137→            <ChequeCalendar
+   138→              byDate={byDate} holidays={holidays} flexRules={flexRules}
+   139→              jy={calJy} jm={calJm} setJy={setCalJy} setJm={setCalJm}
+   140→              selDay={selDay} onPick={(iso: string) => setSelDay(iso === selDay ? null : iso)}
+   141→            />
+   142→          </div>
+   143→          <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+   144→            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#c9a227]" /> چک</span>
+   145→            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#b3372f]" /> تعطیل رسمی</span>
+   146→            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#1c2a22]/30" /> جمعه</span>
+   147→          </div>
+   148→
+   149→          {/* selected-day detail */}
+   150→          {selDay && (
+   151→            <div className="fade-in-up mt-3 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-3">
+   152→              <div className="flex flex-wrap items-center justify-between gap-2">
+   153→                <div>
+   154→                  <p className="text-xs font-black">{formatJalaliFull(selDay)}</p>
+   155→                  {(() => { const hl = formatHijri(selDay); return hl ? <p className="text-[9px] font-bold text-[#8a6d10]">🌙 هجری: {hl}</p> : null })()}
+   156→                </div>
+   157→                {holidays.get(selDay) && <Pill label={holidays.get(selDay)!} color="#b3372f" bg="#b3372f/10" />}
+   158→                {!holidays.get(selDay) && weekdayName(selDay) === 'جمعه' && <Pill label="جمعه — بانک‌ها تعطیل" color="#b3372f" bg="#b3372f/10" />}
+   159→              </div>
+   160→              {selFlex && (
+   161→                <p className="mt-1 text-[11px] text-muted-foreground">
+   162→                  انعطاف این روز: <span className="font-black text-[#8a5a2b]">±{faNum(selFlex.days)} روز</span>
+   163→                  {selFlex.rule && ` — مبنای قانون: ${selFlex.rule.label} (${SCOPE_LABELS[selFlex.rule.scope] || selFlex.rule.scope})`}
+   164→                </p>
+   165→              )}
+   166→              {selCheques.length === 0 ? (
+   167→                <p className="mt-2 text-[11px] text-muted-foreground">چکی برای این روز ثبت نشده است.</p>
+   168→              ) : (
+   169→                <div className="mt-2 space-y-1.5">
+   170→                  {selCheques.map((c) => (
+   171→                    <div key={c.id} className="flex items-center justify-between rounded-xl bg-white/70 px-2.5 py-1.5 text-[11px]">
+   172→                      <span className="font-bold">{c.recipientName}</span>
+   173→                      <span className="font-black text-[#8a5a2b]">{faMoney(c.amount)}</span>
+   174→                    </div>
+   175→                  ))}
+   176→                  <div className="flex items-center justify-between border-t border-[#c9a227]/30 pt-1.5 text-[11px] font-black">
+   177→                    <span>جمع روز</span>
+   178→                    <span className="text-[#0e7a4a]">{faMoney(selCheques.reduce((s, c) => s + c.amount, 0))} تومان</span>
+   179→                  </div>
+   180→                </div>
+   181→              )}
+   182→            </div>
+   183→          )}
+   184→        </SectionCard>
+   185→
+   186→        <SectionCard
+   187→          title="چک‌ها و پرداخت‌ها"
+   188→          subtitle="چرخهٔ کامل: ثبت مدیر کل → برنامه‌ریز سررسید → امضای مالک → تحویل → وصول"
+   189→          icon={<Banknote size={18} />}
+   190→          className="lg:col-span-3"
+   191→          actions={
+   192→            <div className="flex gap-1.5">
+   193→              {canFlex && (
+   194→                <button onClick={() => setFlexOpen((v) => !v)} className="flex items-center gap-1.5 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-2 text-xs font-extrabold text-[#8a5a2b]">
+   195→                  <SlidersHorizontal size={14} /> انعطاف روزها
+   196→                </button>
+   197→              )}
+   198→              {canCreate && (
+   199→                <button onClick={() => setCreateOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   200→                  <Plus size={14} /> چک جدید
+   201→                </button>
+   202→              )}
+   203→            </div>
+   204→          }
+   205→        >
+   206→          {flexOpen && canFlex && <FlexPanel rules={flexRules} onChanged={() => api<{ rules: FlexRuleLite[] }>('/api/cheques/flexibility').then((d) => setFlexRules(d.rules))} />}
+   207→
+   208→          <div className="mb-3 flex flex-wrap gap-1.5">
+   209→            <FilterChip active={!filter} label="همه" onClick={() => setFilter('')} />
+   210→            {Object.entries(CHEQUE_STATUSES).map(([k, v]) => (
+   211→              <FilterChip key={k} active={filter === k} label={v.label} color={v.color} onClick={() => setFilter(k)} />
+   212→            ))}
+   213→          </div>
+   214→          <div className="scroll-gold max-h-[46vh] space-y-2 overflow-y-auto pl-1">
+   215→            {filtered.length === 0 && <EmptyState emoji="🧾" title="چکی ثبت نشده" />}
+   216→            {filtered.map((c) => {
+   217→              const st = CHEQUE_STATUSES[c.status]
+   218→              const fx = resolveFlex(flexRules, c.dueDate)
+   219→              return (
+   220→                <div key={c.id} className="glow-card rounded-2xl bg-white/80 p-3.5">
+   221→                  <div className="flex flex-wrap items-center justify-between gap-2">
+   222→                    <div>
+   223→                      <p className="text-sm font-black">
+   224→                        چک {c.number ? `شماره ${faNum(c.number)}` : 'بدون شماره'} — {faMoney(c.amount)} تومان
+   225→                      </p>
+   226→                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+   227→                        {c.recipientName} {c.orderCode && `• سفارش ${c.orderCode}`} • سررسید {formatJalaliFull(c.dueDate)} ({faNum(daysBetween(c.dueDate, c.writtenAt))} روز از نگارش)
+   228→                      </p>
+   229→                    </div>
+   230→                    <Pill label={st.label} color={st.color} bg={st.bg} />
+   231→                  </div>
+   232→                  {(c.isFriday || holidays.get(c.dueDate)) && !['CLEARED', 'REJECTED'].includes(c.status) && (
+   233→                    <p className="mt-1.5 rounded-lg bg-[#b3372f]/10 px-2 py-1 text-[11px] font-black text-[#b3372f]">
+   234→                      ⚠️ سررسید روی روز تعطیل است ({holidays.get(c.dueDate) || 'جمعه'}) — هنگام امضا اصلاح شود
+   235→                      {fx.days > 0 && ` — پنجرهٔ مجاز جابه‌جایی: ±${faNum(fx.days)} روز`}
+   236→                    </p>
+   237→                  )}
+   238→                  {c.status === 'SIGNED' && ['GM', 'ACC'].includes(role) && (
+   239→                    <button onClick={() => act(c.id, { action: 'deliver', detail: ctx.user!.name }, 'چک تحویل شد — وصول را پیگیری کنید 🤝')} className="mt-2 flex items-center gap-1 rounded-lg bg-[#1e40af]/10 px-3 py-1.5 text-[11px] font-black text-[#1e40af]">
+   240→                      <Handshake size={13} /> تحویل به نماینده
+   241→                    </button>
+   242→                  )}
+   243→                  {c.status === 'DELIVERED' && ['OWNER', 'ACC', 'GM'].includes(role) && (
+   244→                    <div className="mt-2 flex gap-1.5">
+   245→                      <button onClick={() => act(c.id, { action: 'clear' }, 'چک پاس شد ✅')} className="flex items-center gap-1 rounded-lg bg-[#3f6212]/10 px-3 py-1.5 text-[11px] font-black text-[#3f6212]">
+   246→                        <CheckCircle2 size={13} /> وصول شد
+   247→                      </button>
+   248→                      <button onClick={() => act(c.id, { action: 'bounce' }, 'برگشتی ثبت شد')} className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-3 py-1.5 text-[11px] font-black text-[#b3372f]">
+   249→                        <AlertTriangle size={13} /> برگشت خورد
+   250→                      </button>
+   251→                    </div>
+   252→                  )}
+   253→                </div>
+   254→              )
+   255→            })}
+   256→          </div>
+   257→        </SectionCard>
+   258→      </div>
+   259→
+   260→      {/* Owner panel */}
+   261→      {isOwner && (
+   262→        <SectionCard title="دسترسی مالک — امضا و تصمیم" subtitle="چک‌های پیشنهادی مدیر کل اینجاست؛ می‌توانید تاریخ را با پنجرهٔ انعطاف عوض کنید یا به چند چک بشکنید" icon={<CheckCircle2 size={18} />}>
+   263→          {stats.pending.length === 0 ? (
+   264→            <EmptyState emoji="✅" title="چکی در انتظار امضای شما نیست" />
+   265→          ) : (
+   266→            <div className="space-y-3">
+   267→              {stats.pending.map((c) => (
+   268→                <div key={c.id} className="rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-4">
+   269→                  <div className="flex flex-wrap items-center justify-between gap-2">
+   270→                    <div>
+   271→                      <p className="text-sm font-black">{faMoney(c.amount)} تومان → {c.recipientName}</p>
+   272→                      <p className="text-[11px] text-muted-foreground">
+   273→                        {c.recipientPhone && `${faNum(c.recipientPhone)} • `}
+   274→                        نوشته: {formatJalaliShort(c.writtenAt)} • سررسید پیشنهادی: {formatJalaliFull(c.dueDate)} ({faNum(c.periodDays)} روز)
+   275→                        {c.orderCode && ` • سفارش ${c.orderCode}`}
+   276→                      </p>
+   277→                      {(c.isFriday || holidays.get(c.dueDate)) && (
+   278→                        <p className="mt-1 text-[11px] font-black text-[#b3372f]">⚠️ سررسید پیشنهادی روی تعطیل است — تاریخ را اصلاح کنید</p>
+   279→                      )}
+   280→                    </div>
+   281→                    <OwnerActions cheque={c} holidays={holidays} flexRules={flexRules} act={act} />
+   282→                  </div>
+   283→                </div>
+   284→              ))}
+   285→            </div>
+   286→          )}
+   287→        </SectionCard>
+   288→      )}
+   289→
+   290→      {createOpen && (
+   291→        <ChequeCreateModal
+   292→          holidays={holidays} flexRules={flexRules}
+   293→          onClose={() => setCreateOpen(false)}
+   294→          onSaved={() => { setCreateOpen(false); load(); ctx.refreshNotifications() }}
+   295→        />
+   296→      )}
+   297→    </div>
+   298→  )
+   299→}
+   300→
+   301→function FilterChip({ active, label, onClick, color }: { active: boolean; label: string; onClick: () => void; color?: string }) {
+   302→  return (
+   303→    <button onClick={onClick} className={cn('rounded-full border px-3 py-1.5 text-[11px] font-bold transition', active ? 'border-transparent text-white' : 'border-border bg-card text-foreground/70')} style={active ? { background: color || '#0e7a4a' } : {}}>
+   304→      {label}
+   305→    </button>
+   306→  )
+   307→}
+   308→
+   309→/** month calendar with per-day amounts + click-to-detail */
+   310→function ChequeCalendar({ byDate, holidays, flexRules, jy, jm, setJy, setJm, selDay, onPick }: any) {
+   311→  const cells: (number | null)[] = []
+   312→  const len = jMonthLength(jy, jm)
+   313→  const start = jMonthStartWeekday(jy, jm)
+   314→  for (let i = 0; i < start; i++) cells.push(null)
+   315→  for (let d = 1; d <= len; d++) cells.push(d)
+   316→  const move = (dir: number) => {
+   317→    let m = jm + dir, y = jy
+   318→    if (m > 12) { m = 1; y++ }
+   319→    if (m < 1) { m = 12; y-- }
+   320→    setJm(m); setJy(y)
+   321→  }
+   322→  return (
+   323→    <div className="w-full max-w-[340px]">
+   324→      <div className="mb-2 flex items-center justify-between">
+   325→        <button onClick={() => move(1)} className="rounded-lg px-2 py-1 hover:bg-muted">›</button>
+   326→        <span className="text-sm font-extrabold">{J_MONTHS[jm - 1]} {faNum(jy)}</span>
+   327→        <button onClick={() => move(-1)} className="rounded-lg px-2 py-1 hover:bg-muted">‹</button>
+   328→      </div>
+   329→      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-muted-foreground">
+   330→        {WEEKDAY_SHORT.map((d, i) => <span key={i} className={cn(i === 6 && 'text-[#b3372f]')}>{d}</span>)}
+   331→      </div>
+   332→      <div className="mt-1 grid grid-cols-7 gap-1">
+   333→        {cells.map((d, i) => {
+   334→          if (d === null) return <span key={i} />
+   335→          const iso = jalaliToIso(jy, jm, d)
+   336→          const cheques = byDate.get(iso) || []
+   337→          const hol = holidays.get(iso)
+   338→          const fri = new Date(iso + 'T12:00:00').getDay() === 5
+   339→          const dayTotal = cheques.reduce((s: number, c: Cheque) => s + c.amount, 0)
+   340→          const isSel = selDay === iso
+   341→          let hijriTiny = ''
+   342→          try { hijriTiny = faNum(isoToHijri(iso).hd) } catch { /* ignore */ }
+   343→          return (
+   344→            <button
+   345→              key={i}
+   346→              type="button"
+   347→              onClick={() => onPick(iso)}
+   348→              title={[
+   349→                formatJalaliFull(iso),
+   350→                formatHijri(iso) && `هجری: ${formatHijri(iso)}`,
+   351→                hol && `تعطیل رسمی: ${hol}`,
+   352→                cheques.map((c: Cheque) => `${c.recipientName}: ${faMoney(c.amount)}`).join('\n'),
+   353→              ].filter(Boolean).join(' • ')}
+   354→              className={cn(
+   355→                'relative flex h-11 w-full flex-col items-center justify-center rounded-lg text-[11px] font-bold transition',
+   356→                isSel ? 'ring-2 ring-[#c9a227]' : '',
+   357→                cheques.length ? 'bg-[#c9a227]/20 ring-1 ring-[#c9a227]/70' : hol ? 'bg-[#b3372f]/8 text-[#b3372f]' : 'hover:bg-muted',
+   358→                (hol || fri) && !cheques.length && 'text-[#b3372f]/70',
+   359→              )}
+   360→            >
+   361→              <span>{faNum(d)}</span>
+   362→              {hijriTiny && (
+   363→                <span className="absolute left-1 top-0.5 text-[6.5px] font-bold leading-none text-muted-foreground/70">{hijriTiny}</span>
+   364→              )}
+   365→              {cheques.length > 0 && <span className="text-[8px] font-black leading-none text-[#8a5a2b]">{faMoneyShort(dayTotal)}</span>}
+   366→              {cheques.length === 0 && hol && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#b3372f]" />}
+   367→              {cheques.length === 0 && !hol && fri && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#1c2a22]/30" />}
+   368→            </button>
+   369→          )
+   370→        })}
+   371→      </div>
+   372→      <p className="mt-1 text-center text-[8.5px] text-muted-foreground">عدد کوچک گوشهٔ هر خانه = روز هجری قمری (تبدیل واقعی)</p>
+   373→    </div>
+   374→  )
+   375→}
+   376→
+   377→/** Alternative-date strip: working-day candidates within the flexibility window */
+   378→function AltDates({ nominalDue, writtenAt, holidays, flexRules, onPick, selected }: {
+   379→  nominalDue: string; writtenAt: string; holidays: Map<string, string>; flexRules: FlexRuleLite[]
+   380→  onPick: (iso: string) => void; selected: string
+   381→}) {
+   382→  const fx = resolveFlex(flexRules, nominalDue)
+   383→  const alts = dueAlternatives(nominalDue, writtenAt, holidays, fx.days)
+   384→  if (fx.days === 0 && alts.length === 0) {
+   385→    return (
+   386→      <p className="text-[11px] text-muted-foreground">
+   387→        پنجرهٔ انعطاف این روز صفر است — سررسید باید دقیقاً روی {formatJalaliFull(nominalDue)} بنشیند.
+   388→      </p>
+   389→    )
+   390→  }
+   391→  return (
+   392→    <div>
+   393→      <p className="mb-1.5 flex items-center gap-1 text-[11px] font-black text-[#8a5a2b]">
+   394→        <Sparkles size={12} /> تاریخ‌های جایگزین مجاز (پنجرهٔ ±{faNum(fx.days)} روز
+   395→        {fx.rule && ` — قانون: ${fx.rule.label}`}):
+   396→      </p>
+   397→      <div className="flex flex-wrap gap-1.5">
+   398→        <button
+   399→          type="button"
+   400→          onClick={() => onPick(nominalDue)}
+   401→          className={cn(
+   402→            'rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition',
+   403→            selected === nominalDue ? 'border-transparent bg-[#0e7a4a] text-white' : 'border-border bg-card hover:border-[#c9a227]',
+   404→          )}
+   405→        >
+   406→          خودِ {faNum(daysBetween(nominalDue, writtenAt))} روز — {wdShort(nominalDue)} {formatJalaliShort(nominalDue)}
+   407→        </button>
+   408→        {alts.map((a) => (
+   409→          <button
+   410→            key={a.iso}
+   411→            type="button"
+   412→            onClick={() => onPick(a.iso)}
+   413→            className={cn(
+   414→              'rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition',
+   415→              selected === a.iso
+   416→                ? 'border-transparent bg-[#0e7a4a] text-white'
+   417→                : a.working
+   418→                  ? 'border-[#0e7a4a]/30 bg-[#0e7a4a]/5 text-[#0e7a4a] hover:border-[#0e7a4a]'
+   419→                  : 'border-[#b3372f]/30 bg-[#b3372f]/5 text-[#b3372f]/80 hover:border-[#b3372f]',
+   420→            )}
+   421→            title={a.working ? 'روز کاری' : a.holidayTitle || 'جمعه — تعطیل'}
+   422→          >
+   423→            {faNum(a.actualDays)} روز — {a.weekday} {formatJalaliShort(a.iso)}
+   424→            {!a.working && ' ⚠️'}
+   425→          </button>
+   426→        ))}
+   427→      </div>
+   428→    </div>
+   429→  )
+   430→}
+   431→
+   432→/** Flexibility rules management panel (treasury tolerance editor) */
+   433→function FlexPanel({ rules, onChanged }: { rules: FlexRuleLite[]; onChanged: () => void }) {
+   434→  const [scope, setScope] = useState<'GLOBAL' | 'YEAR' | 'SEASON' | 'MONTH' | 'WEEK' | 'DAY'>('MONTH')
+   435→  const [days, setDays] = useState('2')
+   436→  const [note, setNote] = useState('')
+   437→  const [jy, setJy] = useState(toJalaliParts(todayIso()).jy)
+   438→  const [jm, setJm] = useState(toJalaliParts(todayIso()).jm)
+   439→  const [season, setSeason] = useState('1')
+   440→  const [dayIso, setDayIso] = useState(todayIso())
+   441→  const [busy, setBusy] = useState(false)
+   442→
+   443→  const dateKey =
+   444→    scope === 'GLOBAL' ? '*' :
+   445→    scope === 'YEAR' ? String(jy) :
+   446→    scope === 'SEASON' ? `${jy}-S${season}` :
+   447→    scope === 'MONTH' ? `${jy}-${String(jm).padStart(2, '0')}` :
+   448→    scope === 'WEEK' ? weekStartIso(dayIso) :
+   449→    dayIso
+   450→
+   451→  const scopeDesc =
+   452→    scope === 'YEAR' ? `${faNum(jy)}` :
+   453→    scope === 'SEASON' ? `${SEASON_NAMES[Number(season) - 1]} ${faNum(jy)}` :
+   454→    scope === 'MONTH' ? `${J_MONTHS[jm - 1]} ${faNum(jy)}` :
+   455→    scope === 'WEEK' ? `هفتهٔ آغازِ ${formatJalaliShort(weekStartIso(dayIso))}` :
+   456→    scope === 'DAY' ? formatJalaliShort(dayIso) : 'همهٔ روزها'
+   457→
+   458→  const save = async () => {
+   459→    setBusy(true)
+   460→    try {
+   461→      await api('/api/cheques/flexibility', {
+   462→        method: 'POST',
+   463→        body: { scope, dateKey, days: Number(days) || 0, note, label: scopeDesc },
+   464→      })
+   465→      toast.success('قانون انعطاف ذخیره شد')
+   466→      onChanged()
+   467→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   468→  }
+   469→
+   470→  const remove = async (id: string) => {
+   471→    try {
+   472→      await api(`/api/cheques/flexibility?id=${id}`, { method: 'DELETE' })
+   473→      toast.success('قانون حذف شد')
+   474→      onChanged()
+   475→    } catch (e: any) { toast.error(e.message) }
+   476→  }
+   477→
+   478→  return (
+   479→    <div className="fade-in-up mb-4 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-4">
+   480→      <p className="flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]">
+   481→        <SlidersHorizontal size={14} /> سطح انعطاف روزهای پرداخت
+   482→        <SciExplain k="flexdays" />
+   483→      </p>
+   484→      <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+   485→        برای هر بازهٔ زمانی مشخص کنید سررسید چک‌ها چند روز قابل جابه‌جایی است. قانون دقیق‌تر همیشه بر قانون کلی‌تر مقدم است (روز ← هفته ← ماه ← فصل ← سال ← سراسری).
+   486→      </p>
+   487→
+   488→      {/* existing rules */}
+   489→      <div className="scroll-gold mt-3 max-h-40 space-y-1.5 overflow-y-auto pl-1">
+   490→        {rules.map((r) => (
+   491→          <div key={r.id} className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-1.5 text-[11px]">
+   492→            <span className="font-bold">
+   493→              <span className="rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]">{SCOPE_LABELS[r.scope] || r.scope}</span>
+   494→              {' '}{r.label} {r.note && <span className="text-muted-foreground">— {r.note}</span>}
+   495→            </span>
+   496→            <span className="flex items-center gap-2">
+   497→              <span className="font-black text-[#0e7a4a]">±{faNum(r.days)} روز</span>
+   498→              {r.scope !== 'GLOBAL' && (
+   499→                <button onClick={() => remove(r.id)} className="text-[10px] font-black text-[#b3372f] hover:underline">حذف</button>
+   500→              )}
+   501→            </span>
+   502→          </div>
+   503→        ))}
+   504→      </div>
+   505→
+   506→      {/* editor */}
+   507→      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+   508→        <Labeled label="سطح قانون">
+   509→          <select value={scope} onChange={(e) => setScope(e.target.value as any)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+   510→            {Object.entries(SCOPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+   511→          </select>
+   512→        </Labeled>
+   513→        <Labeled label="مقدار انعطاف (± روز)">
+   514→          <FaPriceInput value={days === '' ? '' : Number(days)} onChange={(v) => setDays(v === '' ? '0' : String(v))} ariaLabel="مقدار انعطاف" className="w-full rounded-xl border border-input p-2.5 text-sm" />
+   515→        </Labeled>
+   516→        {scope !== 'GLOBAL' && scope !== 'DAY' && scope !== 'WEEK' && (
+   517→          <Labeled label="سال شمسی">
+   518→            <FaPriceInput value={jy} onChange={(v) => setJy(Number(v) || jy)} ariaLabel="سال شمسی" className="w-full rounded-xl border border-input p-2.5 text-sm" />
+   519→          </Labeled>
+   520→        )}
+   521→        {scope === 'SEASON' && (
+   522→          <Labeled label="فصل">
+   523→            <select value={season} onChange={(e) => setSeason(e.target.value)} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+   524→              {SEASON_NAMES.map((s, i) => <option key={s} value={String(i + 1)}>{s}</option>)}
+   525→            </select>
+   526→          </Labeled>
+   527→        )}
+   528→        {scope === 'MONTH' && (
+   529→          <Labeled label="ماه">
+   530→            <select value={jm} onChange={(e) => setJm(Number(e.target.value))} className="w-full rounded-xl border border-input bg-white p-2.5 text-sm">
+   531→              {J_MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+   532→            </select>
+   533→          </Labeled>
+   534→        )}
+   535→        {(scope === 'WEEK' || scope === 'DAY') && (
+   536→          <Labeled label={scope === 'WEEK' ? 'هر روزی از هفتهٔ هدف' : 'روز دقیق'}>
+   537→            <JalaliDatePicker value={dayIso} onChange={setDayIso} holidays={new Map()} />
+   538→          </Labeled>
+   539→        )}
+   540→        <Labeled label="توضیح (اختیاری)">
+   541→          <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-xl border border-input p-2.5 text-sm" placeholder="مثلاً: فصل فروش بالا، تسویه سخت‌گیرانه" />
+   542→        </Labeled>
+   543→      </div>
+   544→      <p className="mt-2 text-[11px] text-muted-foreground">
+   545→        کلید این قانون: <span className="font-black text-[#8a5a2b]" dir="ltr">{dateKey}</span> — پوشش: {flexScopeDesc({ id: '', scope, label: '', dateKey, days: 0 } as any)}
+   546→      </p>
+   547→      <button onClick={save} disabled={busy} className="mt-2 w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white disabled:opacity-50">
+   548→        ذخیرهٔ قانون
+   549→      </button>
+   550→    </div>
+   551→  )
+   552→}
+   553→
+   554→/** Owner actions: sign (with editable date + alternatives), reject, split */
+   555→function OwnerActions({ cheque, holidays, flexRules, act }: { cheque: Cheque; holidays: any; flexRules: FlexRuleLite[]; act: (id: string, body: any, msg: string) => void }) {
+   556→  const [open, setOpen] = useState<'sign' | 'split' | null>(null)
+   557→  const [number, setNumber] = useState('')
+   558→  const [dueDate, setDueDate] = useState(cheque.dueDate)
+   559→  const [parts, setParts] = useState([{ amount: String(cheque.amount), dueDate: cheque.dueDate }])
+   560→
+   561→  const pickedIsOff = !!holidays.get(dueDate) || new Date(dueDate + 'T12:00:00').getDay() === 5
+   562→
+   563→  return (
+   564→    <div className="flex flex-wrap gap-1.5">
+   565→      <button onClick={() => setOpen('sign')} className="flex items-center gap-1 rounded-lg bg-[#0e7a4a] px-3 py-1.5 text-[11px] font-black text-white">
+   566→        <CheckCircle2 size={13} /> امضا و تأیید
+   567→      </button>
+   568→      <button onClick={() => setOpen('split')} className="flex items-center gap-1 rounded-lg bg-[#8a5a2b]/15 px-3 py-1.5 text-[11px] font-black text-[#8a5a2b]">
+   569→        <Scissors size={13} /> تفکیک به چند چک
+   570→      </button>
+   571→      <button onClick={() => act(cheque.id, { action: 'reject' }, 'چک رد شد — مدیر کل مطلع می‌شود')} className="flex items-center gap-1 rounded-lg bg-[#b3372f]/10 px-3 py-1.5 text-[11px] font-black text-[#b3372f]">
+   572→        <XCircle size={13} /> رد
+   573→      </button>
+   574→
+   575→      {open === 'sign' && (
+   576→        <Modal title="امضای چک" onClose={() => setOpen(null)}>
+   577→          <KeyValue k="مبلغ" v={`${faMoney(cheque.amount)} تومان`} />
+   578→          <KeyValue k="گیرنده" v={cheque.recipientName} />
+   579→          <Labeled label="شماره چک (اختیاری)"><input value={number} onChange={(e) => setNumber(e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   580→          <Labeled label="تاریخ سررسید نهایی (قابل اصلاح)">
+   581→            <JalaliDatePicker value={dueDate} onChange={setDueDate} holidays={holidays} minDate={todayIso()} warnHoliday />
+   582→          </Labeled>
+   583→          <div className="mt-2 rounded-2xl border border-[#c9a227]/30 bg-[#fdf6dd]/50 p-3">
+   584→            <AltDates nominalDue={cheque.dueDate} writtenAt={cheque.writtenAt} holidays={holidays} flexRules={flexRules} onPick={setDueDate} selected={dueDate} />
+   585→          </div>
+   586→          <button
+   587→            onClick={() => { act(cheque.id, { action: 'sign', number, dueDate, note: 'امضا توسط مالک' }, 'چک امضا شد ✅ — مدیر کل می‌تواند تحویل دهد'); setOpen(null) }}
+   588→            className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white"
+   589→          >
+   590→            ثبت امضا ✍️
+   591→          </button>
+   592→        </Modal>
+   593→      )}
+   594→
+   595→      {open === 'split' && (
+   596→        <Modal title="تفکیک مبلغ به چند چک" onClose={() => setOpen(null)}>
+   597→          {parts.map((p, i) => (
+   598→            <div key={i} className="grid grid-cols-2 gap-2">
+   599→              <Labeled label={`مبلغ بخش ${faNum(i + 1)}`}>
+   600→                <FaPriceInput value={p.amount === '' ? '' : Number(p.amount)} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, amount: v === '' ? '' : String(v) } : x)))} ariaLabel={`مبلغ بخش ${faNum(i + 1)}`} className="w-full rounded-xl border border-input p-2.5 text-sm" />
+   601→              </Labeled>
+   602→              <Labeled label="سررسید">
+   603→                <JalaliDatePicker value={p.dueDate} onChange={(v) => setParts((ps) => ps.map((x, j) => (j === i ? { ...x, dueDate: v } : x)))} holidays={holidays} warnHoliday />
+   604→              </Labeled>
+   605→            </div>
+   606→          ))}
+   607→          <div className="flex gap-2">
+   608→            <button onClick={() => setParts((ps) => [...ps, { amount: '0', dueDate: addDaysIso(30) }])} className="flex-1 rounded-xl border py-2 text-xs font-bold">+ بخش جدید</button>
+   609→            {parts.length > 1 && <button onClick={() => setParts((ps) => ps.slice(0, -1))} className="rounded-xl border py-2 text-xs font-bold text-[#b3372f]">− حذف آخرین</button>}
+   610→          </div>
+   611→          {(() => {
+   612→            const sum = parts.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+   613→            const ok = sum === cheque.amount
+   614→            return (
+   615→              <p className="text-[11px]">
+   616→                جمع: <span className={ok ? 'split-sum-ok font-black' : 'split-sum-bad'}>{faMoney(sum)}</span>
+   617→                {' '}/ {faMoney(cheque.amount)}
+   618→                {!ok && <span className='text-[10px] text-muted-foreground'> — جمع باید دقیقاً برابر مبلغ چک باشد</span>}
+   619→              </p>
+   620→            )
+   621→          })()}
+   622→          <button
+   623→            onClick={() => act(cheque.id, { action: 'split', parts, number: number || undefined }, `به ${faNum(parts.length)} چک تفکیک شد ✂️`)}
+   624→            className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white"
+   625→          >
+   626→            ثبت تفکیک ✂️
+   627→          </button>
+   628→        </Modal>
+   629→      )}
+   630→    </div>
+   631→  )
+   632→}
+   633→
+   634→/** GM create cheque — due-date planner with alternatives + flexibility awareness */
+   635→function ChequeCreateModal({ holidays, flexRules, onClose, onSaved }: {
+   636→  holidays: any; flexRules: FlexRuleLite[]; onClose: () => void; onSaved: () => void
+   637→}) {
+   638→  const [form, setForm] = useState({ amount: '', recipientName: '', recipientPhone: '', orderId: '', orderCode: '' })
+   639→  const [writtenAt, setWrittenAt] = useState(todayIso())
+   640→  const [periodDays, setPeriodDays] = useState('45')
+   641→  const [pickedDue, setPickedDue] = useState<string | null>(null)
+   642→  const [orders, setOrders] = useState<any[]>([])
+   643→  const [busy, setBusy] = useState(false)
+   644→
+   645→  useEffect(() => {
+   646→    api<{ orders: any[] }>('/api/orders').then((d) => setOrders(d.orders.filter((o) => !['DONE', 'CANCELLED'].includes(o.status))))
+   647→  }, [])
+   648→
+   649→  const nominalDue = addDaysIso(Number(periodDays) || 0, writtenAt)
+   650→  const chosenDue = pickedDue || nominalDue
+   651→  const chosenDays = Math.max(0, daysBetween(chosenDue, writtenAt))
+   652→  const nominalOff = !!holidays.get(nominalDue) || new Date(nominalDue + 'T12:00:00').getDay() === 5
+   653→  const chosenOff = !!holidays.get(chosenDue) || new Date(chosenDue + 'T12:00:00').getDay() === 5
+   654→  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
+   655→
+   656→  // when the base date or period changes, reset manual pick
+   657→  const resetPick = () => setPickedDue(null)
+   658→  useEffect(() => { resetPick() }, [writtenAt, periodDays])
+   659→
+   660→  const save = async () => {
+   661→    if (!form.amount || !form.recipientName) return toast.error('مبلغ و نام گیرنده الزامی است')
+   662→    if (chosenOff) return toast.error('سررسید انتخابی روی تعطیل است — یکی از تاریخ‌های کاری را انتخاب کنید')
+   663→    setBusy(true)
+   664→    try {
+   665→      const res = await api<{ warnings: string[] }>('/api/cheques', {
+   666→        method: 'POST',
+   667→        body: { ...form, amount: Number(form.amount), writtenAt, dueDate: chosenDue, periodDays: chosenDays },
+   668→      })
+   669→      res.warnings?.forEach((w) => toast.warning(w))
+   670→      toast.success('چک ثبت شد — در انتظار امضای مالک ✍️')
+   671→      onSaved()
+   672→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   673→  }
+   674→
+   675→  return (
+   676→    <Modal title="ثبت چک جدید — برنامه‌ریز سررسید" onClose={onClose} wide>
+   677→      <div className="grid gap-3 sm:grid-cols-2">
+   678→        <Labeled label="مبلغ (تومان) *"><FaPriceInput value={form.amount === '' ? '' : Number(form.amount)} onChange={(v) => set('amount', v === '' ? '' : String(v))} ariaLabel="مبلغ چک" className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   679→        <Labeled label="گیرنده چک *"><input value={form.recipientName} onChange={(e) => set('recipientName', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" placeholder="نام نماینده/شرکت" /></Labeled>
+   680→        <Labeled label="تلفن گیرنده"><input value={form.recipientPhone} onChange={(e) => set('recipientPhone', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   681→        <Labeled label="متصل به سفارش (اختیاری)">
+   682→          <select value={form.orderId} onChange={(e) => { const o = orders.find((x) => x.id === e.target.value); setForm((f) => ({ ...f, orderId: e.target.value, orderCode: o?.code || '' })) }} className="w-full rounded-xl border border-input bg-white p-3 text-sm">
+   683→            <option value="">— بدون اتصال —</option>
+   684→            {orders.map((o) => <option key={o.id} value={o.id}>{o.code} — {o.providerName}</option>)}
+   685→          </select>
+   686→        </Labeled>
+   687→        <Labeled label="تاریخ نگارش چک (پیش‌فرض امروز)">
+   688→          <JalaliDatePicker value={writtenAt} onChange={setWrittenAt} holidays={holidays} warnHoliday={false} />
+   689→        </Labeled>
+   690→        <Labeled label="حداکثر مهلت (روز) — سررسید خودکار محاسبه می‌شود">
+   691→          <div className="flex flex-wrap gap-1.5">
+   692→            {[30, 40, 45, 60, 90].map((d) => (
+   693→              <button key={d} type="button" onClick={() => setPeriodDays(String(d))} className={Number(periodDays) === d ? 'rounded-full bg-primary px-3 py-1.5 text-[11px] font-black text-white' : 'rounded-full border px-3 py-1.5 text-[11px] font-bold'}>
+   694→                {faNum(d)} روز
+   695→              </button>
+   696→            ))}
+   697→            <FaPriceInput value={periodDays === '' ? '' : Number(periodDays)} onChange={(v) => setPeriodDays(v === '' ? '0' : String(v))} ariaLabel="مهلت به روز" className="w-16 rounded-xl border border-input p-2 text-xs" />
+   698→          </div>
+   699→        </Labeled>
+   700→      </div>
+   701→
+   702→      {/* planner output */}
+   703→      <div className={cn('mt-3 rounded-2xl border p-3.5', nominalOff ? 'border-[#b3372f]/40 bg-[#b3372f]/5' : 'border-[#c9a227]/40 bg-[#fdf6dd]/50')}>
+   704→        <p className="flex items-center gap-1.5 text-xs font-black">
+   705→          <CalendarCheck size={14} className="text-[#8a5a2b]" />
+   706→          سررسید حداکثری محاسبه‌شده: {formatJalaliFull(nominalDue)} ({faNum(periodDays || 0)} روز)
+   707→        </p>
+   708→        {nominalOff ? (
+   709→          <p className="mt-1 text-[11px] font-black text-[#b3372f]">
+   710→            ⚠️ این روز غیرکاری است ({holidays.get(nominalDue) || 'جمعه'}) — اعتبار چک حفظ نمی‌شود. یکی از تاریخ‌های جایگزین کاری را انتخاب کنید:
+   711→          </p>
+   712→        ) : (
+   713→          <p className="mt-1 text-[11px] text-muted-foreground">این روز کاری است و چک را می‌توان همان‌جا سررسید داد؛ در صورت نیاز از جایگزین‌ها استفاده کنید.</p>
+   714→        )}
+   715→        <div className="mt-2.5">
+   716→          <AltDates nominalDue={nominalDue} writtenAt={writtenAt} holidays={holidays} flexRules={flexRules} onPick={setPickedDue} selected={chosenDue} />
+   717→        </div>
+   718→        <div className="mt-2.5 rounded-xl bg-white/70 px-3 py-2 text-[11px]">
+   719→          تاریخ نهایی انتخاب‌شده: <span className="font-black text-[#0e7a4a]">{formatJalaliFull(chosenDue)}</span>
+   720→          {' '}— معادل {faNum(chosenDays)} روز از تاریخ نگارش{pickedDue && chosenDue !== nominalDue ? ' — اصلاح‌شده از سررسید حداکثری' : ''}
+   721→          {chosenOff && <span className="font-black text-[#b3372f]"> — ⚠️ روز تعطیل، ثبت مجاز نیست</span>}
+   722→        </div>
+   723→      </div>
+   724→
+   725→      <button onClick={save} disabled={busy || chosenOff} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   726→        {busy ? '…' : 'ثبت و ارسال برای امضای مالک'}
+   727→      </button>
+   728→    </Modal>
+   729→  )
+   730→}
+   731→

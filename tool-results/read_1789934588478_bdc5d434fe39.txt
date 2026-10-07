@@ -1,0 +1,762 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→/**
+     4→     4→ * نقش‌ها و دسترسی‌ها (RBAC) — ساخت نقش سفارشی (مثل «مسئول شبکه‌های اجتماعی»)،
+     5→     5→ * تخصیص چند نقش به یک نفر، ویرایش بخش‌های قابل دسترس و دسترسی‌های عملیاتی.
+     6→     6→ * نقش‌های اجرایی (مالک/مدیر کل/مدیر عملیات/مدیر سامانه) همیشه به همه‌جا دسترسی دارند.
+     7→     7→ */
+     8→     8→
+     9→     9→import { useCallback, useEffect, useMemo, useState } from 'react'
+    10→    10→import { toast } from 'sonner'
+    11→    11→import { api } from '@/lib/client'
+    12→    12→import { faNum } from '@/lib/jalali'
+    13→    13→import { Avatar, EmptyState, Labeled, Pill, SectionCard, type AppCtx } from '@/components/app/ui-bits'
+    14→    14→import { Modal } from '@/components/views/Orders'
+    15→    15→import { CAPS, ROLE_LABELS, SECONDARY_LABELS, VIEW_ACCESS } from '@/lib/constants'
+    16→    16→import { cn } from '@/lib/utils'
+    17→    17→import { Info, Lock, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react'
+    18→    18→
+    19→    19→const EMERALD = '#0e7a4a'
+    20→    20→const GOLD = '#c9a227'
+    21→    21→const TERRA = '#c96f4a'
+    22→    22→const OLIVE = '#77934a'
+    23→    23→const ROSE = '#b3372f'
+    24→    24→const SWATCHES = [EMERALD, GOLD, TERRA, OLIVE, ROSE, '#334155']
+    25→    25→const RBAC_GUARD = ['OM', 'GM', 'OWNER', 'ADMIN', 'IT']
+    26→    26→
+    27→    27→/** برچسب فارسی بخش‌ها — از کلیدهای VIEW_ACCESS */
+    28→    28→const VIEW_LABELS: Record<string, string> = {
+    29→    29→  dashboard: 'داشبورد',
+    30→    30→  orders: 'سفارش‌ها',
+    31→    31→  receiving: 'دریافت مرسوله',
+    32→    32→  verify: 'تأیید انبار',
+    33→    33→  accounting: 'حسابداری و هلو',
+    34→    34→  products: 'کالاها',
+    35→    35→  providers: 'تأمین‌کنندگان',
+    36→    36→  cheques: 'چک‌ها',
+    37→    37→  archive: 'آرشیو اسناد',
+    38→    38→  zonecount: 'شمارش زون',
+    39→    39→  leaves: 'مرخصی',
+    40→    40→  tasks: 'وظایف',
+    41→    41→  sop: 'روال‌ها',
+    42→    42→  wall: 'دیجیتال‌وال',
+    43→    43→  messages: 'پیام‌ها',
+    44→    44→  notes: 'یادداشت',
+    45→    45→  feedback: 'بازخورد',
+    46→    46→  planogram: 'پلانوگرام',
+    47→    47→  sales: 'فروش',
+    48→    48→  perf: 'عملکرد',
+    49→    49→  admin: 'مدیریت سامانه',
+    50→    50→  notifs: 'اعلان‌ها',
+    51→    51→  briefing: 'صبح‌نامه',
+    52→    52→  reports: 'گزارش‌ها',
+    53→    53→  pricecheck: 'کنترل قیمت',
+    54→    54→  science: 'جعبه‌ابزار علمی',
+    55→    55→  research: 'پژوهش',
+    56→    56→  demo: 'استودیوی دمو',
+    57→    57→  crm: 'CRM مشتریان',
+    58→    58→  personnel: 'مدیریت پرسنل',
+    59→    59→  rbac: 'نقش‌ها',
+    60→    60→  urgent: 'پرسش‌های فوری',
+    61→    61→  data: 'مدیریت داده‌ها',
+    62→    62→  kb: 'دانشنامه',
+    63→    63→  help: 'راهنما',
+    64→    64→}
+    65→    65→
+    66→    66→type RoleRow = {
+    67→    67→  id: string
+    68→    68→  key: string
+    69→    69→  name: string
+    70→    70→  category: string
+    71→    71→  description: string
+    72→    72→  color: string
+    73→    73→  builtin: boolean
+    74→    74→  active: boolean
+    75→    75→  permissions: { views: string[]; caps: string[] }
+    76→    76→}
+    77→    77→
+    78→    78→type UserRow = {
+    79→    79→  id: string
+    80→    80→  name: string
+    81→    81→  username: string
+    82→    82→  role: string
+    83→    83→  secondaryRoles: string[]
+    84→    84→  roleIds: string[]
+    85→    85→  color: string
+    86→    86→  active: boolean
+    87→    87→  points: number
+    88→    88→}
+    89→    89→
+    90→    90→type Editor = {
+    91→    91→  id?: string
+    92→    92→  key?: string
+    93→    93→  keyInput: string
+    94→    94→  name: string
+    95→    95→  category: string
+    96→    96→  color: string
+    97→    97→  description: string
+    98→    98→  views: string[]
+    99→    99→  caps: string[]
+   100→   100→  active: boolean
+   101→   101→  builtin: boolean
+   102→   102→}
+   103→   103→
+   104→   104→const inputCls = 'w-full rounded-xl border border-input bg-white/90 px-3.5 py-2.5 text-sm shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20'
+   105→   105→
+   106→   106→function emptyEditor(): Editor {
+   107→   107→  return { keyInput: '', name: '', category: '', color: OLIVE, description: '', views: [], caps: [], active: true, builtin: false }
+   108→   108→}
+   109→   109→
+   110→   110→/** کلید لاتین برای نقش سفارشی — از نام اگر لاتین داشت، وگرنه خالی (کاربر باید وارد کند) */
+   111→   111→function latinKey(s: string): string {
+   112→   112→  return s
+   113→   113→    .trim()
+   114→   114→    .toUpperCase()
+   115→   115→    .replace(/[^A-Z0-9_]+/g, '_')
+   116→   116→    .replace(/^_+|_+$/g, '')
+   117→   117→}
+   118→   118→
+   119→   119→function Chip({ label, checked, color, onClick, disabled }: { label: React.ReactNode; checked: boolean; color: string; onClick: () => void; disabled?: boolean }) {
+   120→   120→  return (
+   121→   121→    <button
+   122→   122→      type="button"
+   123→   123→      disabled={disabled}
+   124→   124→      onClick={onClick}
+   125→   125→      className={cn(
+   126→   126→        'rounded-xl border px-3 py-2 text-xs font-bold transition-all active:scale-95 disabled:opacity-50',
+   127→   127→        checked ? 'border-transparent text-white shadow-md' : 'border-border bg-card text-muted-foreground hover:border-[#0e7a4a]/40'
+   128→   128→      )}
+   129→   129→      style={checked ? { background: color } : undefined}
+   130→   130→    >
+   131→   131→      {checked && <CheckIcon />} {label}
+   132→   132→    </button>
+   133→   133→  )
+   134→   134→}
+   135→   135→
+   136→   136→function CheckIcon() {
+   137→   137→  return (
+   138→   138→    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" className="inline align-[-1px]">
+   139→   139→      <path d="M20 6 9 17l-5-5" />
+   140→   140→    </svg>
+   141→   141→  )
+   142→   142→}
+   143→   143→
+   144→   144→export default function RbacView({ ctx }: { ctx: AppCtx }) {
+   145→   145→  const [tab, setTab] = useState<'roles' | 'users'>('roles')
+   146→   146→  const [roles, setRoles] = useState<RoleRow[]>([])
+   147→   147→  const [users, setUsers] = useState<UserRow[]>([])
+   148→   148→  const [loading, setLoading] = useState(true)
+   149→   149→  const [editor, setEditor] = useState<Editor | null>(null)
+   150→   150→  const [saving, setSaving] = useState(false)
+   151→   151→  const [armDelete, setArmDelete] = useState(false)
+   152→   152→  const [manageId, setManageId] = useState<string | null>(null)
+   153→   153→  const [manageForm, setManageForm] = useState({ role: '', secondaryRoles: [] as string[], pin: '', color: EMERALD, active: true })
+   154→   154→
+   155→   155→  const user = ctx.user
+   156→   156→  const rawRoleIds = (user as unknown as { roleIds?: string | string[] } | null)?.roleIds
+   157→   157→  const myRoleIds: string[] = Array.isArray(rawRoleIds)
+   158→   158→    ? rawRoleIds
+   159→   159→    : typeof rawRoleIds === 'string'
+   160→   160→      ? (() => {
+   161→   161→          try {
+   162→   162→            return JSON.parse(rawRoleIds || '[]')
+   163→   163→          } catch {
+   164→   164→            return []
+   165→   165→          }
+   166→   166→        })()
+   167→   167→      : []
+   168→   168→  const myKeys = useMemo(
+   169→   169→    () => Array.from(new Set([...(user ? [user.role] : []), ...(user?.secondaryRoles || []), ...myRoleIds])),
+   170→   170→    [user, myRoleIds]
+   171→   171→  )
+   172→   172→  const allowed = useMemo(() => myKeys.some((k) => RBAC_GUARD.includes(k)), [myKeys])
+   173→   173→
+   174→   174→  const load = useCallback(async () => {
+   175→   175→    try {
+   176→   176→      const [r, u] = await Promise.all([
+   177→   177→        api<{ roles: RoleRow[] }>('/api/roles'),
+   178→   178→        api<{ users: UserRow[] }>('/api/users'),
+   179→   179→      ])
+   180→   180→      setRoles(r.roles || [])
+   181→   181→      setUsers(u.users || [])
+   182→   182→    } catch (e) {
+   183→   183→      toast.error((e as Error).message)
+   184→   184→    } finally {
+   185→   185→      setLoading(false)
+   186→   186→    }
+   187→   187→  }, [])
+   188→   188→
+   189→   189→  useEffect(() => {
+   190→   190→    load()
+   191→   191→  }, [load])
+   192→   192→
+   193→   193→  const roleByKey = useMemo(() => new Map(roles.map((r) => [r.key, r])), [roles])
+   194→   194→  const categories = useMemo(() => Array.from(new Set(roles.map((r) => r.category).filter(Boolean))), [roles])
+   195→   195→  const grouped = useMemo(() => {
+   196→   196→    const m = new Map<string, RoleRow[]>()
+   197→   197→    for (const r of roles) {
+   198→   198→      const cat = r.category || 'عمومی'
+   199→   199→      if (!m.has(cat)) m.set(cat, [])
+   200→   200→      m.get(cat)!.push(r)
+   201→   201→    }
+   202→   202→    return Array.from(m.entries())
+   203→   203→  }, [roles])
+   204→   204→
+   205→   205→  const managed = manageId ? users.find((u) => u.id === manageId) || null : null
+   206→   206→
+   207→   207→  /* ── ذخیرهٔ نقش (ایجاد/ویرایش) ── */
+   208→   208→  const saveRole = async () => {
+   209→   209→    if (!editor) return
+   210→   210→    if (!editor.name.trim()) {
+   211→   211→      toast.error('نام نقش الزامی است')
+   212→   212→      return
+   213→   213→    }
+   214→   214→    setSaving(true)
+   215→   215→    const payload = {
+   216→   216→      name: editor.name.trim(),
+   217→   217→      category: editor.category.trim() || 'سفارشی',
+   218→   218→      color: editor.color,
+   219→   219→      description: editor.description.trim(),
+   220→   220→      views: editor.views,
+   221→   221→      caps: editor.caps,
+   222→   222→    }
+   223→   223→    try {
+   224→   224→      if (editor.id) {
+   225→   225→        await api('/api/roles', { method: 'PATCH', body: { id: editor.id, ...payload, active: editor.active } })
+   226→   226→        toast.success('نقش به‌روزرسانی شد ✓')
+   227→   227→      } else {
+   228→   228→        // کلید لاتین لازم است (نام فارسی به‌تنهایی کلید نمی‌شود) — از فیلد اختصاصی یا حروف لاتینِ نام
+   229→   229→        const key = latinKey(editor.keyInput) || latinKey(editor.name)
+   230→   230→        if (!key) {
+   231→   231→          toast.error('یک کلید لاتین کوتاه برای نقش بنویسید — مثلاً SOCIAL_MEDIA')
+   232→   232→          setSaving(false)
+   233→   233→          return
+   234→   234→        }
+   235→   235→        await api('/api/roles', { method: 'POST', body: { ...payload, key } })
+   236→   236→        toast.success(`نقش جدید ساخته شد 🌿 (custom_${key})`)
+   237→   237→      }
+   238→   238→      setEditor(null)
+   239→   239→      await load()
+   240→   240→    } catch (e) {
+   241→   241→      toast.error((e as Error).message)
+   242→   242→    } finally {
+   243→   243→      setSaving(false)
+   244→   244→    }
+   245→   245→  }
+   246→   246→
+   247→   247→  const deleteRole = async (r: { id: string; name: string }) => {
+   248→   248→    try {
+   249→   249→      await api(`/api/roles?id=${r.id}`, { method: 'DELETE' })
+   250→   250→      toast.success('نقش حذف شد')
+   251→   251→      setEditor(null)
+   252→   252→      setArmDelete(false)
+   253→   253→      await load()
+   254→   254→    } catch (e) {
+   255→   255→      toast.error((e as Error).message)
+   256→   256→      setArmDelete(false)
+   257→   257→    }
+   258→   258→  }
+   259→   259→
+   260→   260→  /* ── تخصیص/برداشتن نقش از کاربر (فوری) ── */
+   261→   261→  const toggleUserRole = async (u: UserRow, roleKey: string, assign: boolean) => {
+   262→   262→    try {
+   263→   263→      await api('/api/roles', { method: 'PUT', body: { userId: u.id, roleKey, assign } })
+   264→   264→      toast.success(assign ? 'نقش تخصیص یافت ✓' : 'نقش برداشته شد')
+   265→   265→      await load()
+   266→   266→      setManageForm((f) => ({ ...f }))
+   267→   267→    } catch (e) {
+   268→   268→      toast.error((e as Error).message)
+   269→   269→    }
+   270→   270→  }
+   271→   271→
+   272→   272→  /* ── ذخیرهٔ فرم کاربر (نقش اصلی/ثانویه/PIN/رنگ/فعال) ── */
+   273→   273→  const saveUser = async () => {
+   274→   274→    if (!managed) return
+   275→   275→    setSaving(true)
+   276→   276→    try {
+   277→   277→      const body: Record<string, unknown> = {
+   278→   278→        role: manageForm.role,
+   279→   279→        secondaryRoles: manageForm.secondaryRoles,
+   280→   280→        color: manageForm.color,
+   281→   281→        active: manageForm.active,
+   282→   282→      }
+   283→   283→      if (manageForm.pin) body.pin = manageForm.pin.replace(/\D/g, '')
+   284→   284→      await api(`/api/users/${managed.id}`, { method: 'PATCH', body })
+   285→   285→      toast.success('کاربر به‌روزرسانی شد ✓')
+   286→   286→      setManageId(null)
+   287→   287→      await load()
+   288→   288→    } catch (e) {
+   289→   289→      toast.error((e as Error).message)
+   290→   290→    } finally {
+   291→   291→      setSaving(false)
+   292→   292→    }
+   293→   293→  }
+   294→   294→
+   295→   295→  if (!allowed) {
+   296→   296→    return (
+   297→   297→      <div className="space-y-4">
+   298→   298→        <SectionCard title="نقش‌ها و دسترسی‌ها" icon={<Lock size={18} />}>
+   299→   299→          <EmptyState emoji="🔒" title="دسترسی محدود" hint="مدیریت نقش‌ها فقط برای مدیر عملیات، مدیر کل، مالک و مدیر فناوری اطلاعات باز است. با مدیریت سامانه هماهنگ کنید." />
+   300→   300→        </SectionCard>
+   301→   301→      </div>
+   302→   302→    )
+   303→   303→  }
+   304→   304→
+   305→   305→  if (loading) {
+   306→   306→    return (
+   307→   307→      <div className="space-y-4">
+   308→   308→        <div className="glow-card h-28 animate-pulse rounded-2xl bg-card" />
+   309→   309→        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+   310→   310→          {[0, 1, 2, 3, 4, 5].map((i) => (
+   311→   311→            <div key={i} className="glow-card h-36 animate-pulse rounded-2xl bg-card" />
+   312→   312→          ))}
+   313→   313→        </div>
+   314→   314→      </div>
+   315→   315→    )
+   316→   316→  }
+   317→   317→
+   318→   318→  return (
+   319→   319→    <div className="space-y-4">
+   320→   320→      {/* سربرگ */}
+   321→   321→      <SectionCard
+   322→   322→        title="نقش‌ها و دسترسی‌ها"
+   323→   323→        subtitle="نقش بسازید، به همکاران تخصیص دهید — یک نفر می‌تواند چند نقش داشته باشد و دسترسی‌ها جمع می‌شوند."
+   324→   324→        icon={<ShieldCheck size={20} />}
+   325→   325→        actions={
+   326→   326→          <button
+   327→   327→            type="button"
+   328→   328→            onClick={() => {
+   329→   329→              setArmDelete(false)
+   330→   330→              setEditor(emptyEditor())
+   331→   331→            }}
+   332→   332→            className="flex min-h-[44px] items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-primary/90 active:scale-95"
+   333→   333→          >
+   334→   334→            <Plus size={16} /> نقش جدید
+   335→   335→          </button>
+   336→   336→        }
+   337→   337→      >
+   338→   338→        <div className="flex items-start gap-2 rounded-xl border border-[#e9b90c]/50 bg-[#fdf6dd] px-3.5 py-3 text-xs font-bold leading-relaxed text-[#8a6d10]">
+   339→   339→          <Info size={15} className="mt-0.5 shrink-0" />
+   340→   340→          مالک، مدیر کل، مدیر عملیات و مدیر سامانه همیشه به همهٔ بخش‌ها دسترسی دارند و محدود نمی‌شوند.
+   341→   341→        </div>
+   342→   342→      </SectionCard>
+   343→   343→
+   344→   344→      {/* تب‌ها */}
+   345→   345→      <div className="flex flex-wrap gap-2">
+   346→   346→        {[
+   347→   347→          { key: 'roles' as const, label: 'نقش‌ها', icon: <ShieldCheck size={15} /> },
+   348→   348→          { key: 'users' as const, label: 'کاربران', icon: <Users size={15} /> },
+   349→   349→        ].map((t) => (
+   350→   350→          <button
+   351→   351→            key={t.key}
+   352→   352→            type="button"
+   353→   353→            onClick={() => setTab(t.key)}
+   354→   354→            className={cn(
+   355→   355→              'flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition-all active:scale-95',
+   356→   356→              tab === t.key ? 'bg-[#0b2e20] text-white shadow-md' : 'border border-border bg-card text-muted-foreground hover:border-[#0e7a4a]/40'
+   357→   357→            )}
+   358→   358→          >
+   359→   359→            {t.icon} {t.label}
+   360→   360→          </button>
+   361→   361→        ))}
+   362→   362→      </div>
+   363→   363→
+   364→   364→      {/* ── تب نقش‌ها ── */}
+   365→   365→      {tab === 'roles' && (
+   366→   366→        <div className="space-y-5">
+   367→   367→          {grouped.map(([cat, list]) => (
+   368→   368→            <div key={cat}>
+   369→   369→              <div className="mb-2 flex items-center gap-2">
+   370→   370→                <span className="h-2 w-2 rounded-full bg-[#c9a227]" />
+   371→   371→                <h3 className="text-sm font-black text-foreground">{cat}</h3>
+   372→   372→                <span className="text-[11px] text-muted-foreground">({faNum(list.length)} نقش)</span>
+   373→   373→                <div className="h-px flex-1 bg-border" />
+   374→   374→              </div>
+   375→   375→              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+   376→   376→                {list.map((r) => (
+   377→   377→                  <button
+   378→   378→                    key={r.id}
+   379→   379→                    type="button"
+   380→   380→                    onClick={() => {
+   381→   381→                      setArmDelete(false)
+   382→   382→                      setEditor({
+   383→   383→                        id: r.id,
+   384→   384→                        key: r.key,
+   385→   385→                        keyInput: r.key,
+   386→   386→                        name: r.name,
+   387→   387→                        category: r.category,
+   388→   388→                        color: r.color,
+   389→   389→                        description: r.description,
+   390→   390→                        views: r.permissions?.views || [],
+   391→   391→                        caps: r.permissions?.caps || [],
+   392→   392→                        active: r.active,
+   393→   393→                        builtin: r.builtin,
+   394→   394→                      })
+   395→   395→                    }}
+   396→   396→                    className="glow-card rounded-2xl bg-card p-4 text-right transition-all hover:-translate-y-0.5"
+   397→   397→                  >
+   398→   398→                    <div className="flex items-start gap-2.5">
+   399→   399→                      <span className="mt-1 h-3.5 w-3.5 shrink-0 rounded-full ring-2 ring-white/60" style={{ background: r.color }} />
+   400→   400→                      <div className="min-w-0 flex-1">
+   401→   401→                        <div className="flex flex-wrap items-center gap-1.5">
+   402→   402→                          <p className="text-sm font-black text-foreground">{r.name}</p>
+   403→   403→                          <Pill label={r.builtin ? 'سیستمی' : 'سفارشی'} color={r.builtin ? '#556057' : GOLD} />
+   404→   404→                          {!r.active && <Pill label="غیرفعال" color={ROSE} />}
+   405→   405→                        </div>
+   406→   406→                        <p dir="ltr" className="mt-0.5 text-right font-mono text-[10px] text-muted-foreground">{r.key}</p>
+   407→   407→                      </div>
+   408→   408→                    </div>
+   409→   409→                    {r.description && <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{r.description}</p>}
+   410→   410→                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+   411→   411→                      {r.permissions?.caps?.slice(0, 3).map((c) => (
+   412→   412→                        <span key={c} className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-primary">
+   413→   413→                          {CAPS[c] || c}
+   414→   414→                        </span>
+   415→   415→                      ))}
+   416→   416→                      {(r.permissions?.caps?.length || 0) > 3 && (
+   417→   417→                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-primary">
+   418→   418→                          +{faNum((r.permissions?.caps?.length || 0) - 3)}
+   419→   419→                        </span>
+   420→   420→                      )}
+   421→   421→                      <span className="ms-auto text-[10px] font-bold text-muted-foreground">
+   422→   422→                        {r.permissions?.views?.includes('*') ? 'همهٔ بخش‌ها' : `${faNum(r.permissions?.views?.length || 0)} بخش`}
+   423→   423→                      </span>
+   424→   424→                    </div>
+   425→   425→                  </button>
+   426→   426→                ))}
+   427→   427→              </div>
+   428→   428→            </div>
+   429→   429→          ))}
+   430→   430→        </div>
+   431→   431→      )}
+   432→   432→
+   433→   433→      {/* ── تب کاربران ── */}
+   434→   434→      {tab === 'users' && (
+   435→   435→        <div className="space-y-3">
+   436→   436→          <div className="glow-card overflow-hidden rounded-2xl bg-card">
+   437→   437→            <div className="max-h-[560px] divide-y divide-border overflow-y-auto scroll-gold">
+   438→   438→              {users.map((u) => (
+   439→   439→                <div key={u.id} className="flex flex-wrap items-center gap-3 p-3.5">
+   440→   440→                  <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', u.active ? 'bg-[#0e7a4a]' : 'bg-[#b3372f]')} title={u.active ? 'فعال' : 'غیرفعال'} />
+   441→   441→                  <Avatar name={u.name} color={u.color} size={40} />
+   442→   442→                  <div className="min-w-0 flex-1">
+   443→   443→                    <p className="truncate text-sm font-black text-foreground">{u.name}</p>
+   444→   444→                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+   445→   445→                      <Pill label={ROLE_LABELS[u.role] || u.role} color={roleByKey.get(u.role)?.color || EMERALD} />
+   446→   446→                      {(u.roleIds || []).map((k) => {
+   447→   447→                        const r = roleByKey.get(k)
+   448→   448→                        return r ? (
+   449→   449→                          <Pill key={k} label={r.name} color={r.color} />
+   450→   450→                        ) : (
+   451→   451→                          <Pill key={k} label={k} color="#6d7a6e" />
+   452→   452→                        )
+   453→   453→                      })}
+   454→   454→                      {(u.secondaryRoles || []).map((s) => (
+   455→   455→                        <Pill key={s} label={SECONDARY_LABELS[s] || s} color={TERRA} />
+   456→   456→                      ))}
+   457→   457→                    </div>
+   458→   458→                  </div>
+   459→   459→                  <button
+   460→   460→                    type="button"
+   461→   461→                    onClick={() => {
+   462→   462→                      setManageForm({ role: u.role, secondaryRoles: u.secondaryRoles || [], pin: '', color: u.color, active: u.active })
+   463→   463→                      setManageId(u.id)
+   464→   464→                    }}
+   465→   465→                    className="flex min-h-[44px] items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold transition hover:border-primary/60 active:scale-95"
+   466→   466→                  >
+   467→   467→                    <Pencil size={15} /> مدیریت
+   468→   468→                  </button>
+   469→   469→                </div>
+   470→   470→              ))}
+   471→   471→            </div>
+   472→   472→          </div>
+   473→   473→
+   474→   474→          {/* کارت توضیح — چرا چند نقش؟ */}
+   475→   475→          <div className="rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/60 p-4">
+   476→   476→            <p className="text-xs font-black text-[#0e7a4a]">🎓 چرا یک نفر می‌تواند چند نقش داشته باشد؟</p>
+   477→   477→            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+   478→   478→              در هایپر زیتون طبیعی است که یک همکار هم «فروشنده» باشد و هم «مسئول شبکه‌های اجتماعی». به‌جای ساختن حساب دوم و دو هویت جدا،
+   479→   479→              همهٔ نقش‌های فرد را به یک حساب وصل می‌کنیم: دسترسی‌ها جمع می‌شوند، سابقه و امتیازها یکپارچه می‌ماند و اگر روزی نقشی برداشته شود،
+   480→   480→              فقط همان دسترسی بسته می‌شود — نه هویت همکار.
+   481→   481→            </p>
+   482→   482→            <p className="mt-2 border-t border-dashed border-[#c9a227]/40 pt-2 text-[9px] font-bold text-[#8a6d10]">
+   483→   483→              📚 اصل حداقل دسترسی + تفکیک هویت از مجوز (Identity vs. Entitlement)
+   484→   484→            </p>
+   485→   485→          </div>
+   486→   486→        </div>
+   487→   487→      )}
+   488→   488→
+   489→   489→      {/* ── مودال ویرایشگر نقش ── */}
+   490→   490→      {editor && (
+   491→   491→        <Modal wide title={editor.id ? `ویرایش نقش: ${editor.name}` : 'نقش جدید'} onClose={() => setEditor(null)}>
+   492→   492→          <div className="grid gap-3 sm:grid-cols-2">
+   493→   493→            <Labeled label="نام نقش *">
+   494→   494→              <input className={inputCls} value={editor.name} onChange={(e) => setEditor({ ...editor, name: e.target.value })} placeholder="مثلاً مسئول شبکه‌های اجتماعی" />
+   495→   495→            </Labeled>
+   496→   496→            {editor.id ? (
+   497→   497→              <Labeled label="کلید نقش (غیرقابل تغییر)">
+   498→   498→                <div dir="ltr" className="rounded-xl bg-muted/60 px-3.5 py-2.5 text-left font-mono text-xs text-muted-foreground">{editor.key}</div>
+   499→   499→              </Labeled>
+   500→   500→            ) : (
+   501→   501→              <Labeled label="کلید نقش (لاتین) *" hint="حروف انگلیسی/عدد/خط‌تیره — در سامانه به شکل custom_… ثبت می‌شود">
+   502→   502→                <input
+   503→   503→                  dir="ltr"
+   504→   504→                  className={cn(inputCls, 'text-left font-mono')}
+   505→   505→                  value={editor.keyInput}
+   506→   506→                  onChange={(e) => setEditor({ ...editor, keyInput: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') })}
+   507→   507→                  placeholder="SOCIAL_MEDIA"
+   508→   508→                />
+   509→   509→              </Labeled>
+   510→   510→            )}
+   511→   511→            <Labeled label="دسته/گروه" hint="می‌توانید گروه تازه بسازید — از فهرست پایین هم می‌توانید انتخاب کنید">
+   512→   512→              <input className={inputCls} list="rb-cats" value={editor.category} onChange={(e) => setEditor({ ...editor, category: e.target.value })} placeholder="مثلاً بازاریابی" />
+   513→   513→              <datalist id="rb-cats">
+   514→   514→                {categories.map((c) => (
+   515→   515→                  <option key={c} value={c} />
+   516→   516→                ))}
+   517→   517→              </datalist>
+   518→   518→            </Labeled>
+   519→   519→          </div>
+   520→   520→
+   521→   521→          <Labeled label="رنگ نقش">
+   522→   522→            <div className="flex flex-wrap gap-2">
+   523→   523→              {SWATCHES.map((c) => (
+   524→   524→                <button
+   525→   525→                  key={c}
+   526→   526→                  type="button"
+   527→   527→                  onClick={() => setEditor({ ...editor, color: c })}
+   528→   528→                  className={cn('h-9 w-9 rounded-full border-2 transition', editor.color === c ? 'scale-110 border-foreground/70' : 'border-transparent')}
+   529→   529→                  style={{ background: c }}
+   530→   530→                  aria-label={`رنگ ${c}`}
+   531→   531→                />
+   532→   532→              ))}
+   533→   533→            </div>
+   534→   534→          </Labeled>
+   535→   535→
+   536→   536→          <Labeled label="توضیح">
+   537→   537→            <textarea className={cn(inputCls, 'min-h-[56px]')} value={editor.description} onChange={(e) => setEditor({ ...editor, description: e.target.value })} placeholder="این نقش چه مسئولیتی دارد؟" />
+   538→   538→          </Labeled>
+   539→   539→
+   540→   540→          {/* بخش‌های قابل دسترس */}
+   541→   541→          <div className="rounded-xl border border-border p-3">
+   542→   542→            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   543→   543→              <p className="text-xs font-black">🧭 بخش‌های قابل دسترس</p>
+   544→   544→              <Chip
+   545→   545→                label="همهٔ بخش‌ها (*)"
+   546→   546→                checked={editor.views.includes('*')}
+   547→   547→                color={EMERALD}
+   548→   548→                onClick={() => setEditor({ ...editor, views: editor.views.includes('*') ? [] : ['*'] })}
+   549→   549→              />
+   550→   550→            </div>
+   551→   551→            <div className="flex flex-wrap gap-1.5">
+   552→   552→              {Object.keys(VIEW_ACCESS).map((v) => (
+   553→   553→                <Chip
+   554→   554→                  key={v}
+   555→   555→                  label={VIEW_LABELS[v] || v}
+   556→   556→                  checked={editor.views.includes('*') || editor.views.includes(v)}
+   557→   557→                  color={EMERALD}
+   558→   558→                  disabled={editor.views.includes('*')}
+   559→   559→                  onClick={() =>
+   560→   560→                    setEditor({
+   561→   561→                      ...editor,
+   562→   562→                      views: editor.views.includes(v) ? editor.views.filter((x) => x !== v) : [...editor.views, v],
+   563→   563→                    })
+   564→   564→                  }
+   565→   565→                />
+   566→   566→              ))}
+   567→   567→            </div>
+   568→   568→            <p className="mt-2 text-[10px] text-muted-foreground">
+   569→   569→              {editor.views.includes('*')
+   570→   570→                ? 'این نقش به همهٔ بخش‌ها دسترسی دارد.'
+   571→   571→                : `${faNum(editor.views.length)} بخش انتخاب شده — داشبورد برای همه باز است.`}
+   572→   572→            </p>
+   573→   573→          </div>
+   574→   574→
+   575→   575→          {/* دسترسی‌های عملیاتی */}
+   576→   576→          <div className="rounded-xl border border-border p-3">
+   577→   577→            <p className="mb-2 text-xs font-black">🔧 دسترسی‌های عملیاتی</p>
+   578→   578→            <div className="flex flex-wrap gap-1.5">
+   579→   579→              {Object.keys(CAPS).map((c) => (
+   580→   580→                <Chip
+   581→   581→                  key={c}
+   582→   582→                  label={CAPS[c]}
+   583→   583→                  checked={editor.caps.includes(c)}
+   584→   584→                  color={TERRA}
+   585→   585→                  onClick={() => setEditor({ ...editor, caps: editor.caps.includes(c) ? editor.caps.filter((x) => x !== c) : [...editor.caps, c] })}
+   586→   586→                />
+   587→   587→              ))}
+   588→   588→            </div>
+   589→   589→            <p className="mt-2 text-[10px] text-muted-foreground">{faNum(editor.caps.length)} دسترسی عملیاتی انتخاب شده.</p>
+   590→   590→          </div>
+   591→   591→
+   592→   592→          {editor.id && (
+   593→   593→            <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-muted/50 px-3 py-2.5 text-sm font-bold">
+   594→   594→              <input type="checkbox" checked={editor.active} onChange={(e) => setEditor({ ...editor, active: e.target.checked })} className="h-4 w-4 accent-[#0e7a4a]" />
+   595→   595→              نقش فعال است (غیرفعال = هیچ‌کس با این نقش وارد نمی‌شود)
+   596→   596→            </label>
+   597→   597→          )}
+   598→   598→
+   599→   599→          <div className="flex flex-wrap gap-2">
+   600→   600→            <button
+   601→   601→              type="button"
+   602→   602→              disabled={saving}
+   603→   603→              onClick={saveRole}
+   604→   604→              className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-primary/90 active:scale-95 disabled:opacity-60"
+   605→   605→            >
+   606→   606→              <ShieldCheck size={16} /> {saving ? 'در حال ذخیره…' : editor.id ? 'ذخیرهٔ تغییرات' : 'ساخت نقش'}
+   607→   607→            </button>
+   608→   608→            {editor.id && !editor.builtin && (
+   609→   609→              <button
+   610→   610→                type="button"
+   611→   611→                onClick={() => (armDelete && editor.id ? deleteRole({ id: editor.id, name: editor.name }) : setArmDelete(true))}
+   612→   612→                className={cn(
+   613→   613→                  'flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold transition',
+   614→   614→                  armDelete ? 'bg-[#b3372f] text-white shadow-md' : 'border border-[#b3372f]/40 text-[#b3372f] hover:bg-[#b3372f]/10'
+   615→   615→                )}
+   616→   616→              >
+   617→   617→                <Trash2 size={15} /> {armDelete ? 'مطمئنید؟ حذف قطعی' : 'حذف نقش'}
+   618→   618→              </button>
+   619→   619→            )}
+   620→   620→            <button
+   621→   621→              type="button"
+   622→   622→              onClick={() => setEditor(null)}
+   623→   623→              className="min-h-[44px] rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-bold text-muted-foreground transition hover:bg-muted"
+   624→   624→            >
+   625→   625→              انصراف
+   626→   626→            </button>
+   627→   627→          </div>
+   628→   628→          {editor.id && editor.builtin && (
+   629→   629→            <p className="text-[10px] text-muted-foreground">نقش‌های سیستمی حذف نمی‌شوند — در صورت نیاز غیرفعالشان کنید.</p>
+   630→   630→          )}
+   631→   631→        </Modal>
+   632→   632→      )}
+   633→   633→
+   634→   634→      {/* ── مودال مدیریت کاربر ── */}
+   635→   635→      {managed && (
+   636→   636→        <Modal wide title={`مدیریت کاربر: ${managed.name}`} onClose={() => setManageId(null)}>
+   637→   637→          <div className="flex items-center gap-3 rounded-xl bg-secondary/60 p-3">
+   638→   638→            <Avatar name={managed.name} color={manageForm.color} size={44} />
+   639→   639→            <div className="min-w-0 flex-1">
+   640→   640→              <p className="text-sm font-black">{managed.name}</p>
+   641→   641→              <p dir="ltr" className="text-right text-[10px] text-muted-foreground">@{managed.username}</p>
+   642→   642→            </div>
+   643→   643→            <div className="flex flex-wrap gap-1.5">
+   644→   644→              {(managed.roleIds || []).map((k) => {
+   645→   645→                const r = roleByKey.get(k)
+   646→   646→                return r ? <Pill key={k} label={r.name} color={r.color} /> : null
+   647→   647→              })}
+   648→   648→            </div>
+   649→   649→          </div>
+   650→   650→
+   651→   651→          <div className="grid gap-3 sm:grid-cols-2">
+   652→   652→            <Labeled label="نقش اصلی">
+   653→   653→              <select className={inputCls} value={manageForm.role} onChange={(e) => setManageForm({ ...manageForm, role: e.target.value })}>
+   654→   654→                {Object.keys(ROLE_LABELS).map((k) => (
+   655→   655→                  <option key={k} value={k}>
+   656→   656→                    {ROLE_LABELS[k]}
+   657→   657→                  </option>
+   658→   658→                ))}
+   659→   659→              </select>
+   660→   660→            </Labeled>
+   661→   661→            <Labeled label="بازنشانی PIN (۴ تا ۶ رقم)" hint="خالی = بدون تغییر">
+   662→   662→              <input
+   663→   663→                dir="ltr"
+   664→   664→                className={cn(inputCls, 'text-left tabular-nums')}
+   665→   665→                value={manageForm.pin}
+   666→   666→                onChange={(e) => setManageForm({ ...manageForm, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+   667→   667→                placeholder="••••"
+   668→   668→              />
+   669→   669→            </Labeled>
+   670→   670→          </div>
+   671→   671→
+   672→   672→          <Labeled label="نقش‌های ثانویه (مجوزهای کاری موقت)">
+   673→   673→            <div className="flex flex-wrap gap-1.5">
+   674→   674→              {Object.keys(SECONDARY_LABELS).map((s) => (
+   675→   675→                <Chip
+   676→   676→                  key={s}
+   677→   677→                  label={SECONDARY_LABELS[s]}
+   678→   678→                  checked={manageForm.secondaryRoles.includes(s)}
+   679→   679→                  color={TERRA}
+   680→   680→                  onClick={() =>
+   681→   681→                    setManageForm({
+   682→   682→                      ...manageForm,
+   683→   683→                      secondaryRoles: manageForm.secondaryRoles.includes(s)
+   684→   684→                        ? manageForm.secondaryRoles.filter((x) => x !== s)
+   685→   685→                        : [...manageForm.secondaryRoles, s],
+   686→   686→                    })
+   687→   687→                  }
+   688→   688→                />
+   689→   689→              ))}
+   690→   690→            </div>
+   691→   691→          </Labeled>
+   692→   692→
+   693→   693→          {/* نقش‌های چندگانه — تخصیص فوری */}
+   694→   694→          <div className="rounded-xl border border-border p-3">
+   695→   695→            <p className="mb-1 text-xs font-black">🎭 نقش‌های چندگانه — با هر کلیک فوری اعمال می‌شود</p>
+   696→   696→            <p className="mb-2 text-[10px] text-muted-foreground">نقش اصلی کاربر در این فهرست نیست؛ برای تغییرش از «نقش اصلی» بالا استفاده کنید.</p>
+   697→   697→            <div className="flex flex-wrap gap-1.5">
+   698→   698→              {roles
+   699→   699→                .filter((r) => r.key !== manageForm.role)
+   700→   700→                .map((r) => {
+   701→   701→                  const has = (managed.roleIds || []).includes(r.key)
+   702→   702→                  return (
+   703→   703→                    <Chip
+   704→   704→                      key={r.key}
+   705→   705→                      label={
+   706→   706→                        <>
+   707→   707→                          {r.name}
+   708→   708→                          {r.builtin && <span className="mr-1 text-[9px] opacity-70">(سیستمی)</span>}
+   709→   709→                        </>
+   710→   710→                      }
+   711→   711→                      checked={has}
+   712→   712→                      color={r.color}
+   713→   713→                      onClick={() => toggleUserRole(managed, r.key, !has)}
+   714→   714→                    />
+   715→   715→                  )
+   716→   716→                })}
+   717→   717→            </div>
+   718→   718→          </div>
+   719→   719→
+   720→   720→          <Labeled label="رنگ کاربر">
+   721→   721→            <div className="flex flex-wrap gap-2">
+   722→   722→              {SWATCHES.map((c) => (
+   723→   723→                <button
+   724→   724→                  key={c}
+   725→   725→                  type="button"
+   726→   726→                  onClick={() => setManageForm({ ...manageForm, color: c })}
+   727→   727→                  className={cn('h-9 w-9 rounded-full border-2 transition', manageForm.color === c ? 'scale-110 border-foreground/70' : 'border-transparent')}
+   728→   728→                  style={{ background: c }}
+   729→   729→                  aria-label={`رنگ ${c}`}
+   730→   730→                />
+   731→   731→              ))}
+   732→   732→            </div>
+   733→   733→          </Labeled>
+   734→   734→
+   735→   735→          <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-muted/50 px-3 py-2.5 text-sm font-bold">
+   736→   736→            <input type="checkbox" checked={manageForm.active} onChange={(e) => setManageForm({ ...manageForm, active: e.target.checked })} className="h-4 w-4 accent-[#0e7a4a]" />
+   737→   737→            حساب کاربری فعال است
+   738→   738→          </label>
+   739→   739→
+   740→   740→          <div className="flex gap-2">
+   741→   741→            <button
+   742→   742→              type="button"
+   743→   743→              disabled={saving}
+   744→   744→              onClick={saveUser}
+   745→   745→              className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-primary/90 active:scale-95 disabled:opacity-60"
+   746→   746→            >
+   747→   747→              <ShieldCheck size={16} /> {saving ? 'در حال ذخیره…' : 'ذخیرهٔ تغییرات کاربر'}
+   748→   748→            </button>
+   749→   749→            <button
+   750→   750→              type="button"
+   751→   751→              onClick={() => setManageId(null)}
+   752→   752→              className="min-h-[44px] rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-bold text-muted-foreground transition hover:bg-muted"
+   753→   753→            >
+   754→   754→              بستن
+   755→   755→            </button>
+   756→   756→          </div>
+   757→   757→        </Modal>
+   758→   758→      )}
+   759→   759→    </div>
+   760→   760→  )
+   761→   761→}
+   762→   762→

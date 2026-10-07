@@ -1,0 +1,562 @@
+   149→export default function ArchiveView({ ctx }: { ctx: AppCtx }) {
+   150→  const role = ctx.user!.role
+   151→  const canManage = ['GM', 'OM', 'ACC', 'OWNER'].includes(role)
+   152→  const canRegister = ['GM', 'OM', 'ACC', 'OWNER', 'SK', 'ADMIN'].includes(role)
+   153→  // عملیات حساس دفع/نگهداری حقوقی — ACC/OM/GM/OWNER/ADMIN (تأیید دوم همیشه کاربر دیگری است)
+   154→  const canDispose = ['ACC', 'OM', 'GM', 'OWNER', 'ADMIN'].includes(role)
+   155→
+   156→  const [tab, setTab] = useState<Tab>(ctx.param === 'parties' ? 'parties' : 'docs')
+   157→  const [binders, setBinders] = useState<Binder[]>([])
+   158→  const [docs, setDocs] = useState<Doc[]>([])
+   159→  const [parties, setParties] = useState<PartyEntry[]>([])
+   160→  const [stats, setStats] = useState<Stats | null>(null)
+   161→  const [q, setQ] = useState('')
+   162→  const [binderFilter, setBinderFilter] = useState('')
+   163→  const [statusFilter, setStatusFilter] = useState('')
+   164→  const [lifecycleFilter, setLifecycleFilter] = useState('')
+   165→  const [dueMode, setDueMode] = useState<'' | 'due' | 'pending'>('')
+   166→  const [partyFilter, setPartyFilter] = useState<PartyFilter>(null)
+   167→  const [intakeOpen, setIntakeOpen] = useState(false)
+   168→  const [binderOpen, setBinderOpen] = useState(false)
+   169→  const [lastFiled, setLastFiled] = useState<{ doc: Doc; binder: Binder | { id: string; code: string; title: string; cabinet: string; shelf: string }; pickReason: string; itemsCreated: number } | null>(null)
+   170→  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+   171→
+   172→  // expandable line items (سجل کالا) per document
+   173→  const [expandedDoc, setExpandedDoc] = useState('')
+   174→  const [itemsMap, setItemsMap] = useState<Record<string, DocItem[]>>({})
+   175→  const [itemsLoading, setItemsLoading] = useState('')
+   176→
+   177→  // ── نمایندگان ──
+   178→  const [reps, setReps] = useState<RepLite[]>([])
+   179→  const [repsStats, setRepsStats] = useState<RepFull[]>([])
+   180→  const [repsQ, setRepsQ] = useState('')
+   181→  const [repProfile, setRepProfile] = useState<RepProfileRes | null>(null)
+   182→  const [repProfileId, setRepProfileId] = useState('')
+   183→  const [repFormOpen, setRepFormOpen] = useState(false)
+   184→  const [repEdit, setRepEdit] = useState<RepFull | null>(null)
+   185→
+   186→  // ── جزئیات سند + مودال‌های عملیات ──
+   187→  const [detail, setDetail] = useState<DetailRes | null>(null)
+   188→  const [detailBusy, setDetailBusy] = useState(false)
+   189→  const [editOpen, setEditOpen] = useState(false)
+   190→  const [eventOpen, setEventOpen] = useState(false)
+   191→  const [borrowOpen, setBorrowOpen] = useState(false)
+   192→  const [disposalOpen, setDisposalOpen] = useState(false)
+   193→
+   194→  // کارت کالا (product 360)
+   195→  const [ledgerProducts, setLedgerProducts] = useState<LedgerProduct[]>([])
+   196→  const [prodQ, setProdQ] = useState('')
+   197→  const [partyQ, setPartyQ] = useState('')
+   198→  const [selProduct, setSelProduct] = useState<LedgerProduct | null>(null)
+   199→  const [history, setHistory] = useState<HistoryRes | null>(null)
+   200→  const [histBusy, setHistBusy] = useState(false)
+   201→
+   202→  const load = useCallback((qq = q, bid = binderFilter, st = statusFilter, pf: PartyFilter = partyFilter, dm: '' | 'due' | 'pending' = dueMode, lc = lifecycleFilter) => {
+   203→    const params = new URLSearchParams()
+   204→    if (qq) params.set('q', qq)
+   205→    if (bid) params.set('binderId', bid)
+   206→    if (st) params.set('status', st)
+   207→    if (dm === 'due') params.set('retention', 'due')
+   208→    if (dm === 'pending') params.set('lifecycle', 'DISPOSAL_PENDING')
+   209→    else if (lc) params.set('lifecycle', lc)
+   210→    if (pf?.id) params.set('partyId', pf.id)
+   211→    if (pf?.name) params.set('party', pf.name)
+   212→    return api<{ binders: Binder[]; docs: Doc[]; parties: PartyEntry[]; stats: Stats }>(`/api/archive?${params}`).then((d) => {
+   213→      setBinders(d.binders); setDocs(d.docs); setParties(d.parties || []); setStats(d.stats)
+   214→    })
+   215→  }, [q, binderFilter, statusFilter, partyFilter, dueMode, lifecycleFilter])
+   216→
+   217→  const loadReps = useCallback(() => {
+   218→    api<{ reps: RepLite[] }>('/api/archive?reps=1').then((d) => setReps(d.reps || [])).catch(() => { /* silent */ })
+   219→    api<{ reps: RepFull[] }>('/api/sales-reps').then((d) => setRepsStats(d.reps || [])).catch(() => { /* silent */ })
+   220→  }, [])
+   221→
+   222→  useEffect(() => { load(); loadReps() }, [])
+   223→
+   224→  const onSearch = (v: string) => {
+   225→    setQ(v)
+   226→    if (debounce.current) clearTimeout(debounce.current)
+   227→    debounce.current = setTimeout(() => load(v, binderFilter, statusFilter), 320)
+   228→  }
+   229→
+   230→  const pickBinder = (id: string) => {
+   231→    const bid = id === binderFilter ? '' : id
+   232→    setBinderFilter(bid)
+   233→    load(q, bid, statusFilter)
+   234→  }
+   235→
+   236→  const onPartyPick = (p: PartyEntry) => {
+   237→    const pf: PartyFilter = { id: p.partyId, name: p.party }
+   238→    setPartyFilter(pf)
+   239→    setTab('docs')
+   240→    load(q, '', statusFilter, pf)
+   241→  }
+   242→
+   243→  const clearParty = () => {
+   244→    setPartyFilter(null)
+   245→    load(q, binderFilter, statusFilter, null)
+   246→  }
+   247→
+   248→  const jumpRetention = (dm: '' | 'due' | 'pending') => {
+   249→    setDueMode(dm)
+   250→    setLifecycleFilter('')
+   251→    setTab('docs')
+   252→    load(q, binderFilter, statusFilter, partyFilter, dm)
+   253→  }
+   254→
+   255→  const applyLifecycleFilter = (lc: string) => {
+   256→    setLifecycleFilter(lc)
+   257→    setDueMode('')
+   258→    load(q, binderFilter, statusFilter, partyFilter, '', lc)
+   259→  }
+   260→
+   261→  const toggleDoc = async (id: string) => {
+   262→    if (expandedDoc === id) return setExpandedDoc('')
+   263→    setExpandedDoc(id)
+   264→    if (itemsMap[id]) return
+   265→    setItemsLoading(id)
+   266→    try {
+   267→      const d = await api<DetailRes>(`/api/archive?docId=${id}`)
+   268→      setItemsMap((m) => ({ ...m, [id]: d.items || [] }))
+   269→    } catch (e: any) {
+   270→      toast.error(e.message)
+   271→    } finally {
+   272→      setItemsLoading('')
+   273→    }
+   274→  }
+   275→
+   276→  // ── جزئیات کامل سند (پرونده) ──
+   277→  const openDoc = async (id: string) => {
+   278→    setDetail(null)
+   279→    setDetailBusy(true)
+   280→    try {
+   281→      const d = await api<DetailRes>(`/api/archive?docId=${id}`)
+   282→      setDetail(d)
+   283→    } catch (e: any) {
+   284→      toast.error(e.message)
+   285→    } finally {
+   286→      setDetailBusy(false)
+   287→    }
+   288→  }
+   289→
+   290→  const refreshDetail = async () => {
+   291→    if (detail?.doc?.id) {
+   292→      try {
+   293→        setDetail(await api<DetailRes>(`/api/archive?docId=${detail.doc.id}`))
+   294→      } catch { /* keep current view */ }
+   295→      setItemsMap((m) => {
+   296→        const n = { ...m }
+   297→        delete n[detail.doc.id]
+   298→        return n
+   299→      })
+   300→    }
+   301→    await load()
+   302→  }
+   303→
+   304→  const act = async (id: string, body: any, msg: string) => {
+   305→    try {
+   306→      await api(`/api/archive/${id}`, { method: 'PATCH', body })
+   307→      toast.success(msg)
+   308→      await refreshDetail()
+   309→    } catch (e: any) { toast.error(e.message) }
+   310→  }
+   311→
+   312→  const openRep = async (id: string) => {
+   313→    setRepProfile(null)
+   314→    setRepProfileId(id)
+   315→    try {
+   316→      setRepProfile(await api<RepProfileRes>(`/api/sales-reps/${id}`))
+   317→    } catch (e: any) {
+   318→      toast.error(e.message)
+   319→      setRepProfileId('')
+   320→    }
+   321→  }
+   322→
+   323→  // ── کارت کالا: load product list once the tab is opened ──
+   324→  useEffect(() => {
+   325→    if (tab !== 'ledger' || ledgerProducts.length > 0) return
+   326→    api<{ products: LedgerProduct[] }>('/api/products')
+   327→      .then((d) => setLedgerProducts((d.products || []).slice(0, 200)))
+   328→      .catch(() => { /*silent — retry on next tab open*/ })
+   329→  }, [tab, ledgerProducts.length])
+   330→
+   331→  const openProduct = async (p: LedgerProduct) => {
+   332→    setSelProduct(p)
+   333→    setHistory(null)
+   334→    setHistBusy(true)
+   335→    try {
+   336→      setHistory(await api<HistoryRes>(`/api/archive/history?productId=${p.id}`))
+   337→    } catch (e: any) {
+   338→      toast.error(e.message)
+   339→    } finally {
+   340→      setHistBusy(false)
+   341→    }
+   342→  }
+   343→
+   344→  const filteredProducts = useMemo(() => {
+   345→    const n = prodQ.trim()
+   346→    if (!n) return ledgerProducts.slice(0, 8)
+   347→    return ledgerProducts.filter((p) => p.name.includes(n) || p.brand.includes(n) || p.category.includes(n)).slice(0, 8)
+   348→  }, [ledgerProducts, prodQ])
+   349→
+   350→  const cabinets = useMemo(() => {
+   351→    const m = new Map<string, Binder[]>()
+   352→    for (const b of binders) {
+   353→      if (!m.has(b.cabinet)) m.set(b.cabinet, [])
+   354→      m.get(b.cabinet)!.push(b)
+   355→    }
+   356→    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fa'))
+   357→  }, [binders])
+   358→
+   359→  const binderById = useMemo(() => new Map(binders.map((b) => [b.id, b])), [binders])
+   360→
+   361→  const partyEntry = useMemo(
+   362→    () => (partyFilter ? parties.find((p) => p.party === partyFilter.name) || null : null),
+   363→    [parties, partyFilter],
+   364→  )
+   365→
+   366→  const filteredReps = useMemo(() => {
+   367→    const n = repsQ.trim()
+   368→    if (!n) return repsStats
+   369→    return repsStats.filter((r) => r.fullName.includes(n) || (r.providerName || '').includes(n) || (r.mobile || '').includes(n))
+   370→  }, [repsStats, repsQ])
+   371→
+   372→  const copyText = async (text: string) => {
+   373→    try {
+   374→      await navigator.clipboard.writeText(text)
+   375→      toast.success(`«${text}» کپی شد`)
+   376→    } catch {
+   377→      toast.error('کپی خودکار ممکن نشد — مقدار: ' + text)
+   378→    }
+   379→  }
+   380→
+   381→  return (
+   382→    <div className="space-y-4">
+   383→      {/* KPI row */}
+   384→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+   385→        {[
+   386→          { l: 'اسناد ثبت‌شده', v: faNum(stats?.docs ?? 0), s: 'در چرخهٔ فعال', c: '#0e7a4a', i: <FileText size={14} /> },
+   387→          { l: 'زونکن‌های آرشیو', v: faNum(stats?.binders ?? 0), s: 'طبقه‌بندی موضوعی', c: '#8a5a2b', i: <Library size={14} /> },
+   388→          { l: 'اسناد امانتی', v: faNum(stats?.borrowed ?? 0), s: 'خارج از زونکن', c: '#c96f4a', i: <Hand size={14} /> },
+   389→          { l: 'ثبت این ماه', v: faNum(stats?.monthIntake ?? 0), s: 'ورودی جدید', c: '#77934a', i: <Plus size={14} /> },
+   390→          { l: 'ارزش اسناد', v: faMoney(stats?.totalValue ?? 0), s: 'تومان', c: '#c9a227', i: <Landmark size={14} /> },
+   391→        ].map((s) => (
+   392→          <div key={s.l} className="glow-card rounded-2xl bg-card p-4">
+   393→            <p className="flex items-center gap-1.5 text-xl font-black" style={{ color: s.c }}>{s.i}{s.v}</p>
+   394→            <p className="mt-0.5 text-xs font-bold">{s.l}</p>
+   395→            <p className="text-[10px] text-muted-foreground">{s.s}</p>
+   396→          </div>
+   397→        ))}
+   398→        <button
+   399→          type="button"
+   400→          onClick={() => jumpRetention('due')}
+   401→          className="glow-card rounded-2xl bg-card p-4 text-right transition hover:-translate-y-0.5"
+   402→        >
+   403→          <p className="flex items-center gap-1.5 text-xl font-black" style={{ color: '#c96f4a' }}>
+   404→            <Clock size={14} />
+   405→            {faNum((stats?.retentionDue ?? 0) + (stats?.disposalPending ?? 0))}
+   406→          </p>
+   407→          <p className="mt-0.5 text-xs font-bold">سرِرسید نگهداری و دفع</p>
+   408→          <p className="text-[10px] text-muted-foreground">
+   409→            {faNum(stats?.retentionDue ?? 0)} در آستانه • {faNum(stats?.disposalPending ?? 0)} در انتظار دفع
+   410→          </p>
+   411→        </button>
+   412→      </div>
+   413→
+   414→      {/* tabs */}
+   415→      <div className="flex flex-wrap gap-2 rounded-2xl border border-[#8a5a2b]/25 bg-[#f7efe2] p-1.5">
+   416→        {([
+   417→          ['docs', <FolderOpen key="i" size={15} />, 'اسناد'],
+   418→          ['parties', <Users key="i" size={15} />, 'تأمین‌کنندگان'],
+   419→          ['ledger', <Package key="i" size={15} />, 'کارت کالا'],
+   420→          ['reps', <UserCog key="i" size={15} />, 'نمایندگان'],
+   421→        ] as [Tab, React.ReactNode, string][]).map(([k, icon, label]) => (
+   422→          <button
+   423→            key={k}
+   424→            type="button"
+   425→            onClick={() => setTab(k)}
+   426→            className={cn(
+   427→              'flex min-h-[44px] items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition',
+   428→              tab === k ? 'bg-white text-[#0e7a4a] shadow' : 'text-[#8a5a2b] hover:bg-white/60',
+   429→            )}
+   430→          >
+   431→            {icon} {label}
+   432→          </button>
+   433→        ))}
+   434→      </div>
+   435→
+   436→      {tab === 'docs' && (
+   437→        <>
+   438→          {/* ── ویجت نگهداری و دفع (ISO 15489 — دفع هرگز خودکار نیست) ── */}
+   439→          <div className="fade-in-up grid gap-3 sm:grid-cols-2">
+   440→            <button
+   441→              type="button"
+   442→              onClick={() => jumpRetention(dueMode === 'due' ? '' : 'due')}
+   443→              className={cn(
+   444→                'flex min-h-[44px] items-center justify-between gap-2 rounded-2xl border-2 bg-[#fdf6dd] p-3.5 text-right transition',
+   445→                dueMode === 'due' ? 'border-[#c9a227] ring-2 ring-[#c9a227]/40' : 'border-[#c9a227]/50 hover:shadow-md',
+   446→              )}
+   447→            >
+   448→              <span className="flex items-center gap-2">
+   449→                <Clock size={18} className="text-[#8a6d10]" />
+   450→                <span>
+   451→                  <span className="block text-xs font-black text-[#8a6d10]">سرِرسید مهلت نگهداری</span>
+   452→                  <span className="block text-[10px] text-muted-foreground">مهلت دفع تا ۶۰ روز آینده — بررسی و تصمیم مدیریتی</span>
+   453→                </span>
+   454→              </span>
+   455→              <span className="rounded-xl bg-[#c9a227]/20 px-3 py-1.5 text-base font-black text-[#8a6d10]">{faNum(stats?.retentionDue ?? 0)}</span>
+   456→            </button>
+   457→            <button
+   458→              type="button"
+   459→              onClick={() => jumpRetention(dueMode === 'pending' ? '' : 'pending')}
+   460→              className={cn(
+   461→                'flex min-h-[44px] items-center justify-between gap-2 rounded-2xl border-2 bg-[#fbeae8] p-3.5 text-right transition',
+   462→                dueMode === 'pending' ? 'border-[#b3372f] ring-2 ring-[#b3372f]/30' : 'border-[#b3372f]/40 hover:shadow-md',
+   463→              )}
+   464→            >
+   465→              <span className="flex items-center gap-2">
+   466→                <Gavel size={18} className="text-[#b3372f]" />
+   467→                <span>
+   468→                  <span className="block text-xs font-black text-[#b3372f]">در انتظار دفع (تأیید دوم)</span>
+   469→                  <span className="block text-[10px] text-muted-foreground">درخواست دفع ثبت شده — نیازمند تأیید کاربر دیگر</span>
+   470→                </span>
+   471→              </span>
+   472→              <span className="rounded-xl bg-[#b3372f]/15 px-3 py-1.5 text-base font-black text-[#b3372f]">{faNum(stats?.disposalPending ?? 0)}</span>
+   473→            </button>
+   474→          </div>
+   475→
+   476→          {partyFilter && (
+   477→            <div className="fade-in-up rounded-2xl border-2 border-[#c9a227]/60 bg-[#fdf6dd] p-4">
+   478→              <div className="flex flex-wrap items-center justify-between gap-2">
+   479→                <p className="flex items-center gap-1.5 text-sm font-black text-[#8a5a2b]">
+   480→                  <Users size={16} /> پروندهٔ طرف حساب: {partyFilter.name}
+   481→                </p>
+   482→                <button onClick={clearParty} className="min-h-[44px] rounded-xl border border-[#c9a227]/60 bg-white/70 px-3 py-2 text-[11px] font-black text-[#8a5a2b]">
+   483→                  نمایش همهٔ اسناد ✕
+   484→                </button>
+   485→              </div>
+   486→              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+   487→                <KeyValue k="تعداد اسناد" v={faNum(partyEntry?.docCount ?? docs.length)} />
+   488→                <KeyValue k="مجموع ارزش" v={`${faMoney(partyEntry?.totalAmount ?? docs.reduce((s, d) => s + d.amount, 0))} تومان`} />
+   489→                <KeyValue k="نخستین سند" v={partyEntry?.firstDate ? formatJalaliShort(partyEntry.firstDate) : '—'} />
+   490→                <KeyValue k="آخرین سند" v={partyEntry?.lastDate ? formatJalaliShort(partyEntry.lastDate) : '—'} />
+   491→              </div>
+   492→              {partyFilter.id ? (
+   493→                <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#0e7a4a]">
+   494→                  ✅ ذخیره در تأمین‌کنندگان — این طرف حساب با رکورد سامانه مرتبط است.
+   495→                  <button onClick={() => ctx.navigate('providers')} className="min-h-[44px] rounded-xl bg-[#0e7a4a]/10 px-3 py-2 text-[11px] font-black text-[#0e7a4a]">
+   496→                    بازکردن تأمین‌کنندگان
+   497→                  </button>
+   498→                </p>
+   499→              ) : (
+   500→                <p className="mt-2 text-[11px] font-bold text-[#c96f4a]">
+   501→                  ⚠️ این طرف حساب هنوز به رکورد تأمین‌کنندگان متصل نیست — در ثبت سند بعدی تطبیق خودکار انجام می‌شود.
+   502→                </p>
+   503→              )}
+   504→            </div>
+   505→          )}
+   506→
+   507→          {dueMode && (
+   508→            <div className={cn('fade-in-up flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3', dueMode === 'due' ? 'border-[#c9a227]/60 bg-[#fdf6dd]' : 'border-[#b3372f]/50 bg-[#fbeae8]')}>
+   509→              <p className={cn('text-xs font-black', dueMode === 'due' ? 'text-[#8a6d10]' : 'text-[#b3372f]')}>
+   510→                {dueMode === 'due' ? '⏳ فیلتر فعال: اسنادی که مهلت نگهداری‌شان رو به پایان است' : '🗑️ فیلتر فعال: اسناد در انتظار تأیید دفع'}
+   511→                {' '}— {faNum(docs.length)} سند
+   512→              </p>
+   513→              <button onClick={() => jumpRetention('')} className="min-h-[44px] rounded-xl bg-white/70 px-3 py-2 text-[11px] font-black text-[#8a5a2b]">
+   514→                نمایش همهٔ اسناد ✕
+   515→              </button>
+   516→            </div>
+   517→          )}
+   518→
+   519→          <div className="grid gap-4 lg:grid-cols-5">
+   520→            {/* ── binder shelf ── */}
+   521→            <SectionCard
+   522→              title="قفسهٔ آرشیو — طبقه‌بندی موضوعی زونکن‌ها"
+   523→              subtitle="ساختار ۲۰ زونکنی گروه‌بندی طرف‌حساب‌ها؛ روی هر زونکن بزنید تا اسنادش نمایش داده شود"
+   524→              icon={<Library size={18} />}
+   525→              className="lg:col-span-2"
+   526→              actions={canManage && (
+   527→                <button onClick={() => setBinderOpen(true)} className="flex items-center gap-1 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/60 px-3 py-2 text-[11px] font-extrabold text-[#8a5a2b]">
+   528→                  <Plus size={13} /> زونکن جدید
+   529→                </button>
+   530→              )}
+   531→            >
+   532→              <div className="scroll-gold max-h-[52vh] space-y-3 overflow-y-auto pl-1">
+   533→                {cabinets.map(([cab, bs]) => (
+   534→                  <div key={cab} className="rounded-2xl border border-[#8a5a2b]/25 bg-gradient-to-b from-[#f7efe2] to-[#fdf6dd] p-3">
+   535→                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-[#8a5a2b]">
+   536→                      <Archive size={13} /> کابینت {faNum(cab)}
+   537→                    </p>
+   538→                    <div className="space-y-1.5">
+   539→                      {bs.map((b) => {
+   540→                        const fill = Math.min(100, Math.round((b.docCount / Math.max(1, b.capacity)) * 100))
+   541→                        const active = binderFilter === b.id
+   542→                        return (
+   543→                          <button
+   544→                            key={b.id}
+   545→                            type="button"
+   546→                            onClick={() => pickBinder(b.id)}
+   547→                            className={cn(
+   548→                              'w-full rounded-xl bg-white/85 p-2.5 text-right transition hover:shadow-md',
+   549→                              active && 'ring-2 ring-[#c9a227]',
+   550→                            )}
+   551→                          >
+   552→                            <div className="flex items-center gap-2.5">
+   553→                              <span className="h-9 w-2.5 shrink-0 rounded-full" style={{ background: b.colorTag }} />
+   554→                              <span className="min-w-0 flex-1">
+   555→                                <span className="flex items-center justify-between gap-2">
+   556→                                  <span className="truncate text-[11px] font-black">{b.title}</span>
+   557→                                  <span className="shrink-0 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{b.code}</span>
+   558→                                </span>
+   559→                                <span className="mt-0.5 flex items-center justify-between text-[9px] text-muted-foreground">
+   560→                                  <span>طبقهٔ {faNum(b.shelf)} • {faNum(b.docCount)} سند</span>
+   561→                                  <span style={{ color: fill >= 90 ? '#b3372f' : undefined }}>{faNum(fill)}٪ پر</span>
+   562→                                </span>
+   563→                                <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-[#8a5a2b]/10">
+   564→                                  <span className="block h-full rounded-full transition-all" style={{ width: `${fill}%`, background: b.colorTag }} />
+   565→                                </span>
+   566→                              </span>
+   567→                            </div>
+   568→                          </button>
+   569→                        )
+   570→                      })}
+   571→                    </div>
+   572→                  </div>
+   573→                ))}
+   574→              </div>
+   575→            </SectionCard>
+   576→
+   577→            {/* ── docs registry ── */}
+   578→            <SectionCard
+   579→              title="دفتر ثبت اسناد"
+   580→              subtitle="روی سند بزنید تا پروندهٔ کامل (مالی، هلو، نماینده، اقلام و زنجیرهٔ custody) باز شود"
+   581→              icon={<FolderOpen size={18} />}
+   582→              className="lg:col-span-3"
+   583→              actions={canRegister && (
+   584→                <button onClick={() => setIntakeOpen(true)} className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-white">
+   585→                  <Plus size={14} /> ثبت سند در آرشیو
+   586→                </button>
+   587→              )}
+   588→            >
+   589→              <div className="mb-3 flex flex-wrap items-center gap-2">
+   590→                <div className="min-w-[180px] flex-1"><SearchInput value={q} onChange={onSearch} placeholder="جست‌وجو: طرف حساب، شماره هلو، نماینده، شماره سند…" /></div>
+   591→                <select
+   592→                  value={statusFilter}
+   593→                  onChange={(e) => { setStatusFilter(e.target.value); load(q, binderFilter, e.target.value) }}
+   594→                  className="rounded-xl border border-input bg-white p-2 text-xs font-bold"
+   595→                >
+   596→                  <option value="">همهٔ وضعیت‌ها</option>
+   597→                  <option value="IN_BINDER">در زونکن</option>
+   598→                  <option value="BORROWED">امانتی</option>
+   599→                  <option value="DESTROYED">خارج‌شده</option>
+   600→                </select>
+   601→                <select
+   602→                  value={lifecycleFilter}
+   603→                  onChange={(e) => applyLifecycleFilter(e.target.value)}
+   604→                  className="rounded-xl border border-input bg-white p-2 text-xs font-bold"
+   605→                >
+   606→                  <option value="">همهٔ مراحل حیات</option>
+   607→                  {LIFECYCLE_ORDER.map((k) => <option key={k} value={k}>{LIFECYCLE_META[k].label}</option>)}
+   608→                </select>
+   609→                {binderFilter && (
+   610→                  <button onClick={() => pickBinder(binderFilter)} className="rounded-xl bg-[#c9a227]/15 px-2.5 py-2 text-[11px] font-black text-[#8a5a2b]">
+   611→                    فقط {binderById.get(binderFilter)?.code || 'زونکن'} ✕
+   612→                  </button>
+   613→                )}
+   614→              </div>
+   615→
+   616→              {lastFiled && (
+   617→                <div className="fade-in-up mb-3 rounded-2xl border-2 border-[#c9a227] bg-[#fdf6dd] p-4 shadow-[0_8px_24px_rgba(201,162,39,0.18)]">
+   618→                  <p className="flex items-center gap-1.5 text-xs font-black text-[#8a5a2b]">
+   619→                    <MapPin size={14} /> سند بایگانی شد — موقعیت فیزیکی برای یافتن فوری
+   620→                  </p>
+   621→                  <p className="mt-2 text-center text-lg font-black tracking-wide text-[#0e7a4a]" dir="ltr">{lastFiled.doc.code}</p>
+   622→                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+   623→                    <KeyValue k="زونکن" v={lastFiled.doc.binderCode} />
+   624→                    <KeyValue k="کابینت" v={faNum(lastFiled.binder.cabinet)} />
+   625→                    <KeyValue k="طبقه" v={faNum(lastFiled.binder.shelf)} />
+   626→                    <KeyValue k="ترتیب در زونکن" v={faNum(lastFiled.doc.seq)} />
+   627→                  </div>
+   628→                  <p className="mt-2 text-center text-[11px] font-bold text-[#8a5a2b]">
+   629→                    🗄️ کابینت {faNum(lastFiled.binder.cabinet)} → طبقهٔ {faNum(lastFiled.binder.shelf)} → زونکن «{lastFiled.binder.title}» → جایگاه {faNum(lastFiled.doc.seq)}
+   630→                    {' '}— {lastFiled.pickReason}
+   631→                  </p>
+   632→                  {lastFiled.itemsCreated > 0 && (
+   633→                    <p className="mt-1 text-center text-[11px] font-black text-[#0e7a4a]">
+   634→                      📋 {faNum(lastFiled.itemsCreated)} قلم کالا در سجل سند ثبت شد — تاریخچهٔ کالا از «کارت کالا» قابل ردیابی است
+   635→                    </p>
+   636→                  )}
+   637→                  <button onClick={() => setLastFiled(null)} className="mt-2 w-full rounded-xl border border-[#c9a227]/50 py-1.5 text-[11px] font-bold text-[#8a5a2b]">متوجه شدم</button>
+   638→                </div>
+   639→              )}
+   640→
+   641→              <div className="scroll-gold max-h-[46vh] space-y-2 overflow-y-auto pl-1">
+   642→                {docs.length === 0 && <EmptyState emoji="🗂️" title="سندی یافت نشد" hint="با «ثبت سند در آرشیو» نخستین سند را بایگانی کنید" />}
+   643→                {docs.map((d) => {
+   644→                  const t = DOC_TYPES[d.docType] || DOC_TYPES.OTHER
+   645→                  const b = binderById.get(d.binderId)
+   646→                  const items = itemsMap[d.id]
+   647→                  const expanded = expandedDoc === d.id
+   648→                  const lc = LIFECYCLE_META[d.lifecycle] || LIFECYCLE_META.ACTIVE
+   649→                  const pm = PAYMENT_META[d.paymentStatus] || PAYMENT_META.UNPAID
+   650→                  return (
+   651→                    <div
+   652→                      key={d.id}
+   653→                      onClick={() => openDoc(d.id)}
+   654→                      className={cn('glow-card cursor-pointer rounded-2xl bg-white/80 p-3.5 transition hover:shadow-md', expanded && 'ring-1 ring-[#c9a227]/60', d.legalHold && 'border-2 border-[#b3372f]/40')}
+   655→                    >
+   656→                      <div className="flex flex-wrap items-start justify-between gap-2">
+   657→                        <div className="min-w-0 flex-1">
+   658→                          <p className="truncate text-sm font-black">
+   659→                            <ChevronDown size={14} className={cn('ml-1 inline transition-transform', expanded && 'rotate-180')} />
+   660→                            {t.emoji} {d.title}
+   661→                            <span className="mr-2 rounded-md bg-[#c9a227]/15 px-1.5 py-0.5 text-[9px] font-black text-[#8a5a2b]" dir="ltr">{d.code}</span>
+   662→                          </p>
+   663→                          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+   664→                            <span>{d.party}</span>
+   665→                            <span>• {formatJalaliShort(d.docDate)}</span>
+   666→                            {d.amount > 0 && <span>• {faMoney(d.amount)} تومان</span>}
+   667→                            {d.invoiceNo && (
+   668→                              <span className="rounded-md bg-[#0e7a4a]/10 px-1.5 py-0.5 font-black text-[#0e7a4a]">🧾 فاکتور {d.invoiceNo}</span>
+   669→                            )}
+   670→                            {d.refOrderCode && <span>• سفارش {d.refOrderCode}</span>}
+   671→                          </p>
+   672→                          {/* chips آرشیو ۲٫۰ */}
+   673→                          <p className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-bold">
+   674→                            <span className="rounded-full px-2 py-0.5" style={{ color: lc.color, background: lc.bg }}>{lc.label}</span>
+   675→                            <span className="rounded-full px-2 py-0.5" style={{ color: pm.color, background: `${pm.color}1a` }}>{pm.label}</span>
+   676→                            {d.repName && <span className="rounded-full bg-[#77934a]/15 px-2 py-0.5 text-[#5c7236]">👤 {d.repName}</span>}
+   677→                            {d.holooInvoiceNo && <span className="rounded-full bg-[#8a5a2b]/10 px-2 py-0.5 text-[#8a5a2b]" title="فاکتور خرید در هلو">🏷 {d.holooInvoiceNo}</span>}
+   678→                            {d.holooReceiptNo && <span className="rounded-full bg-[#8a5a2b]/10 px-2 py-0.5 text-[#8a5a2b]" title="رسید پرداخت در هلو">🧾 {d.holooReceiptNo}</span>}
+   679→                            {d.legalHold && <span className="rounded-full bg-[#b3372f]/15 px-2 py-0.5 font-black text-[#b3372f]">🔒 نگهداری حقوقی</span>}
+   680→                          </p>
+   681→                          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-[#0e7a4a]">
+   682→                            <MapPin size={11} /> زونکن {d.binderCode}
+   683→                            {b && <> — کابینت {faNum(b.cabinet)} • طبقهٔ {faNum(b.shelf)} • جایگاه {faNum(d.seq)}</>}
+   684→                          </p>
+   685→                          {d.status === 'BORROWED' && (
+   686→                            <p className="mt-1 text-[10px] font-black text-[#c96f4a]">✋ امانت‌گرفته توسط {d.borrowByName}</p>
+   687→                          )}
+   688→                        </div>
+   689→                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+   690→                          {d.status === 'IN_BINDER' && <Pill label="در زونکن" color="#0e7a4a" bg="#0e7a4a/10" />}
+   691→                          {d.status === 'BORROWED' && <Pill label="امانتی" color="#c96f4a" bg="#c96f4a/10" />}
+   692→                          {d.status === 'DESTROYED' && <Pill label="خارج‌شده" color="#6b7280" bg="#6b7280/10" />}
+   693→                          {d.status === 'IN_BINDER' && canRegister && (
+   694→                            <button
+   695→                              onClick={(e) => { e.stopPropagation(); act(d.id, { action: 'borrow' }, 'امانت ثبت شد — پس از استفاده بازگردانید') }}
+   696→                              className="flex items-center gap-1 rounded-lg bg-[#c96f4a]/10 px-2.5 py-1.5 text-[10px] font-black text-[#c96f4a]"
+   697→                            >
+   698→                              <Hand size={12} /> امانت می‌برم
+   699→                            </button>
+   700→                          )}
+   701→                          {d.status === 'BORROWED' && (
+   702→                            <button
+   703→                              onClick={(e) => { e.stopPropagation(); act(d.id, { action: 'return' }, 'سند به زونکن بازگشت ✅') }}
+   704→                              className="flex items-center gap-1 rounded-lg bg-[#0e7a4a]/10 px-2.5 py-1.5 text-[10px] font-black text-[#0e7a4a]"
+   705→                            >
+   706→                              <Undo2 size={12} /> بازگشت به زونکن
+   707→                            </button>
+   708→                          )}
+
+[showing lines 149-708 of 2155; use offset=709 with limit to continue reading]

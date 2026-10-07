@@ -1,0 +1,732 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useMemo, useState } from 'react'
+     4→import { toast } from 'sonner'
+     5→import { api } from '@/lib/client'
+     6→import { faMoney, faNum, formatJalaliDateTime } from '@/lib/jalali'
+     7→import {
+     8→  SectionCard, Pill, EmptyState, Labeled, SearchInput, Avatar, CATEGORY_EMOJI,
+     9→} from '@/components/app/ui-bits'
+    10→import type { AppCtx } from '@/components/app/ui-bits'
+    11→import { Modal } from '@/components/views/Orders'
+    12→import { BarChart } from '@/components/app/charts'
+    13→import { cn } from '@/lib/utils'
+    14→import {
+    15→  ShoppingBag, CreditCard, TrendingUp, NotebookPen, Plus, Minus, X, Star, UserPlus,
+    16→  Send, Ban, Printer, ChevronDown, Trash2,
+    17→} from 'lucide-react'
+    18→
+    19→type Customer = { id: string; name: string; phone: string; preferences: string; favorite: boolean }
+    20→type Product = { id: string; name: string; category: string; brand: string; unit: string; sellPrice: number; stock: number }
+    21→type PItem = { productId: string; name: string; qty: number; price: number }
+    22→type PreOrder = {
+    23→  id: string; code: string; customerName: string; items: PItem[]; total: number
+    24→  createdByName: string; cashierName?: string; status: string; note: string; createdAt: string
+    25→}
+    26→type CReq = { id: string; productName: string; count: number; lastByName: string }
+    27→
+    28→const PO_STATUS: Record<string, { label: string; color: string }> = {
+    29→  NEW: { label: 'در صف صندوق', color: '#a16207' },
+    30→  CASHIER_EDITED: { label: 'ویرایش صندوق', color: '#a04c2a' },
+    31→  READY: { label: 'آماده/ارسال شده', color: '#0e7a4a' },
+    32→  DONE: { label: 'تکمیل', color: '#3f6212' },
+    33→  CANCELLED: { label: 'لغو', color: '#b3372f' },
+    34→}
+    35→
+    36→const NAME_COLORS = ['#0e7a4a', '#c9a227', '#c96f4a', '#77934a', '#8a5a2b', '#207a63', '#a33d3d']
+    37→function nameColor(name: string): string {
+    38→  let h = 0
+    39→  for (const ch of name) h = (h + ch.charCodeAt(0)) % NAME_COLORS.length
+    40→  return NAME_COLORS[h]
+    41→}
+    42→
+    43→export default function SalesView({ ctx }: { ctx: AppCtx }) {
+    44→  const role = ctx.user!.role
+    45→  const secondary: string[] = ctx.user!.secondaryRoles || []
+    46→  const canSell = ['SALES', 'HC', 'CASHIER', 'GM', 'PM', 'OM'].includes(role) || secondary.includes('SALES')
+    47→  const canCashier = ['HC', 'CASHIER', 'GM', 'OM'].includes(role)
+    48→  const canDeleteReqs = ['GM', 'PM', 'OM'].includes(role)
+    49→
+    50→  const TABS = [
+    51→    ...(canSell ? [{ key: 'new', label: 'ثبت پیش‌فاکتور برای مشتری 🛍️', icon: <ShoppingBag size={14} /> }] : []),
+    52→    ...(canCashier ? [{ key: 'queue', label: 'صف صندوق 💳', icon: <CreditCard size={14} /> }] : []),
+    53→    { key: 'history', label: 'تاریخچه و عملکرد فروش 📈', icon: <TrendingUp size={14} /> },
+    54→    { key: 'requests', label: 'درخواست‌های مشتری 📝', icon: <NotebookPen size={14} /> },
+    55→  ]
+    56→  const [tab, setTab] = useState(
+    57→    role === 'CASHIER' || role === 'HC' ? 'queue' : canSell ? 'new' : 'history'
+    58→  )
+    59→
+    60→  return (
+    61→    <div className="space-y-4">
+    62→      <div className="scroll-gold flex gap-1.5 overflow-x-auto pb-1">
+    63→        {TABS.map((t) => (
+    64→          <button
+    65→            key={t.key}
+    66→            onClick={() => setTab(t.key)}
+    67→            className={cn(
+    68→              'flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-extrabold transition',
+    69→              tab === t.key
+    70→                ? 'bg-primary text-white shadow-md'
+    71→                : 'border border-border bg-card text-foreground/70 hover:border-primary/50'
+    72→            )}
+    73→          >
+    74→            {t.icon}
+    75→            {t.label}
+    76→          </button>
+    77→        ))}
+    78→      </div>
+    79→
+    80→      {/* tab 1 — keep mounted so cart survives tab switches */}
+    81→      {canSell && (
+    82→        <div className={cn(tab === 'new' ? 'block' : 'hidden')}>
+    83→          <PreorderForm ctx={ctx} />
+    84→        </div>
+    85→      )}
+    86→
+    87→      {/* tab 2 */}
+    88→      {canCashier && tab === 'queue' && <CashierQueue ctx={ctx} />}
+    89→
+    90→      {/* tab 3 */}
+    91→      {tab === 'history' && <HistorySection />}
+    92→
+    93→      {/* tab 4 — light, keep mounted */}
+    94→      <div className={cn(tab === 'requests' ? 'block' : 'hidden')}>
+    95→        <RequestsSection canDelete={canDeleteReqs} />
+    96→      </div>
+    97→    </div>
+    98→  )
+    99→}
+   100→
+   101→/* ═══════════════════════════ Tab 1: ثبت پیش‌فاکتور ═══════════════════════════ */
+   102→function PreorderForm({ ctx }: { ctx: AppCtx }) {
+   103→  const [customers, setCustomers] = useState<Customer[]>([])
+   104→  const [products, setProducts] = useState<Product[]>([])
+   105→  const [selectedId, setSelectedId] = useState('')
+   106→  const [q, setQ] = useState('')
+   107→  const [hitQty, setHitQty] = useState<Record<string, number>>({})
+   108→  const [cart, setCart] = useState<PItem[]>([])
+   109→  const [note, setNote] = useState('')
+   110→  const [busy, setBusy] = useState(false)
+   111→  const [showNewCust, setShowNewCust] = useState(false)
+   112→  const [nc, setNc] = useState({ name: '', phone: '', preferences: '' })
+   113→
+   114→  useEffect(() => {
+   115→    api<{ customers: Customer[] }>('/api/customers').then((d) => setCustomers(d.customers)).catch(() => {})
+   116→    api<{ products: Product[] }>('/api/products').then((d) => setProducts(d.products)).catch(() => {})
+   117→  }, [])
+   118→
+   119→  const hits = useMemo(() => {
+   120→    const needle = q.trim()
+   121→    if (!needle) return products.slice(0, 30)
+   122→    return products.filter((p) => p.name.includes(needle) || p.brand.includes(needle)).slice(0, 30)
+   123→  }, [products, q])
+   124→
+   125→  const total = cart.reduce((s, i) => s + i.qty * i.price, 0)
+   126→  const selectedCust = customers.find((c) => c.id === selectedId)
+   127→
+   128→  const addProduct = (p: Product) => {
+   129→    const qty = Math.max(1, Number(hitQty[p.id]) || 1)
+   130→    setCart((c) => {
+   131→      const ex = c.find((i) => i.productId === p.id)
+   132→      if (ex) return c.map((i) => (i.productId === p.id ? { ...i, qty: i.qty + qty } : i))
+   133→      return [...c, { productId: p.id, name: p.name, qty, price: p.sellPrice }]
+   134→    })
+   135→    setHitQty((m) => ({ ...m, [p.id]: 1 }))
+   136→  }
+   137→
+   138→  const setCartQty = (productId: string, qty: number) =>
+   139→    setCart((c) => c.map((i) => (i.productId === productId ? { ...i, qty: Math.max(1, qty) } : i)))
+   140→
+   141→  const saveCustomer = async () => {
+   142→    if (!nc.name.trim()) return toast.error('نام مشتری الزامی است')
+   143→    try {
+   144→      const res = await api<{ customer: Customer }>('/api/customers', {
+   145→        method: 'POST',
+   146→        body: { name: nc.name.trim(), phone: nc.phone.trim(), preferences: nc.preferences.trim() },
+   147→      })
+   148→      setCustomers((cs) => [res.customer, ...cs])
+   149→      setSelectedId(res.customer.id)
+   150→      setNc({ name: '', phone: '', preferences: '' })
+   151→      setShowNewCust(false)
+   152→      toast.success('مشتری جدید ثبت شد ✅')
+   153→    } catch (e: any) {
+   154→      toast.error(e.message)
+   155→    }
+   156→  }
+   157→
+   158→  const submit = async () => {
+   159→    if (cart.length === 0) return toast.error('حداقل یک کالا به سبد اضافه کنید')
+   160→    setBusy(true)
+   161→    try {
+   162→      const res = await api<{ preOrder: PreOrder }>('/api/preorders', {
+   163→        method: 'POST',
+   164→        body: {
+   165→          customerId: selectedId || undefined,
+   166→          customerName: selectedCust?.name || 'مشتری حضوری',
+   167→          items: cart,
+   168→          note: note.trim(),
+   169→        },
+   170→      })
+   171→      toast.success(`پیش‌فاکتور ${res.preOrder.code} به صف صندوق ارسال شد ✅`)
+   172→      setCart([])
+   173→      setNote('')
+   174→      setSelectedId('')
+   175→      setHitQty({})
+   176→      ctx.refreshNotifications()
+   177→    } catch (e: any) {
+   178→      toast.error(e.message)
+   179→    } finally {
+   180→      setBusy(false)
+   181→    }
+   182→  }
+   183→
+   184→  return (
+   185→    <div className="grid gap-4 lg:grid-cols-5">
+   186→      {/* customer + product adder */}
+   187→      <div className="space-y-4 lg:col-span-3">
+   188→        <SectionCard
+   189→          title="انتخاب مشتری"
+   190→          subtitle="مشتری‌های ⭐ منتخب اول هستند — یا «مشتری جدید» را ثبت کنید"
+   191→          icon={<Star size={18} />}
+   192→          actions={
+   193→            <button
+   194→              onClick={() => setShowNewCust((s) => !s)}
+   195→              className="flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-[11px] font-extrabold text-foreground/70 hover:border-primary/50"
+   196→            >
+   197→              <UserPlus size={13} /> مشتری جدید
+   198→            </button>
+   199→          }
+   200→        >
+   201→          <div className="flex flex-wrap gap-1.5">
+   202→            <button
+   203→              onClick={() => setSelectedId('')}
+   204→              className={cn(
+   205→                'rounded-full border px-3.5 py-2 text-[11px] font-extrabold transition',
+   206→                !selectedId ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70'
+   207→              )}
+   208→            >
+   209→              بدون مشتری (حضوری)
+   210→            </button>
+   211→            {customers.map((c) => (
+   212→              <button
+   213→                key={c.id}
+   214→                onClick={() => setSelectedId(c.id)}
+   215→                title={[c.phone, c.preferences].filter(Boolean).join(' • ')}
+   216→                className={cn(
+   217→                  'flex items-center gap-1 rounded-full border px-3.5 py-2 text-[11px] font-extrabold transition',
+   218→                  selectedId === c.id ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70 hover:border-primary/50'
+   219→                )}
+   220→              >
+   221→                {c.favorite && <Star size={11} className={selectedId === c.id ? 'fill-white text-white' : 'fill-[#c9a227] text-[#c9a227]'} />}
+   222→                {c.name}
+   223→              </button>
+   224→            ))}
+   225→          </div>
+   226→
+   227→          {showNewCust && (
+   228→            <div className="mt-3 space-y-2.5 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/40 p-3">
+   229→              <div className="grid gap-2.5 sm:grid-cols-3">
+   230→                <Labeled label="نام مشتری *">
+   231→                  <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} className="w-full rounded-xl border border-input bg-white/90 p-2.5 text-sm" placeholder="مثلاً: آقای رضایی" />
+   232→                </Labeled>
+   233→                <Labeled label="تلفن">
+   234→                  <input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} dir="ltr" className="w-full rounded-xl border border-input bg-white/90 p-2.5 text-sm" placeholder="09xxxxxxxxx" />
+   235→                </Labeled>
+   236→                <Labeled label="سلیقه / یادداشت">
+   237→                  <input value={nc.preferences} onChange={(e) => setNc({ ...nc, preferences: e.target.value })} className="w-full rounded-xl border border-input bg-white/90 p-2.5 text-sm" placeholder="مثلاً: همیشه پنیر لیقوان" />
+   238→                </Labeled>
+   239→              </div>
+   240→              <button onClick={saveCustomer} className="w-full rounded-xl bg-[#77934a] py-2.5 text-xs font-extrabold text-white">
+   241→                ثبت مشتری ✅
+   242→              </button>
+   243→            </div>
+   244→          )}
+   245→        </SectionCard>
+   246→
+   247→        <SectionCard title="افزودن کالا" subtitle="جستجو کنید و با دکمهٔ + به سبد اضافه کنید" icon={<Plus size={18} />}>
+   248→          <SearchInput value={q} onChange={setQ} placeholder="نام کالا یا برند…" />
+   249→          <div className="scroll-gold mt-3 max-h-[34vh] space-y-1.5 overflow-y-auto pl-1">
+   250→            {hits.length === 0 && <EmptyState emoji="🔍" title="کالایی پیدا نشد" />}
+   251→            {hits.map((p) => {
+   252→              const qty = Math.max(1, Number(hitQty[p.id]) || 1)
+   253→              return (
+   254→                <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-white/80 p-2.5">
+   255→                  <div className="flex min-w-0 items-center gap-2">
+   256→                    <span className="text-lg">{CATEGORY_EMOJI[p.category] || '📦'}</span>
+   257→                    <div className="min-w-0">
+   258→                      <p className="truncate text-xs font-bold text-foreground">{p.name}</p>
+   259→                      <p className="text-[10px] text-muted-foreground">
+   260→                        {faMoney(p.sellPrice)} تومان / {p.unit}
+   261→                        {p.stock <= 0 ? <span className="font-black text-[#b3372f]"> • ناموجود</span> : ` • موجودی ${faNum(p.stock)}`}
+   262→                      </p>
+   263→                    </div>
+   264→                  </div>
+   265→                  <div className="flex shrink-0 items-center gap-1">
+   266→                    <button onClick={() => setHitQty((m) => ({ ...m, [p.id]: Math.max(1, qty - 1) }))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card" title="کمتر">
+   267→                      <Minus size={12} />
+   268→                    </button>
+   269→                    <span className="w-7 text-center text-xs font-black">{faNum(qty)}</span>
+   270→                    <button onClick={() => setHitQty((m) => ({ ...m, [p.id]: qty + 1 }))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card" title="بیشتر">
+   271→                      <Plus size={12} />
+   272→                    </button>
+   273→                    <button
+   274→                      onClick={() => addProduct(p)}
+   275→                      className="ml-1 flex h-9 items-center gap-1 rounded-lg bg-primary px-3 text-[11px] font-black text-white"
+   276→                    >
+   277→                      <Plus size={13} /> افزودن
+   278→                    </button>
+   279→                  </div>
+   280→                </div>
+   281→              )
+   282→            })}
+   283→          </div>
+   284→        </SectionCard>
+   285→      </div>
+   286→
+   287→      {/* cart */}
+   288→      <SectionCard title="سبد پیش‌فاکتور" subtitle={selectedCust ? `برای: ${selectedCust.name}` : 'بدون مشتری — فروش حضوری'} icon={<ShoppingBag size={18} />} className="lg:col-span-2">
+   289→        <div className="scroll-gold max-h-[38vh] space-y-1.5 overflow-y-auto pl-1">
+   290→          {cart.length === 0 && <EmptyState emoji="🛒" title="سبد خالی است" hint="از ستون کناری کالا اضافه کنید" />}
+   291→          {cart.map((i) => (
+   292→            <div key={i.productId} className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 p-2.5">
+   293→              <div className="min-w-0">
+   294→                <p className="truncate text-xs font-bold">{i.name}</p>
+   295→                <p className="text-[10px] text-muted-foreground">{faMoney(i.price)} × {faNum(i.qty)} = {faMoney(i.qty * i.price)} تومان</p>
+   296→              </div>
+   297→              <div className="flex shrink-0 items-center gap-1">
+   298→                <button onClick={() => setCartQty(i.productId, i.qty - 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card"><Minus size={12} /></button>
+   299→                <span className="w-7 text-center text-xs font-black">{faNum(i.qty)}</span>
+   300→                <button onClick={() => setCartQty(i.productId, i.qty + 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card"><Plus size={12} /></button>
+   301→                <button
+   302→                  onClick={() => setCart((c) => c.filter((x) => x.productId !== i.productId))}
+   303→                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#b3372f]/10 text-[#b3372f]"
+   304→                  title="حذف از سبد"
+   305→                >
+   306→                  <X size={12} />
+   307→                </button>
+   308→              </div>
+   309→            </div>
+   310→          ))}
+   311→        </div>
+   312→
+   313→        <div className="mt-3">
+   314→          <Labeled label="یادداشت برای صندوق">
+   315→            <textarea
+   316→              value={note}
+   317→              onChange={(e) => setNote(e.target.value)}
+   318→              rows={2}
+   319→              placeholder="مثلاً: تحویل ساعت ۱۷"
+   320→              className="w-full resize-none rounded-xl border border-input bg-white/90 p-3 text-sm"
+   321→            />
+   322→          </Labeled>
+   323→        </div>
+   324→
+   325→        <div className="mt-3 flex items-center justify-between rounded-xl bg-[#0e7a4a]/10 px-4 py-3">
+   326→          <span className="text-xs font-bold text-foreground/80">جمع کل سبد</span>
+   327→          <span className="text-base font-black text-[#0e7a4a]">{faMoney(total)} تومان</span>
+   328→        </div>
+   329→        <button
+   330→          onClick={submit}
+   331→          disabled={busy || cart.length === 0}
+   332→          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-sm font-extrabold text-white disabled:opacity-40"
+   333→        >
+   334→          <Send size={15} /> {busy ? '…' : 'ارسال به صف صندوق'}
+   335→        </button>
+   336→      </SectionCard>
+   337→    </div>
+   338→  )
+   339→}
+   340→
+   341→/* ═══════════════════════════ Tab 2: صف صندوق ═══════════════════════════ */
+   342→function CashierQueue({ ctx }: { ctx: AppCtx }) {
+   343→  const [list, setList] = useState<PreOrder[]>([])
+   344→  const [loading, setLoading] = useState(true)
+   345→  const [openId, setOpenId] = useState<string | null>(null)
+   346→  const [drafts, setDrafts] = useState<Record<string, PItem[]>>({})
+   347→  const [printing, setPrinting] = useState<PreOrder | null>(null)
+   348→  const [busy, setBusy] = useState(false)
+   349→
+   350→  const load = async () => {
+   351→    try {
+   352→      const d = await api<{ preOrders: PreOrder[] }>('/api/preorders?scope=cashier')
+   353→      setList(d.preOrders)
+   354→    } catch (e: any) {
+   355→      toast.error(e.message)
+   356→    } finally {
+   357→      setLoading(false)
+   358→    }
+   359→  }
+   360→  useEffect(() => { load() }, [])
+   361→
+   362→  const toggle = (po: PreOrder) => {
+   363→    if (openId === po.id) return setOpenId(null)
+   364→    setOpenId(po.id)
+   365→    setDrafts((d) => ({ ...d, [po.id]: po.items.map((i) => ({ ...i })) }))
+   366→  }
+   367→
+   368→  const setQty = (poId: string, idx: number, qty: number) =>
+   369→    setDrafts((d) => ({
+   370→      ...d,
+   371→      [poId]: (d[poId] || []).map((it, i) => (i === idx ? { ...it, qty: Math.max(1, qty) } : it)),
+   372→    }))
+   373→
+   374→  const sendToPos = async (po: PreOrder) => {
+   375→    setBusy(true)
+   376→    try {
+   377→      const items = drafts[po.id] || po.items
+   378→      const res = await api<{ preOrder: PreOrder }>(`/api/preorders/${po.id}`, {
+   379→        method: 'PATCH',
+   380→        body: { action: 'cashier_edit', items },
+   381→      })
+   382→      toast.success('آماده پردازش در هلو — رسید چاپ شد 🖨️')
+   383→      setOpenId(null)
+   384→      setPrinting({ ...res.preOrder, items })
+   385→      await load()
+   386→      ctx.refreshNotifications()
+   387→    } catch (e: any) {
+   388→      toast.error(e.message)
+   389→    } finally {
+   390→      setBusy(false)
+   391→    }
+   392→  }
+   393→
+   394→  const cancel = async (po: PreOrder) => {
+   395→    setBusy(true)
+   396→    try {
+   397→      await api(`/api/preorders/${po.id}`, { method: 'PATCH', body: { action: 'cancel' } })
+   398→      toast.success(`پیش‌فاکتور ${po.code} لغو شد`)
+   399→      setOpenId(null)
+   400→      await load()
+   401→    } catch (e: any) {
+   402→      toast.error(e.message)
+   403→    } finally {
+   404→      setBusy(false)
+   405→    }
+   406→  }
+   407→
+   408→  return (
+   409→    <>
+   410→      <SectionCard
+   411→        title="صف صندوق 💳"
+   412→        subtitle="پیش‌فاکتورهای ثبت‌شدهٔ فروشندگان — ویرایش تعداد، ارسال به هلو و چاپ رسید"
+   413→        icon={<CreditCard size={18} />}
+   414→      >
+   415→        {loading ? (
+   416→          <p className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری صف…</p>
+   417→        ) : list.length === 0 ? (
+   418→          <EmptyState emoji="💳" title="صف صندوق خالی است" hint="پیش‌فاکتورهای جدید فروشندگان اینجا ظاهر می‌شوند" />
+   419→        ) : (
+   420→          <div className="scroll-gold max-h-[60vh] space-y-2 overflow-y-auto pl-1">
+   421→            {list.map((po) => {
+   422→              const st = PO_STATUS[po.status] || PO_STATUS.NEW
+   423→              const open = openId === po.id
+   424→              const items = drafts[po.id] || po.items
+   425→              const dTotal = items.reduce((s, i) => s + i.qty * i.price, 0)
+   426→              return (
+   427→                <div key={po.id} className="glow-card overflow-hidden rounded-2xl bg-white/80">
+   428→                  <button type="button" onClick={() => toggle(po)} className="flex w-full flex-wrap items-center justify-between gap-2 p-3.5 text-right">
+   429→                    <div className="flex items-center gap-3">
+   430→                      <Avatar name={po.createdByName} color={nameColor(po.createdByName)} size={36} />
+   431→                      <div>
+   432→                        <p className="text-sm font-black">
+   433→                          {po.code} — {po.customerName}
+   434→                        </p>
+   435→                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+   436→                          {faNum(po.items.length)} قلم کالا • ثبت: {po.createdByName}
+   437→                          {po.note ? ` • 📝 ${po.note}` : ''}
+   438→                        </p>
+   439→                      </div>
+   440→                    </div>
+   441→                    <div className="flex items-center gap-2">
+   442→                      <span className="text-sm font-black text-[#0e7a4a]">{faMoney(po.total)} تومان</span>
+   443→                      <Pill label={st.label} color={st.color} />
+   444→                      <ChevronDown size={15} className={cn('text-muted-foreground transition', open && 'rotate-180')} />
+   445→                    </div>
+   446→                  </button>
+   447→
+   448→                  {open && (
+   449→                    <div className="border-t border-border/60 bg-muted/20 p-3.5 fade-in-up">
+   450→                      <div className="space-y-1.5">
+   451→                        {items.map((it, idx) => (
+   452→                          <div key={idx} className="flex items-center justify-between gap-2 rounded-xl bg-card p-2.5">
+   453→                            <div className="min-w-0">
+   454→                              <p className="truncate text-xs font-bold">{it.name}</p>
+   455→                              <p className="text-[10px] text-muted-foreground">{faMoney(it.price)} تومان</p>
+   456→                            </div>
+   457→                            <div className="flex shrink-0 items-center gap-1">
+   458→                              <button onClick={() => setQty(po.id, idx, it.qty - 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card"><Minus size={12} /></button>
+   459→                              <span className="w-8 text-center text-xs font-black">{faNum(it.qty)}</span>
+   460→                              <button onClick={() => setQty(po.id, idx, it.qty + 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card"><Plus size={12} /></button>
+   461→                              <span className="w-24 text-left text-[11px] font-black text-[#0e7a4a]">{faMoney(it.qty * it.price)}</span>
+   462→                            </div>
+   463→                          </div>
+   464→                        ))}
+   465→                      </div>
+   466→                      <div className="mt-2 flex items-center justify-between rounded-xl bg-[#0e7a4a]/10 px-3 py-2 text-xs font-black">
+   467→                        <span>جمع قابل پرداخت</span>
+   468→                        <span className="text-[#0e7a4a]">{faMoney(dTotal)} تومان</span>
+   469→                      </div>
+   470→                      <div className="mt-3 flex flex-wrap gap-2">
+   471→                        <button
+   472→                          onClick={() => sendToPos(po)}
+   473→                          disabled={busy}
+   474→                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-3 text-xs font-extrabold text-white disabled:opacity-40"
+   475→                        >
+   476→                          <Printer size={14} /> ارسال به صندوق هلو و چاپ رسید 🖨️
+   477→                        </button>
+   478→                        <button
+   479→                          onClick={() => cancel(po)}
+   480→                          disabled={busy}
+   481→                          className="flex items-center justify-center gap-1.5 rounded-xl bg-[#b3372f]/10 px-4 py-3 text-xs font-extrabold text-[#b3372f] disabled:opacity-40"
+   482→                        >
+   483→                          <Ban size={14} /> لغو
+   484→                        </button>
+   485→                      </div>
+   486→                    </div>
+   487→                  )}
+   488→                </div>
+   489→              )
+   490→            })}
+   491→          </div>
+   492→        )}
+   493→      </SectionCard>
+   494→
+   495→      {/* simulated print receipt */}
+   496→      {printing && (
+   497→        <Modal title="رسید صندوق هلو 🖨️" onClose={() => setPrinting(null)}>
+   498→          <div className="rounded-2xl border border-dashed border-border bg-white p-4 text-sm">
+   499→            <div className="border-b border-dashed border-border pb-2 text-center">
+   500→              <p className="text-base font-black">🫒 هایپر زیتون</p>
+   501→              <p className="text-[11px] text-muted-foreground">کرمان — رسید فروش</p>
+   502→            </div>
+   503→            <div className="flex justify-between py-2 text-[11px] text-muted-foreground">
+   504→              <span>کد: {printing.code}</span>
+   505→              <span>{formatJalaliDateTime(new Date())}</span>
+   506→            </div>
+   507→            <div className="space-y-1 border-y border-dashed border-border py-2">
+   508→              {printing.items.map((it, i) => (
+   509→                <div key={i} className="flex justify-between text-[11px]">
+   510→                  <span className="min-w-0 truncate">{it.name} × {faNum(it.qty)}</span>
+   511→                  <span className="shrink-0 font-bold">{faMoney(it.qty * it.price)}</span>
+   512→                </div>
+   513→              ))}
+   514→            </div>
+   515→            <div className="flex justify-between pt-2 text-sm font-black">
+   516→              <span>جمع کل</span>
+   517→              <span>{faMoney(printing.items.reduce((s, i) => s + i.qty * i.price, 0))} تومان</span>
+   518→            </div>
+   519→            <p className="pt-2 text-center text-[10px] text-muted-foreground">
+   520→              مشتری: {printing.customerName} • صندوقدار: {ctx.user!.name}
+   521→            </p>
+   522→          </div>
+   523→          <p className="text-center text-[11px] font-bold text-[#0e7a4a]">رسید در صف چاپ هلو قرار گرفت ✅</p>
+   524→          <button onClick={() => setPrinting(null)} className="w-full rounded-xl bg-primary py-2.5 text-xs font-extrabold text-white">
+   525→            بستن
+   526→          </button>
+   527→        </Modal>
+   528→      )}
+   529→    </>
+   530→  )
+   531→}
+   532→
+   533→/* ═══════════════════════════ Tab 3: تاریخچه و عملکرد ═══════════════════════════ */
+   534→function HistorySection() {
+   535→  const [all, setAll] = useState<PreOrder[]>([])
+   536→  const [loading, setLoading] = useState(true)
+   537→  const [person, setPerson] = useState('')
+   538→
+   539→  useEffect(() => {
+   540→    api<{ preOrders: PreOrder[] }>('/api/preorders?scope=all')
+   541→      .then((d) => setAll(d.preOrders))
+   542→      .catch((e) => toast.error(e.message))
+   543→      .finally(() => setLoading(false))
+   544→  }, [])
+   545→
+   546→  const people = useMemo(() => [...new Set(all.map((p) => p.createdByName))], [all])
+   547→  const filtered = person ? all.filter((p) => p.createdByName === person) : all
+   548→  const perPerson = useMemo(
+   549→    () => people.map((n) => ({ label: n, value: all.filter((p) => p.createdByName === n).length })),
+   550→    [people, all]
+   551→  )
+   552→
+   553→  return (
+   554→    <div className="space-y-4">
+   555→      <SectionCard title="فروش به تفکیک فروشنده" subtitle="تعداد پیش‌فاکتور ثبت‌شدهٔ هر همکار" icon={<TrendingUp size={18} />}>
+   556→        {loading ? (
+   557→          <p className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+   558→        ) : perPerson.length === 0 ? (
+   559→          <EmptyState emoji="📈" title="هنوز پیش‌فاکتوری ثبت نشده" />
+   560→        ) : (
+   561→          <>
+   562→            <BarChart data={perPerson} color="#c9a227" />
+   563→            {/* SPHL card */}
+   564→            <div className="mt-4 rounded-2xl border border-[#c9a227]/40 bg-[#fdf6dd]/50 p-3.5">
+   565→              <p className="text-xs font-black text-[#8a6d10]">فروش به ازای ساعت کار (SPHL) = تعداد پیش‌فاکتور ÷ ساعت کاری شیفت</p>
+   566→              <p className="mt-1 text-[10px] text-muted-foreground">محاسبهٔ زیر با فرض شیفت ۸ ساعته انجام شده است.</p>
+   567→              <div className="mt-2.5 grid gap-1.5 sm:grid-cols-2">
+   568→                {perPerson.map((p) => (
+   569→                  <div key={p.label} className="flex items-center justify-between rounded-xl bg-white/80 px-3 py-2">
+   570→                    <span className="text-xs font-bold">{p.label}</span>
+   571→                    <span className="text-[11px] text-muted-foreground">
+   572→                      {faNum(p.value)} پیش‌فاکتور → SPHL: <b className="text-[#8a6d10]">{faNum((p.value / 8).toFixed(1))}</b>
+   573→                    </span>
+   574→                  </div>
+   575→                ))}
+   576→              </div>
+   577→            </div>
+   578→          </>
+   579→        )}
+   580→      </SectionCard>
+   581→
+   582→      <SectionCard
+   583→        title="تاریخچه پیش‌فاکتورها"
+   584→        subtitle="همهٔ پیش‌فاکتورها با وضعیت — با فیلتر نام فروشنده"
+   585→        icon={<NotebookPen size={18} />}
+   586→      >
+   587→        <div className="mb-3 flex flex-wrap gap-1.5">
+   588→          <button
+   589→            onClick={() => setPerson('')}
+   590→            className={cn('rounded-full border px-3.5 py-1.5 text-[11px] font-extrabold', !person ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70')}
+   591→          >
+   592→            همه
+   593→          </button>
+   594→          {people.map((n) => (
+   595→            <button
+   596→              key={n}
+   597→              onClick={() => setPerson(n)}
+   598→              className={cn('rounded-full border px-3.5 py-1.5 text-[11px] font-extrabold', person === n ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground/70')}
+   599→            >
+   600→              {n}
+   601→            </button>
+   602→          ))}
+   603→        </div>
+   604→        <div className="scroll-gold max-h-[46vh] space-y-2 overflow-y-auto pl-1">
+   605→          {filtered.length === 0 && <EmptyState emoji="🧾" title="موردی یافت نشد" />}
+   606→          {filtered.map((po) => {
+   607→            const st = PO_STATUS[po.status] || PO_STATUS.NEW
+   608→            return (
+   609→              <div key={po.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-white/80 p-3.5">
+   610→                <div className="flex items-center gap-3">
+   611→                  <Avatar name={po.createdByName} color={nameColor(po.createdByName)} size={34} />
+   612→                  <div>
+   613→                    <p className="text-xs font-black">{po.code} — {po.customerName}</p>
+   614→                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+   615→                      {faNum(po.items.length)} قلم • فروشنده: {po.createdByName}
+   616→                      {po.cashierName ? ` • صندوق: ${po.cashierName}` : ''} • {formatJalaliDateTime(po.createdAt)}
+   617→                    </p>
+   618→                  </div>
+   619→                </div>
+   620→                <div className="flex items-center gap-2">
+   621→                  <span className="text-xs font-black text-[#0e7a4a]">{faMoney(po.total)} تومان</span>
+   622→                  <Pill label={st.label} color={st.color} />
+   623→                </div>
+   624→              </div>
+   625→            )
+   626→          })}
+   627→        </div>
+   628→      </SectionCard>
+   629→    </div>
+   630→  )
+   631→}
+   632→
+   633→/* ═══════════════════════════ Tab 4: درخواست‌های مشتری ═══════════════════════════ */
+   634→function RequestsSection({ canDelete }: { canDelete: boolean }) {
+   635→  const [reqs, setReqs] = useState<CReq[]>([])
+   636→  const [loading, setLoading] = useState(true)
+   637→  const [name, setName] = useState('')
+   638→  const [busy, setBusy] = useState(false)
+   639→
+   640→  const load = async () => {
+   641→    try {
+   642→      const d = await api<{ requests: CReq[] }>('/api/customer-requests')
+   643→      setReqs(d.requests)
+   644→    } catch (e: any) {
+   645→      toast.error(e.message)
+   646→    } finally {
+   647→      setLoading(false)
+   648→    }
+   649→  }
+   650→  useEffect(() => { load() }, [])
+   651→
+   652→  const add = async () => {
+   653→    if (!name.trim()) return toast.error('نام کالا را وارد کنید')
+   654→    setBusy(true)
+   655→    try {
+   656→      const res = await api<{ repeated: boolean }>('/api/customer-requests', { method: 'POST', body: { productName: name.trim() } })
+   657→      toast.success(res.repeated ? 'تعداد درخواست این کالا افزایش یافت ✅' : 'درخواست مشتری ثبت شد 📝')
+   658→      setName('')
+   659→      await load()
+   660→    } catch (e: any) {
+   661→      toast.error(e.message)
+   662→    } finally {
+   663→      setBusy(false)
+   664→    }
+   665→  }
+   666→
+   667→  const del = async (r: CReq) => {
+   668→    try {
+   669→      await api(`/api/customer-requests?id=${r.id}`, { method: 'DELETE' })
+   670→      toast.success('حذف شد')
+   671→      await load()
+   672→    } catch (e: any) {
+   673→      toast.error(e.message)
+   674→    }
+   675→  }
+   676→
+   677→  return (
+   678→    <SectionCard
+   679→      title="درخواست‌های مشتری برای کالاهای ناموجود"
+   680→      subtitle="هر بار مشتری دنبال کالایی بود که نداشتیم، اینجا ثبت کنید تا در تصمیم خرید دیده شود"
+   681→      icon={<NotebookPen size={18} />}
+   682→    >
+   683→      <div className="mb-3 flex gap-2">
+   684→        <input
+   685→          value={name}
+   686→          onChange={(e) => setName(e.target.value)}
+   687→          onKeyDown={(e) => e.key === 'Enter' && add()}
+   688→          placeholder="نام کالایی که مشتری خواست…"
+   689→          className="flex-1 rounded-xl border border-input bg-white/90 p-3 text-sm"
+   690→        />
+   691→        <button
+   692→          onClick={add}
+   693→          disabled={busy}
+   694→          className="flex items-center gap-1.5 rounded-xl bg-primary px-5 py-3 text-xs font-extrabold text-white disabled:opacity-40"
+   695→        >
+   696→          <Plus size={14} /> ثبت درخواست
+   697→        </button>
+   698→      </div>
+   699→      {loading ? (
+   700→        <p className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+   701→      ) : reqs.length === 0 ? (
+   702→        <EmptyState emoji="📝" title="هنوز درخواستی ثبت نشده" hint="اولین درخواست را همین بالا ثبت کنید" />
+   703→      ) : (
+   704→        <div className="scroll-gold max-h-[42vh] space-y-1.5 overflow-y-auto pl-1">
+   705→          {reqs.map((r) => (
+   706→            <div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-white/80 p-3">
+   707→              <div className="flex min-w-0 items-center gap-2.5">
+   708→                <span className="flex h-9 shrink-0 items-center rounded-xl bg-[#c9a227]/15 px-2.5 text-xs font-black text-[#8a6d10]">
+   709→                  ×{faNum(r.count)}
+   710→                </span>
+   711→                <div className="min-w-0">
+   712→                  <p className="truncate text-xs font-bold">{r.productName}</p>
+   713→                  <p className="text-[10px] text-muted-foreground">آخرین ثبت: {r.lastByName || '—'}</p>
+   714→                </div>
+   715→              </div>
+   716→              {canDelete && (
+   717→                <button
+   718→                  onClick={() => del(r)}
+   719→                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#b3372f]/10 text-[#b3372f]"
+   720→                  title="حذف درخواست"
+   721→                >
+   722→                  <Trash2 size={14} />
+   723→                </button>
+   724→              )}
+   725→            </div>
+   726→          ))}
+   727→        </div>
+   728→      )}
+   729→    </SectionCard>
+   730→  )
+   731→}
+   732→

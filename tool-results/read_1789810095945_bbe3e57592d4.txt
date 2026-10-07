@@ -1,0 +1,923 @@
+     1→'use client'
+     2→
+     3→/**
+     4→ * شمارش کورِ روزانهٔ زون (Blind Zone Count)
+     5→ * — مرچندایزر / مسئول زون: شمارش فیزیکی بدون دیدن عدد سیستم؛ فقط پرچم ✓/⚠ هر قلم + هشدار کلی مغایرت.
+     6→ * — مدیران (SK/OM/GM/PM/OWNER): تابلوی امروز با اعداد کامل، تاریخچهٔ ۱۴ روزهٔ تیم، تخصیص زون، تلورانس.
+     7→ * جدا از شمارش چرخه‌ای مدیران (Science) — آن ابزار برای اصلاح موجودی است.
+     8→ */
+     9→
+    10→import { useCallback, useEffect, useRef, useState } from 'react'
+    11→import { toast } from 'sonner'
+    12→import { api } from '@/lib/client'
+    13→import { enDigits, faNum, formatJalaliDateTime, formatJalaliFull, formatJalaliShort, todayIso } from '@/lib/jalali'
+    14→import { EmptyState, Labeled, Pill, SectionCard, StatCard } from '@/components/app/ui-bits'
+    15→import type { AppCtx } from '@/components/app/ui-bits'
+    16→import { CATEGORY_EMOJI, ROLE_LABELS } from '@/lib/constants'
+    17→import { cn } from '@/lib/utils'
+    18→import { ClipboardList, EyeOff, Flame, History, LayoutDashboard, Trash2, Users } from 'lucide-react'
+    19→
+    20→const EMERALD = '#0e7a4a'
+    21→const GOLD = '#c9a227'
+    22→const TERRA = '#c96f4a'
+    23→const OLIVE = '#77934a'
+    24→const ROSE = '#b3372f'
+    25→const MANAGER_ROLES = ['SK', 'OM', 'GM', 'PM', 'OWNER']
+    26→
+    27→type CountItem = {
+    28→  productId: string
+    29→  productName: string
+    30→  unit: string
+    31→  countedQty: number
+    32→  /** نسخهٔ کور (مرچندایزر) */
+    33→  ok?: boolean
+    34→  /** نسخهٔ کامل (مدیران) */
+    35→  systemQty?: number
+    36→  diff?: number
+    37→  within?: boolean
+    38→}
+    39→
+    40→type Entry = {
+    41→  id: string
+    42→  forDate: string
+    43→  zone: string
+    44→  userName: string
+    45→  totalItems: number
+    46→  hasMismatch: boolean
+    47→  createdAt?: string
+    48→  status?: string
+    49→  mismatchCount?: number
+    50→  tolerance?: number
+    51→  items: CountItem[]
+    52→}
+    53→
+    54→type ProductLite = { id: string; name: string; unit: string; category: string; stock?: number }
+    55→
+    56→type TeamRow = { forDate: string; zone: string; userName: string; status: string; mismatchCount: number; totalItems: number }
+    57→
+    58→type ZoneData = {
+    59→  zones: string[]
+    60→  myZones: string[]
+    61→  products: ProductLite[]
+    62→  myToday: Entry | null
+    63→  myTodayZones: string[]
+    64→  teamToday: Entry[]
+    65→  history: Entry[]
+    66→  teamHistory: TeamRow[]
+    67→  stats: { myStreak: number; myTotal: number; myMismatchDays: number; todayItems: number }
+    68→  today: string
+    69→}
+    70→
+    71→type UserRow = { id: string; name: string; role: string; active: boolean; color?: string; zones?: unknown }
+    72→
+    73→type TabKey = 'board' | 'mine' | 'team' | 'zones'
+    74→
+    75→function parseZones(z: unknown): string[] {
+    76→  if (Array.isArray(z)) return z.filter((x): x is string => typeof x === 'string')
+    77→  if (typeof z === 'string') {
+    78→    try {
+    79→      const v = JSON.parse(z || '[]')
+    80→      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    81→    } catch {
+    82→      return []
+    83→    }
+    84→  }
+    85→  return []
+    86→}
+    87→
+    88→const okFlag = (it: CountItem) => it.ok ?? it.within ?? true
+    89→
+    90→/* ───────────── اجزای مشترک ───────────── */
+    91→
+    92→function ZonePicker({ zones, value, onPick }: { zones: string[]; value: string; onPick: (z: string) => void }) {
+    93→  if (!zones.length)
+    94→    return <EmptyState emoji="🗺️" title="زونی تعریف نشده" hint="زون‌ها از دستهٔ کالاهای فعال ساخته می‌شوند؛ ابتدا از «محصولات» کالا ثبت کنید." />
+    95→  return (
+    96→    <div className="flex flex-wrap gap-2">
+    97→      {zones.map((z) => {
+    98→        const active = z === value
+    99→        return (
+   100→          <button
+   101→            key={z}
+   102→            type="button"
+   103→            onClick={() => onPick(z)}
+   104→            className={cn(
+   105→              'rounded-xl border px-3.5 py-2 text-sm font-bold transition-all active:scale-95',
+   106→              active
+   107→                ? 'border-transparent bg-[#0e7a4a] text-white shadow-md'
+   108→                : 'border-border bg-card text-foreground hover:border-[#0e7a4a]/40'
+   109→            )}
+   110→          >
+   111→            <span className="ml-1">{CATEGORY_EMOJI[z] || '📦'}</span> {z}
+   112→          </button>
+   113→        )
+   114→      })}
+   115→    </div>
+   116→  )
+   117→}
+   118→
+   119→function StepperRow({ name, unit, value, onChange }: { name: string; unit: string; value: number; onChange: (v: number) => void }) {
+   120→  return (
+   121→    <div className="flex items-center justify-between gap-2 rounded-xl border border-border/70 bg-white/80 p-2.5">
+   122→      <div className="min-w-0 flex-1">
+   123→        <div className="truncate text-sm font-bold text-foreground">{name}</div>
+   124→        <div className="text-[11px] text-muted-foreground">{unit || 'دانه'}</div>
+   125→      </div>
+   126→      <div className="flex shrink-0 items-center gap-1.5" dir="ltr">
+   127→        <button
+   128→          type="button"
+   129→          aria-label={`کم کردن ${name}`}
+   130→          onClick={() => onChange(value - 1)}
+   131→          className="h-11 w-11 rounded-xl bg-secondary text-2xl font-black leading-none text-[#0e7a4a] transition active:scale-90"
+   132→        >
+   133→          −
+   134→        </button>
+   135→        <input
+   136→          dir="ltr"
+   137→          inputMode="numeric"
+   138→          aria-label={`تعداد شمارش ${name}`}
+   139→          value={faNum(value)}
+   140→          onChange={(e) => {
+   141→            const n = enDigits(e.target.value).replace(/\D/g, '')
+   142→            onChange(n === '' ? 0 : Number(n))
+   143→          }}
+   144→          onFocus={(e) => e.currentTarget.select()}
+   145→          className="h-11 w-16 rounded-xl border border-input bg-white text-center text-lg font-black tabular-nums outline-none focus:border-[#0e7a4a] focus:ring-2 focus:ring-[#0e7a4a]/20"
+   146→        />
+   147→        <button
+   148→          type="button"
+   149→          aria-label={`اضافه کردن ${name}`}
+   150→          onClick={() => onChange(value + 1)}
+   151→          className="h-11 w-11 rounded-xl bg-[#0e7a4a] text-2xl font-black leading-none text-white transition active:scale-90"
+   152→        >
+   153→          +
+   154→        </button>
+   155→      </div>
+   156→    </div>
+   157→  )
+   158→}
+   159→
+   160→function ResultBanner({ result }: { result: { hasMismatch: boolean; message: string; items: CountItem[] } }) {
+   161→  const badCount = result.items.filter((it) => !okFlag(it)).length
+   162→  return (
+   163→    <div
+   164→      className={cn(
+   165→        'fade-in-up rounded-2xl border-2 p-4',
+   166→        result.hasMismatch ? 'border-[#c9a227]/50 bg-[#c9a227]/10' : 'border-[#0e7a4a]/40 bg-[#0e7a4a]/10'
+   167→      )}
+   168→    >
+   169→      <div className="mb-2 flex items-start gap-2">
+   170→        <span className="text-2xl">{result.hasMismatch ? '⚠️' : '✅'}</span>
+   171→        <p className={cn('text-sm font-bold leading-6', result.hasMismatch ? 'text-[#8a6d10]' : 'text-[#0e7a4a]')}>
+   172→          {result.message}
+   173→        </p>
+   174→      </div>
+   175→      <div className="flex flex-wrap gap-1.5">
+   176→        {result.items.map((it) => (
+   177→          <span
+   178→            key={it.productId}
+   179→            className={cn(
+   180→              'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold',
+   181→              okFlag(it) ? 'bg-[#0e7a4a]/15 text-[#0e7a4a]' : 'bg-[#c9a227]/25 text-[#8a6d10]'
+   182→            )}
+   183→          >
+   184→            {okFlag(it) ? '✓' : '⚠'} {it.productName}
+   185→          </span>
+   186→        ))}
+   187→      </div>
+   188→      {result.hasMismatch && (
+   189→        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+   190→          {faNum(badCount)} قلم علامت‌دار با موجودی هلو نخواند؛ فقط مدیر انبار/عملیات عدد سیستم را می‌بیند و اصلاح را انجام می‌دهد — به شما هیچ عددی نشان داده نمی‌شود.
+   191→        </p>
+   192→      )}
+   193→    </div>
+   194→  )
+   195→}
+   196→
+   197→function CountPanel({
+   198→  zone,
+   199→  products,
+   200→  qtys,
+   201→  touched,
+   202→  saving,
+   203→  autoSaved,
+   204→  onQty,
+   205→  onSubmit,
+   206→}: {
+   207→  zone: string
+   208→  products: ProductLite[]
+   209→  qtys: Record<string, number>
+   210→  touched: Record<string, boolean>
+   211→  saving: boolean
+   212→  autoSaved: boolean
+   213→  onQty: (pid: string, v: number) => void
+   214→  onSubmit: () => void
+   215→}) {
+   216→  const entered = products.filter((p) => touched[p.id]).length
+   217→  return (
+   218→    <SectionCard
+   219→      title={`ثبت شمارش — زون ${zone}`}
+   220→      subtitle="شمارش فیزیکی قفسه‌ها را با دکمه‌های ‎−/+‎ یا تایپ عدد وارد کنید"
+   221→      icon={<ClipboardList size={18} />}
+   222→      actions={
+   223→        autoSaved ? (
+   224→          <span className="rounded-lg bg-[#0e7a4a]/10 px-2.5 py-1 text-[11px] font-black text-[#0e7a4a]">ذخیرهٔ خودکار ✓</span>
+   225→        ) : entered ? (
+   226→          <span className="text-[11px] text-muted-foreground">{faNum(entered)} قلم وارد شده</span>
+   227→        ) : undefined
+   228→      }
+   229→    >
+   230→      {products.length === 0 ? (
+   231→        <EmptyState emoji="📦" title="کالایی در این زون ثبت نشده" hint="زون دیگری را انتخاب کنید یا از «محصولات» کالای جدید اضافه کنید." />
+   232→      ) : (
+   233→        <div className="max-h-[46vh] space-y-2 overflow-y-auto scroll-gold pl-1">
+   234→          {products.map((p) => (
+   235→            <StepperRow key={p.id} name={p.name} unit={p.unit} value={qtys[p.id] || 0} onChange={(v) => onQty(p.id, v)} />
+   236→          ))}
+   237→        </div>
+   238→      )}
+   239→      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+   240→        <p className="max-w-xs text-[11px] leading-5 text-muted-foreground sm:max-w-none">
+   241→          عددی که وارد می‌کنید فقط شمارش فیزیکی شماست؛ هیچ عددی از سیستم نمایش داده نمی‌شود تا شمارش شما بی‌طرف بماند.
+   242→        </p>
+   243→        <button
+   244→          type="button"
+   245→          onClick={onSubmit}
+   246→          disabled={saving || !zone}
+   247→          className="shrink-0 rounded-xl bg-[#0e7a4a] px-5 py-3 text-sm font-black text-white shadow-md transition hover:brightness-110 active:scale-95 disabled:opacity-60"
+   248→        >
+   249→          {saving ? 'در حال ثبت…' : 'ثبت شمارش امروز 🌿'}
+   250→        </button>
+   251→      </div>
+   252→    </SectionCard>
+   253→  )
+   254→}
+   255→
+   256→function MyHistory({ rows, onDelete }: { rows: Entry[]; onDelete: (id: string) => void }) {
+   257→  const today = todayIso()
+   258→  if (!rows.length)
+   259→    return (
+   260→      <EmptyState
+   261→        emoji="🧺"
+   262→        title="هنوز شمارشی ثبت نکرده‌اید"
+   263→        hint="اولین شمارش امروز را ثبت کنید تا زنجیرهٔ روزهای پیوسته شروع شود."
+   264→      />
+   265→    )
+   266→  return (
+   267→    <div className="max-h-[46vh] space-y-2 overflow-y-auto scroll-gold pl-1">
+   268→      {rows.map((e) => (
+   269→        <div key={e.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-white/70 px-3 py-2">
+   270→          <div className="min-w-0">
+   271→            <div className="truncate text-sm font-bold text-foreground">
+   272→              {CATEGORY_EMOJI[e.zone] || '📦'} {e.zone}
+   273→            </div>
+   274→            <div className="text-[11px] text-muted-foreground">
+   275→              {formatJalaliShort(e.forDate)} — {faNum(e.totalItems)} قلم
+   276→            </div>
+   277→          </div>
+   278→          <div className="flex shrink-0 items-center gap-1.5">
+   279→            {e.hasMismatch ? <Pill label="⚠ مغایرت" color={ROSE} /> : <Pill label="✓ مطابق" color={EMERALD} />}
+   280→            {e.forDate === today && (
+   281→              <button
+   282→                type="button"
+   283→                onClick={() => onDelete(e.id)}
+   284→                title="حذف ثبت امروز"
+   285→                className="rounded-lg p-1 text-muted-foreground hover:bg-[#b3372f]/10 hover:text-[#b3372f]"
+   286→              >
+   287→                <Trash2 size={14} />
+   288→              </button>
+   289→            )}
+   290→          </div>
+   291→        </div>
+   292→      ))}
+   293→    </div>
+   294→  )
+   295→}
+   296→
+   297→/** چرا عدد سیستم را نمی‌بینید؟ — آموزش سوگیری لنگر و شمارش کور */
+   298→function BlindWhy() {
+   299→  return (
+   300→    <div className="fade-in-up rounded-2xl border border-[#77934a]/30 bg-[#77934a]/10 p-4">
+   301→      <h3 className="mb-1.5 flex items-center gap-2 text-sm font-black text-[#5c7236]">
+   302→        <EyeOff size={16} /> چرا عدد سیستم را نمی‌بینید؟
+   303→      </h3>
+   304→      <p className="text-xs leading-6 text-foreground/80">
+   305→        این صفحه عمداً «شمارش کور» است: وقتی شمارنده عدد موجودی سیستم را ببیند، ناخودآگاه شمارش خودش را به سمت همان عدد
+   306→        می‌کشاند — به این پدیده «سوگیری لنگر» می‌گویند. مطالعات شمارش چرخه‌ای نشان می‌دهد شمارشِ مستقل بدون دیدن عدد مرجع،
+   307→        خطای انسانی را به‌طور معنادار کم می‌کند و دقت موجودی واقعی بالاتر می‌رود. اگر شمارش شما با موجودی هلو نخواند، فقط
+   308→        مدیر انبار/عملیات عدد سیستم را می‌بیند و اصلاح را انجام می‌دهد؛ کافی است شمارش درست خود را ثبت کنید.
+   309→      </p>
+   310→    </div>
+   311→  )
+   312→}
+   313→
+   314→/* ───────────── اجزای مدیران ───────────── */
+   315→
+   316→function BoardTab({
+   317→  data,
+   318→  onDelete,
+   319→  onScience,
+   320→}: {
+   321→  data: ZoneData | null
+   322→  onDelete: (id: string) => void
+   323→  onScience: () => void
+   324→}) {
+   325→  const [openZone, setOpenZone] = useState('')
+   326→  if (!data) return null
+   327→  const byZone: Record<string, Entry[]> = {}
+   328→  for (const e of data.teamToday) {
+   329→    if (!byZone[e.zone]) byZone[e.zone] = []
+   330→    byZone[e.zone].push(e)
+   331→  }
+   332→  return (
+   333→    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+   334→      {data.zones.map((z) => {
+   335→        const entries = byZone[z] || []
+   336→        const mismatches = entries.filter((e) => e.hasMismatch).length
+   337→        const active = z === openZone
+   338→        return (
+   339→          <div
+   340→            key={z}
+   341→            className={cn(
+   342→              'glow-card rounded-2xl border-2 bg-card p-3.5 transition-all',
+   343→              active ? 'border-[#0e7a4a]/50 shadow-md' : 'border-border/60'
+   344→            )}
+   345→          >
+   346→            <button
+   347→              type="button"
+   348→              onClick={() => setOpenZone(active ? '' : z)}
+   349→              className="flex w-full items-center justify-between gap-2 text-right"
+   350→            >
+   351→              <div className="flex items-center gap-2">
+   352→                <span className="text-2xl">{CATEGORY_EMOJI[z] || '📦'}</span>
+   353→                <div>
+   354→                  <div className="text-sm font-black text-foreground">{z}</div>
+   355→                  <div className="text-[11px] text-muted-foreground">
+   356→                    {entries.length ? `${faNum(entries.length)} شمارش ثبت‌شده` : 'هنوز ثبت نشده'}
+   357→                  </div>
+   358→                </div>
+   359→              </div>
+   360→              {entries.length === 0 ? (
+   361→                <Pill label="⏳ مانده" color={GOLD} />
+   362→              ) : mismatches > 0 ? (
+   363→                <Pill label={`⚠ ${faNum(mismatches)} مغایر`} color={ROSE} />
+   364→              ) : (
+   365→                <Pill label="✓ مطابق" color={EMERALD} />
+   366→              )}
+   367→            </button>
+   368→            {active && (
+   369→              <div className="mt-3 space-y-2 border-t border-dashed border-border pt-3">
+   370→                {entries.length === 0 && (
+   371→                  <p className="text-xs text-muted-foreground">برای این زون امروز شمارشی ثبت نشده است.</p>
+   372→                )}
+   373→                {entries.map((e) => (
+   374→                  <div key={e.id} className="rounded-xl bg-white/80 p-2.5">
+   375→                    <div className="flex flex-wrap items-center justify-between gap-2">
+   376→                      <div className="flex items-center gap-2">
+   377→                        <span
+   378→                          className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-black text-white"
+   379→                          style={{ background: OLIVE }}
+   380→                        >
+   381→                          {e.userName?.[0] || '؟'}
+   382→                        </span>
+   383→                        <span className="text-xs font-bold text-foreground">{e.userName}</span>
+   384→                        {e.createdAt && <span className="text-[10px] text-muted-foreground">{formatJalaliDateTime(e.createdAt)}</span>}
+   385→                      </div>
+   386→                      <div className="flex items-center gap-1.5">
+   387→                        {e.hasMismatch ? (
+   388→                          <Pill label={`⚠ ${faNum(e.mismatchCount || 0)} قلم مغایر`} color={ROSE} />
+   389→                        ) : (
+   390→                          <Pill label="✓ مطابق" color={EMERALD} />
+   391→                        )}
+   392→                        <Pill label={`${faNum(e.totalItems)} قلم`} color={OLIVE} />
+   393→                        <button
+   394→                          type="button"
+   395→                          onClick={() => onDelete(e.id)}
+   396→                          title="حذف ثبت"
+   397→                          className="rounded-lg p-1 text-muted-foreground hover:bg-[#b3372f]/10 hover:text-[#b3372f]"
+   398→                        >
+   399→                          <Trash2 size={14} />
+   400→                        </button>
+   401→                      </div>
+   402→                    </div>
+   403→                    <div className="mt-2 overflow-x-auto">
+   404→                      <table className="w-full min-w-[420px] text-right text-xs">
+   405→                        <thead>
+   406→                          <tr className="text-muted-foreground">
+   407→                            <th className="py-1.5 font-medium">کالا</th>
+   408→                            <th className="font-medium">شمارش</th>
+   409→                            <th className="font-medium">موجودی هلو</th>
+   410→                            <th className="font-medium">اختلاف</th>
+   411→                            <th className="font-medium">وضعیت</th>
+   412→                          </tr>
+   413→                        </thead>
+   414→                        <tbody>
+   415→                          {e.items.map((it) => {
+   416→                            const diff = it.diff ?? it.countedQty - (it.systemQty ?? 0)
+   417→                            return (
+   418→                              <tr key={it.productId} className="border-t border-border/50">
+   419→                                <td className="py-1.5 font-bold text-foreground">{it.productName}</td>
+   420→                                <td className="tabular-nums">{faNum(it.countedQty)}</td>
+   421→                                <td className="tabular-nums">{faNum(it.systemQty ?? 0)}</td>
+   422→                                <td className={cn('font-black tabular-nums', diff === 0 ? 'text-[#0e7a4a]' : 'text-[#b3372f]')}>
+   423→                                  {diff > 0 ? `+${faNum(diff)}` : diff === 0 ? faNum(0) : `−${faNum(Math.abs(diff))}`}
+   424→                                </td>
+   425→                                <td>
+   426→                                  {it.within ? <Pill label="داخل تلورانس" color={EMERALD} /> : <Pill label="مغایر" color={ROSE} />}
+   427→                                </td>
+   428→                              </tr>
+   429→                            )
+   430→                          })}
+   431→                        </tbody>
+   432→                      </table>
+   433→                    </div>
+   434→                  </div>
+   435→                ))}
+   436→                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#c96f4a]/10 px-3 py-2.5">
+   437→                  <p className="text-[11px] font-bold text-[#a04c2a]">
+   438→                    برای اصلاح موجودی هلو از جعبه‌ابزار علمی → «شمارش چرخه‌ای» استفاده کنید.
+   439→                  </p>
+   440→                  <button
+   441→                    type="button"
+   442→                    onClick={onScience}
+   443→                    className="rounded-lg bg-[#c96f4a] px-3 py-1.5 text-[11px] font-black text-white active:scale-95"
+   444→                  >
+   445→                    رفتن به شمارش چرخه‌ای
+   446→                  </button>
+   447→                </div>
+   448→              </div>
+   449→            )}
+   450→          </div>
+   451→        )
+   452→      })}
+   453→    </div>
+   454→  )
+   455→}
+   456→
+   457→function TeamHistory({ rows }: { rows: TeamRow[] }) {
+   458→  if (!rows.length)
+   459→    return (
+   460→      <EmptyState
+   461→        emoji="📋"
+   462→        title="تاریخچهٔ تیم خالی است"
+   463→        hint="به‌محض ثبت شمارش‌های روزانه، ۱۴ روز آخر اینجا نمایش داده می‌شود."
+   464→      />
+   465→    )
+   466→  return (
+   467→    <div className="max-h-[46vh] overflow-auto rounded-xl border border-border/60 scroll-gold">
+   468→      <table className="w-full min-w-[560px] text-right text-xs">
+   469→        <thead className="sticky top-0 bg-card shadow-sm">
+   470→          <tr className="text-muted-foreground">
+   471→            <th className="p-2.5 font-medium">تاریخ</th>
+   472→            <th className="font-medium">زون</th>
+   473→            <th className="font-medium">همکار</th>
+   474→            <th className="font-medium">وضعیت</th>
+   475→            <th className="font-medium">اقلام</th>
+   476→            <th className="font-medium">مغایر</th>
+   477→          </tr>
+   478→        </thead>
+   479→        <tbody>
+   480→          {rows.map((r, i) => (
+   481→            <tr key={`${r.forDate}-${r.zone}-${r.userName}-${i}`} className="border-t border-border/50">
+   482→              <td className="p-2.5 font-bold text-foreground">{formatJalaliShort(r.forDate)}</td>
+   483→              <td className="text-foreground">
+   484→                {CATEGORY_EMOJI[r.zone] || '📦'} {r.zone}
+   485→              </td>
+   486→              <td className="text-foreground">{r.userName}</td>
+   487→              <td>
+   488→                {r.status === 'MISMATCH' ? (
+   489→                  <Pill label="⚠ مغایرت" color={ROSE} />
+   490→                ) : r.status === 'MATCHED' ? (
+   491→                  <Pill label="✓ مطابق" color={EMERALD} />
+   492→                ) : (
+   493→                  <Pill label="در جریان" color={GOLD} />
+   494→                )}
+   495→              </td>
+   496→              <td className="tabular-nums text-foreground">{faNum(r.totalItems)}</td>
+   497→              <td className={cn('font-black tabular-nums', r.mismatchCount > 0 ? 'text-[#b3372f]' : 'text-muted-foreground')}>
+   498→                {r.mismatchCount > 0 ? faNum(r.mismatchCount) : '—'}
+   499→              </td>
+   500→            </tr>
+   501→          ))}
+   502→        </tbody>
+   503→      </table>
+   504→    </div>
+   505→  )
+   506→}
+   507→
+   508→function ZoneAssign({ users, zones, onSaved }: { users: UserRow[]; zones: string[]; onSaved: () => void }) {
+   509→  const [busy, setBusy] = useState<string | null>(null)
+   510→  const toggle = async (u: UserRow, z: string) => {
+   511→    const current = parseZones(u.zones)
+   512→    const next = current.includes(z) ? current.filter((x) => x !== z) : [...current, z]
+   513→    setBusy(u.id)
+   514→    try {
+   515→      await api(`/api/users/${u.id}`, { method: 'PATCH', body: { zones: next } })
+   516→      toast.success(`زون‌های ${u.name} به‌روزرسانی شد`)
+   517→      onSaved()
+   518→    } catch (e: unknown) {
+   519→      toast.error((e as Error)?.message || 'خطا در ذخیرهٔ زون‌ها')
+   520→    } finally {
+   521→      setBusy(null)
+   522→    }
+   523→  }
+   524→  if (!users.length)
+   525→    return <EmptyState emoji="👥" title="کاربر فعالی پیدا نشد" hint="از بخش مدیریت کاربران، همکاران را فعال کنید." />
+   526→  return (
+   527→    <div className="max-h-[46vh] space-y-2 overflow-y-auto scroll-gold pl-1">
+   528→      {users.map((u) => {
+   529→        const mine = parseZones(u.zones)
+   530→        return (
+   531→          <div key={u.id} className="rounded-xl border border-border/60 bg-white/70 p-3">
+   532→            <div className="mb-2 flex items-center justify-between gap-2">
+   533→              <div className="flex items-center gap-2">
+   534→                <span
+   535→                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-black text-white"
+   536→                  style={{ background: u.color || EMERALD }}
+   537→                >
+   538→                  {u.name?.[0] || '؟'}
+   539→                </span>
+   540→                <div>
+   541→                  <div className="text-sm font-bold text-foreground">{u.name}</div>
+   542→                  <div className="text-[11px] text-muted-foreground">{ROLE_LABELS[u.role] || u.role}</div>
+   543→                </div>
+   544→              </div>
+   545→              <span className="text-[11px] text-muted-foreground">{mine.length ? `${faNum(mine.length)} زون` : 'بدون زون'}</span>
+   546→            </div>
+   547→            <div className="flex flex-wrap gap-1.5">
+   548→              {zones.map((z) => {
+   549→                const on = mine.includes(z)
+   550→                return (
+   551→                  <button
+   552→                    key={z}
+   553→                    type="button"
+   554→                    disabled={busy === u.id}
+   555→                    onClick={() => toggle(u, z)}
+   556→                    className={cn(
+   557→                      'rounded-full border px-2.5 py-1 text-[11px] font-bold transition active:scale-95 disabled:opacity-50',
+   558→                      on ? 'border-transparent bg-[#77934a] text-white' : 'border-border bg-card text-muted-foreground hover:border-[#77934a]/50'
+   559→                    )}
+   560→                  >
+   561→                    {CATEGORY_EMOJI[z] || '📦'} {z}
+   562→                  </button>
+   563→                )
+   564→              })}
+   565→            </div>
+   566→          </div>
+   567→        )
+   568→      })}
+   569→    </div>
+   570→  )
+   571→}
+   572→
+   573→/* ───────────── ویو اصلی ───────────── */
+   574→
+   575→export default function ZoneCountView({ ctx }: { ctx: AppCtx }) {
+   576→  const user = ctx.user
+   577→  const manager =
+   578→    !!user && (MANAGER_ROLES.includes(user.role) || (user.secondaryRoles || []).some((r: string) => MANAGER_ROLES.includes(r)))
+   579→
+   580→  const [data, setData] = useState<ZoneData | null>(null)
+   581→  const [zone, setZone] = useState('')
+   582→  const [qtys, setQtys] = useState<Record<string, number>>({})
+   583→  const [touched, setTouched] = useState<Record<string, boolean>>({})
+   584→  const [saving, setSaving] = useState(false)
+   585→  const [autoSaved, setAutoSaved] = useState(false)
+   586→  const [result, setResult] = useState<{ hasMismatch: boolean; message: string; items: CountItem[] } | null>(null)
+   587→  const [users, setUsers] = useState<UserRow[]>([])
+   588→  const [tab, setTab] = useState<TabKey>('board')
+   589→  const [tolerance, setTolerance] = useState(2)
+   590→  const zoneRef = useRef('')
+   591→  const dirtyRef = useRef(false)
+   592→
+   593→  const loadUsers = useCallback(async () => {
+   594→    try {
+   595→      const u = await api<{ users: UserRow[] }>('/api/users')
+   596→      setUsers((u.users || []).filter((x) => x.active))
+   597→    } catch {
+   598→      /* فقط برای ویرایشگر تخصیص زون است — بی‌صدا */
+   599→    }
+   600→  }, [])
+   601→
+   602→  const refresh = useCallback(async (z: string, seed = false) => {
+   603→    const q = z ? `?zone=${encodeURIComponent(z)}` : ''
+   604→    const dd = await api<ZoneData>(`/api/zonecount${q}`)
+   605→    if (seed) {
+   606→      zoneRef.current = z
+   607→      setQtys(dd.myToday ? Object.fromEntries(dd.myToday.items.map((i) => [i.productId, i.countedQty])) : {})
+   608→      setTouched(dd.myToday ? Object.fromEntries(dd.myToday.items.map((i) => [i.productId, true])) : {})
+   609→      setResult(null)
+   610→    }
+   611→    setData(dd)
+   612→    return dd
+   613→  }, [])
+   614→
+   615→  useEffect(() => {
+   616→    let alive = true
+   617→    ;(async () => {
+   618→      try {
+   619→        const role = ctx.user?.role || ''
+   620→        const sec = (ctx.user?.secondaryRoles || []) as string[]
+   621→        const isMgr = MANAGER_ROLES.includes(role) || sec.some((r) => MANAGER_ROLES.includes(r))
+   622→        const d0 = await api<ZoneData>('/api/zonecount')
+   623→        if (!alive) return
+   624→        setData(d0)
+   625→        const first = d0.myZones[0] || ''
+   626→        if (first) {
+   627→          const dz = await api<ZoneData>(`/api/zonecount?zone=${encodeURIComponent(first)}`)
+   628→          if (!alive) return
+   629→          zoneRef.current = first
+   630→          setZone(first)
+   631→          setData(dz)
+   632→          setQtys(dz.myToday ? Object.fromEntries(dz.myToday.items.map((i) => [i.productId, i.countedQty])) : {})
+   633→          setTouched(dz.myToday ? Object.fromEntries(dz.myToday.items.map((i) => [i.productId, true])) : {})
+   634→        }
+   635→        if (isMgr) await loadUsers()
+   636→      } catch (e: unknown) {
+   637→        if (alive) toast.error((e as Error)?.message || 'خطا در بارگذاری شمارش زون')
+   638→      }
+   639→    })()
+   640→    return () => {
+   641→      alive = false
+   642→    }
+   643→  }, [ctx.user, loadUsers])
+   644→
+   645→  const changeZone = (z: string) => {
+   646→    setZone(z)
+   647→    refresh(z, true).catch((e: unknown) => toast.error((e as Error)?.message || 'خطا در بارگذاری زون'))
+   648→  }
+   649→
+   650→  const setQty = (pid: string, v: number) => {
+   651→    dirtyRef.current = true
+   652→    const nv = Math.max(0, Math.round(v) || 0)
+   653→    setQtys((prev) => ({ ...prev, [pid]: nv }))
+   654→    setTouched((prev) => ({ ...prev, [pid]: true }))
+   655→  }
+   656→
+   657→  const submit = async (silent: boolean) => {
+   658→    if (!zone) {
+   659→      if (!silent) toast.error('ابتدا زون را انتخاب کنید')
+   660→      return
+   661→    }
+   662→    const items = (data?.products || [])
+   663→      .filter((p) => touched[p.id])
+   664→      .map((p) => ({ productId: p.id, countedQty: qtys[p.id] || 0 }))
+   665→    if (!items.length) {
+   666→      if (!silent) toast.error('هیچ عددی وارد نشده است — با دکمه‌های ‎−/+‎ شمارش را وارد کنید')
+   667→      return
+   668→    }
+   669→    if (!silent) setSaving(true)
+   670→    try {
+   671→      const r = await api<{ entry: Entry; hasMismatch: boolean; message: string }>('/api/zonecount', {
+   672→        method: 'POST',
+   673→        body: { zone, items, silent, ...(manager ? { tolerance } : {}) },
+   674→      })
+   675→      dirtyRef.current = false
+   676→      if (!silent) {
+   677→        setResult({ hasMismatch: r.hasMismatch, message: r.message, items: r.entry?.items || [] })
+   678→        toast.success(r.hasMismatch ? 'ثبت شد — مغایرت به مدیر مربوطه اطلاع داده شد' : 'شمارش امروز ثبت شد 🌿')
+   679→      } else {
+   680→        setAutoSaved(true)
+   681→        window.setTimeout(() => setAutoSaved(false), 2500)
+   682→      }
+   683→      await refresh(zone)
+   684→    } catch (e: unknown) {
+   685→      if (!silent) toast.error((e as Error)?.message || 'خطا در ثبت شمارش')
+   686→    } finally {
+   687→      if (!silent) setSaving(false)
+   688→    }
+   689→  }
+   690→
+   691→  // ذخیرهٔ خودکار بی‌صدا با تأخیر — هر تغییری ۲٫۵ ثانیه پس از آخرین تایپ ذخیره می‌شود
+   692→  useEffect(() => {
+   693→    if (!zone) return
+   694→    const t = window.setTimeout(() => {
+   695→      if (dirtyRef.current) void submit(true)
+   696→    }, 2500)
+   697→    return () => window.clearTimeout(t)
+   698→  })
+   699→
+   700→  const removeEntry = async (id: string) => {
+   701→    if (!window.confirm('این ثبت شمارش حذف شود؟')) return
+   702→    try {
+   703→      await api(`/api/zonecount?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+   704→      toast.success('ثبت حذف شد')
+   705→      await refresh(zoneRef.current)
+   706→    } catch (e: unknown) {
+   707→      toast.error((e as Error)?.message || 'خطا در حذف')
+   708→    }
+   709→  }
+   710→
+   711→  if (!user) return null
+   712→
+   713→  const d = data
+   714→  const countedToday = (d?.myTodayZones?.length || 0) > 0
+   715→  const teamToday = d?.teamToday || []
+   716→  const countedZones = new Set(teamToday.map((e) => e.zone)).size
+   717→  const totalZones = d?.zones.length || 0
+   718→  const teamItems = teamToday.reduce((s, e) => s + e.totalItems, 0)
+   719→  const mismatchEntries = teamToday.filter((e) => e.hasMismatch).length
+   720→  const mismatchItems = teamToday.reduce((s, e) => s + (e.mismatchCount || 0), 0)
+   721→
+   722→  const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
+   723→    { key: 'board', label: 'تابلوی امروز', icon: <LayoutDashboard size={15} /> },
+   724→    { key: 'mine', label: 'شمارش من', icon: <ClipboardList size={15} /> },
+   725→    { key: 'team', label: 'تاریخچهٔ تیم', icon: <History size={15} /> },
+   726→    { key: 'zones', label: 'تخصیص زون', icon: <Users size={15} /> },
+   727→  ]
+   728→
+   729→  return (
+   730→    <div className="space-y-4">
+   731→      {/* سربرگ */}
+   732→      <div className="fade-in-up rounded-2xl bg-gradient-to-l from-[#0b2e20] via-[#0e4a30] to-[#0e7a4a] p-5 text-white shadow-lg">
+   733→        <div className="flex flex-wrap items-center justify-between gap-3">
+   734→          <div className="flex items-center gap-3">
+   735→            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-2xl">🙈</span>
+   736→            <div>
+   737→              <h1 className="text-lg font-black">شمارش کورِ روزانهٔ زون</h1>
+   738→              <p className="mt-0.5 max-w-lg text-xs leading-5 text-white/75">
+   739→                {manager
+   740→                  ? 'تابلوی نظارت تیم با اعداد کامل + شمارش شخصی کور — جدا از شمارش چرخه‌ای جعبه‌ابزار علمی'
+   741→                  : 'شمارش فیزیکی زون خودتان بدون دیدن عدد سیستم — اگر با موجودی هلو نخواند، خودکار به مدیر گزارش می‌شود'}
+   742→              </p>
+   743→            </div>
+   744→          </div>
+   745→          <div className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">{formatJalaliFull(d?.today || todayIso())}</div>
+   746→        </div>
+   747→      </div>
+   748→
+   749→      {/* KPI */}
+   750→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   751→        {manager ? (
+   752→          <>
+   753→            <StatCard
+   754→              label="زون‌های امروز"
+   755→              value={`${faNum(countedZones)} از ${faNum(totalZones)}`}
+   756→              hint="ثبت‌شده از کل زون‌ها"
+   757→              tone="emerald"
+   758→              icon={<span>🗺️</span>}
+   759→            />
+   760→            <StatCard label="اقلام شمارش‌شدهٔ تیم" value={teamItems} hint="جمع اقلام امروز تیم" tone="olive" icon={<span>🧮</span>} />
+   761→            <StatCard
+   762→              label="ثبت‌های مغایر امروز"
+   763→              value={mismatchEntries}
+   764→              hint="ثبت‌هایی که مغایرت دارند"
+   765→              tone="rose"
+   766→              icon={<span>⚠️</span>}
+   767→            />
+   768→            <StatCard label="اقلام مغایر" value={mismatchItems} hint="جمع اقلام مغایر امروز" tone="terra" icon={<span>🔍</span>} />
+   769→          </>
+   770→        ) : (
+   771→          <>
+   772→            <StatCard
+   773→              label="امروز شمارش کردم؟"
+   774→              value={countedToday ? '✅ ثبت شد' : '⏳ مانده'}
+   775→              hint={countedToday ? `${faNum(d?.myTodayZones.length || 0)} زون امروز` : 'هنوز شمارش امروزی ثبت نکرده‌اید'}
+   776→              tone={countedToday ? 'emerald' : 'gold'}
+   777→              icon={<span>🗓️</span>}
+   778→            />
+   779→            <StatCard
+   780→              label="زنجیرهٔ روزهای پیوسته"
+   781→              value={`${faNum(d?.stats.myStreak || 0)} روز 🔥`}
+   782→              hint="شمارش‌های پیوستهٔ روزانه"
+   783→              tone="terra"
+   784→              icon={<Flame size={18} />}
+   785→            />
+   786→            <StatCard label="اقلام امروز" value={d?.stats.todayItems ?? 0} hint="جمع اقلام شمارش‌شدهٔ امروز" tone="olive" icon={<span>🧮</span>} />
+   787→            <StatCard
+   788→              label="روزهای مغایرت"
+   789→              value={d?.stats.myMismatchDays ?? 0}
+   790→              hint="فقط تعداد روزها — بدون جزئیات عددی"
+   791→              tone="rose"
+   792→              icon={<span>⚠️</span>}
+   793→            />
+   794→          </>
+   795→        )}
+   796→      </div>
+   797→
+   798→      {manager ? (
+   799→        <>
+   800→          <div className="flex flex-wrap gap-2">
+   801→            {TABS.map((t) => (
+   802→              <button
+   803→                key={t.key}
+   804→                type="button"
+   805→                onClick={() => setTab(t.key)}
+   806→                className={cn(
+   807→                  'flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all active:scale-95',
+   808→                  tab === t.key
+   809→                    ? 'bg-[#0b2e20] text-white shadow-md'
+   810→                    : 'border border-border bg-card text-muted-foreground hover:border-[#0e7a4a]/40'
+   811→                )}
+   812→              >
+   813→                {t.icon} {t.label}
+   814→              </button>
+   815→            ))}
+   816→          </div>
+   817→
+   818→          {tab === 'board' && (
+   819→            <SectionCard
+   820→              title="تابلوی شمارش امروز"
+   821→              subtitle="روی هر زون بزنید تا جزئیات کامل (اعداد شمارش، موجودی هلو و اختلاف) باز شود"
+   822→              icon={<LayoutDashboard size={18} />}
+   823→              actions={
+   824→                <span className="rounded-lg bg-[#0e7a4a]/10 px-2.5 py-1 text-[11px] font-black text-[#0e7a4a]">
+   825→                  تلورانس پیش‌فرض: ٪{faNum(2)}
+   826→                </span>
+   827→              }
+   828→            >
+   829→              <BoardTab data={d} onDelete={removeEntry} onScience={() => ctx.navigate('science')} />
+   830→            </SectionCard>
+   831→          )}
+   832→
+   833→          {tab === 'mine' && (
+   834→            <>
+   835→              <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-border/60 bg-card p-4">
+   836→                <Labeled label="تلورانس مغایرت مجاز (٪)">
+   837→                  <input
+   838→                    type="number"
+   839→                    min={0}
+   840→                    max={20}
+   841→                    value={tolerance}
+   842→                    onChange={(e) => setTolerance(Math.min(20, Math.max(0, Number(e.target.value) || 0)))}
+   843→                    className="w-24 rounded-xl border border-input bg-white px-3 py-2 text-center text-sm font-black outline-none focus:border-[#0e7a4a]"
+   844→                  />
+   845→                </Labeled>
+   846→                <p className="max-w-md pb-1 text-[11px] leading-5 text-muted-foreground">
+   847→                  اختلاف تا این درصد از موجودی هلو «مطابق» حساب می‌شود؛ این عدد با ثبت شما برای همان روز ذخیره می‌شود.
+   848→                </p>
+   849→              </div>
+   850→              <SectionCard title="زون‌های من" subtitle="برای شمارش شخصی، زون را انتخاب کنید" icon={<span>🗺️</span>}>
+   851→                <ZonePicker zones={d?.myZones || []} value={zone} onPick={changeZone} />
+   852→              </SectionCard>
+   853→              {result && <ResultBanner result={result} />}
+   854→              {zone && (
+   855→                <CountPanel
+   856→                  zone={zone}
+   857→                  products={d?.products || []}
+   858→                  qtys={qtys}
+   859→                  touched={touched}
+   860→                  saving={saving}
+   861→                  autoSaved={autoSaved}
+   862→                  onQty={setQty}
+   863→                  onSubmit={() => submit(false)}
+   864→                />
+   865→              )}
+   866→            </>
+   867→          )}
+   868→
+   869→          {tab === 'team' && (
+   870→            <SectionCard title="تاریخچهٔ ۱۴ روز تیم" subtitle="روزانه × زون × همکار — وضعیت و تعداد مغایرت" icon={<History size={18} />}>
+   871→              <TeamHistory rows={d?.teamHistory || []} />
+   872→            </SectionCard>
+   873→          )}
+   874→
+   875→          {tab === 'zones' && (
+   876→            <SectionCard
+   877→              title="تخصیص زون به همکاران"
+   878→              subtitle="روی چسب‌ها بزنید تا زون شمارش روزانهٔ هر همکار تعیین شود (ذخیرهٔ خودکار)"
+   879→              icon={<Users size={18} />}
+   880→            >
+   881→              <ZoneAssign users={users} zones={d?.zones || []} onSaved={loadUsers} />
+   882→            </SectionCard>
+   883→          )}
+   884→        </>
+   885→      ) : (
+   886→        <>
+   887→          <SectionCard title="زون‌های من" subtitle="زون تخصیص‌یافته را انتخاب و شمارش امروز را ثبت کنید" icon={<span>🗺️</span>}>
+   888→            <ZonePicker zones={d?.myZones || []} value={zone} onPick={changeZone} />
+   889→          </SectionCard>
+   890→          {result && <ResultBanner result={result} />}
+   891→          {zone ? (
+   892→            <CountPanel
+   893→              zone={zone}
+   894→              products={d?.products || []}
+   895→              qtys={qtys}
+   896→              touched={touched}
+   897→              saving={saving}
+   898→              autoSaved={autoSaved}
+   899→              onQty={setQty}
+   900→              onSubmit={() => submit(false)}
+   901→            />
+   902→          ) : (
+   903→            d && <EmptyState emoji="👆" title="یک زون انتخاب کنید" hint="برای شروع شمارش، روی یکی از زون‌های بالا بزنید." />
+   904→          )}
+   905→          <SectionCard
+   906→            title="تاریخچهٔ شمارش‌های من"
+   907→            subtitle="۲۰ ثبت آخر — بدون هیچ عدد سیستمی"
+   908→            icon={<History size={18} />}
+   909→            actions={
+   910→              <span className="rounded-lg bg-[#c9a227]/15 px-2.5 py-1 text-[11px] font-black text-[#8a6d10]">
+   911→                🔥 زنجیرهٔ {faNum(d?.stats.myStreak || 0)} روزه
+   912→              </span>
+   913→            }
+   914→          >
+   915→            <MyHistory rows={d?.history || []} onDelete={removeEntry} />
+   916→          </SectionCard>
+   917→          <BlindWhy />
+   918→        </>
+   919→      )}
+   920→    </div>
+   921→  )
+   922→}
+   923→

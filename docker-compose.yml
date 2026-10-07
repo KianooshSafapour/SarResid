@@ -1,0 +1,27 @@
+services:
+  web:
+    build: .
+    container_name: hz-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:/app/db/custom.db"
+      NODE_ENV: production
+    volumes:
+      - ./db:/app/db
+
+  chat:
+    build: ./mini-services/chat-service
+    container_name: hz-chat
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+
+  # Optional: serve on port 80 with websocket proxying
+  # caddy:
+  #   image: caddy:2
+  #   restart: unless-stopped
+  #   ports: ["80:80"]
+  #   volumes:
+  #     - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro

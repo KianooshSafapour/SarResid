@@ -1,0 +1,562 @@
+   536→      </div>
+   537→      <div className="mt-2 flex gap-1.5">
+   538→        <button onClick={onReport} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#fdf6dd]/90 py-2 text-[10px] font-bold text-[#8a6d10] transition hover:bg-[#fdf6dd]" title="نمودار فروش، حاشیه سود، ضایعات و انقضا">
+   539→          گزارش کالا 📈
+   540→        </button>
+   541→        {canEdit && (
+   542→          <button onClick={onEdit} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-muted/70 py-2 text-[10px] font-bold text-muted-foreground transition hover:bg-muted group-hover:text-primary">
+   543→            <Pencil size={11} /> ویرایش
+   544→          </button>
+   545→        )}
+   546→      </div>
+   547→    </div>
+   548→  )
+   549→}
+   550→
+   551→/* ───────────────── نمای عمیق-لینک: کالاهای یک کلاس ABC / یک دسته / کم‌موجودی‌ها ───────────────── */
+   552→
+   553→function ProductSubsetPage({
+   554→  mode,
+   555→  rows,
+   556→  busy,
+   557→  err,
+   558→  abcSci,
+   559→  canEdit,
+   560→  onReport,
+   561→  onDetail,
+   562→  onEdit,
+   563→  onExit,
+   564→}: {
+   565→  mode: NonNullable<PageMode>
+   566→  rows: Product[] | null
+   567→  busy: boolean
+   568→  err: string
+   569→  abcSci: { rows: AbcSciRow[]; summary: AbcSummaryRow[]; total: number } | null
+   570→  canEdit: boolean
+   571→  onReport: (p: Product) => void
+   572→  onDetail: (p: Product) => void
+   573→  onEdit: (p: Product) => void
+   574→  onExit: () => void
+   575→}) {
+   576→  const title = mode.kind === 'abc' ? `محصولات کلاس ${mode.cls} — تحلیل ABC` : mode.kind === 'cat' ? `محصولات دستهٔ «${mode.cat}»` : 'کالاهای کم‌موجودی'
+   577→  const subtitle =
+   578→    mode.kind === 'abc'
+   579→      ? 'از تحلیل ABC (اصل پارتو — Gupta 2011): کلاس A ≈ ۸۰٪ ارزش مصرف، B تا ۹۵٪، C بقیه — از جعبه‌ابزار علمی آمده‌اید'
+   580→      : mode.kind === 'cat'
+   581→        ? 'فهرست کالاهای همین دسته — از مرکز پژوهش آمده‌اید'
+   582→        : 'کالاهایی که به نقطهٔ سفارش رسیده‌اند — اولویت خرید این هفته'
+   583→  const clsSummary = mode.kind === 'abc' ? abcSci?.summary.find((s) => s.cls === mode.cls) : null
+   584→  const sciById = useMemo(() => new Map((abcSci?.rows || []).map((r) => [r.id, r] as const)), [abcSci])
+   585→  const stockValue = (rows || []).reduce((s, p) => s + p.stock * p.sellPrice, 0)
+   586→  const truncated =
+   587→    mode.kind === 'abc' && clsSummary ? (clsSummary.count > (rows || []).length ? `${faNum((rows || []).length)} از ${faNum(clsSummary.count)} قلم` : '') : ''
+   588→
+   589→  return (
+   590→    <SectionCard
+   591→      title={title}
+   592→      subtitle={subtitle}
+   593→      icon={mode.kind === 'low' ? <AlertTriangle size={18} /> : mode.kind === 'abc' ? <Sigma size={18} /> : <ShoppingBasket size={18} />}
+   594→      actions={
+   595→        <button
+   596→          onClick={onExit}
+   597→          className="flex items-center gap-1.5 rounded-xl border border-[#b3372f]/40 bg-white px-4 py-2 text-xs font-extrabold text-[#b3372f] transition hover:bg-[#fee2e2]/60"
+   598→          title={mode.kind === 'abc' ? 'بازگشت به فهرست کامل کالاها' : 'بازگشت به فهرست کامل کالاها'}
+   599→        >
+   600→          <X size={14} /> {mode.kind === 'abc' ? 'خروج از نمای ABC' : 'بازگشت به فهرست کالاها'}
+   601→        </button>
+   602→      }
+   603→    >
+   604→      {/* ── نوار خلاصه ── */}
+   605→      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+   606→        {mode.kind === 'abc' ? (
+   607→          <>
+   608→            <SubsetStat label={`اقلام کلاس ${mode.cls}`} value={clsSummary ? faNum(clsSummary.count) : faNum((rows || []).length)} color={CLASS_COLORS[mode.cls]} />
+   609→            <SubsetStat label="سهم از ارزش مصرف" value={clsSummary ? `${faNum(Math.round(clsSummary.share))}٪` : '—'} color={CLASS_COLORS[mode.cls]} />
+   610→            <SubsetStat label="ارزش مصرف سالانه" value={clsSummary ? `${faMoney(clsSummary.value)} ت` : '—'} color="#8a6d10" />
+   611→            <SubsetStat label="ارزش کل فروشگاه (تخمینی)" value={abcSci ? `${faMoney(abcSci.total)} ت` : '—'} color="#5c7236" />
+   612→          </>
+   613→        ) : mode.kind === 'cat' ? (
+   614→          <>
+   615→            <SubsetStat label="تعداد کالاها" value={faNum((rows || []).length)} color="#0e7a4a" />
+   616→            <SubsetStat label="ارزش موجودی (قیمت فروش)" value={`${faMoney(stockValue)} ت`} color="#8a6d10" />
+   617→            <SubsetStat label="کالاهای کم‌موجودی" value={faNum((rows || []).filter((p) => p.stock <= p.reorderLevel).length)} color="#b3372f" />
+   618→          </>
+   619→        ) : (
+   620→          <>
+   621→            <SubsetStat label="تعداد اقلام زیر نقطهٔ سفارش" value={faNum((rows || []).length)} color="#b3372f" />
+   622→            <SubsetStat label="ارزش موجودی فعلی" value={`${faMoney(stockValue)} ت`} color="#8a6d10" />
+   623→            <SubsetStat label="ناموجود کامل" value={faNum((rows || []).filter((p) => p.stock === 0).length)} color="#7a1f19" />
+   624→          </>
+   625→        )}
+   626→      </div>
+   627→
+   628→      {mode.kind === 'abc' && (
+   629→        <p className="mb-3 rounded-xl border border-[#c9a227]/30 bg-[#fdf6dd]/60 px-3 py-2 text-[11px] font-bold leading-5 text-[#8a6d10]">
+   630→          کلاس‌بندی بر پایهٔ فروش ۹۰ روز اخیر (سالی‌سازی‌شده) — «کلاس A» گران‌بهاترین اقلام برای کنترل مداوم است.
+   631→          {truncated && <b> نمایش اولین {truncated} قلم.</b>}
+   632→        </p>
+   633→      )}
+   634→
+   635→      {err && <div className="mb-3 rounded-xl border border-[#b3372f]/40 bg-[#fee2e2]/60 p-3 text-xs font-bold text-[#b3372f]">{err}</div>}
+   636→
+   637→      {busy ? (
+   638→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+   639→          {Array.from({ length: 10 }).map((_, i) => (
+   640→            <div key={i} className="animate-pulse rounded-2xl bg-muted/60 p-3">
+   641→              <div className="mb-2 h-24 rounded-xl bg-muted" />
+   642→              <div className="mb-1.5 h-3.5 w-3/4 rounded bg-muted" />
+   643→              <div className="h-6 rounded-lg bg-muted" />
+   644→            </div>
+   645→          ))}
+   646→        </div>
+   647→      ) : (rows || []).length === 0 ? (
+   648→        <EmptyState
+   649→          emoji={mode.kind === 'abc' ? '🏷️' : mode.kind === 'cat' ? '📦' : '🌿'}
+   650→          title={mode.kind === 'abc' ? `کالایی در کلاس ${mode.cls} یافت نشد` : mode.kind === 'cat' ? 'کالایی در این دسته نیست' : 'همهٔ موجودی‌ها سالم‌اند'}
+   651→          hint={mode.kind === 'abc' ? 'تحلیل ABC به فروش ۹۰ روز اخیر نیاز دارد' : undefined}
+   652→        />
+   653→      ) : (
+   654→        <div className="scroll-gold grid max-h-[64vh] grid-cols-2 gap-3 overflow-y-auto pl-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+   655→          {(rows || []).map((p) => {
+   656→            const sci = sciById.get(p.id)
+   657→            return (
+   658→              <ProductCardView
+   659→                key={p.id}
+   660→                p={p}
+   661→                canEdit={canEdit}
+   662→                labelMode={false}
+   663→                selected={false}
+   664→                onToggleLabel={() => {}}
+   665→                onDetail={() => onDetail(p)}
+   666→                onReport={() => onReport(p)}
+   667→                onEdit={() => onEdit(p)}
+   668→                badge={
+   669→                  mode.kind === 'abc' ? (
+   670→                    <div className="mt-1 flex items-center justify-between gap-1">
+   671→                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black text-white" style={{ background: CLASS_COLORS[mode.cls] }}>
+   672→                        کلاس {mode.cls}
+   673→                      </span>
+   674→                      <span className="truncate text-[9px] font-bold text-muted-foreground" title="رتبه و سهم از ارزش مصرف سالانه">
+   675→                        رتبهٔ {faNum(sci?.rank || 0)} • {faNum(Math.round(sci?.share || 0))}٪
+   676→                      </span>
+   677→                    </div>
+   678→                  ) : mode.kind === 'low' ? (
+   679→                    <div className="mt-1">
+   680→                      <span className="inline-flex items-center gap-1 rounded-full bg-[#b3372f]/10 px-2 py-0.5 text-[9px] font-black text-[#b3372f]">
+   681→                        کمبود {faNum(Math.max(0, p.reorderLevel - p.stock))} عدد
+   682→                      </span>
+   683→                    </div>
+   684→                  ) : null
+   685→                }
+   686→              />
+   687→            )
+   688→          })}
+   689→        </div>
+   690→      )}
+   691→    </SectionCard>
+   692→  )
+   693→}
+   694→
+   695→function SubsetStat({ label, value, color }: { label: string; value: string; color: string }) {
+   696→  return (
+   697→    <div className="rounded-xl bg-muted/40 px-3 py-2.5 text-center">
+   698→      <p className="text-base font-black" style={{ color }}>{value}</p>
+   699→      <p className="mt-0.5 text-[10px] font-bold text-muted-foreground">{label}</p>
+   700→    </div>
+   701→  )
+   702→}
+   703→
+   704→/* ───────────────── Smart reorder: low-stock → DRAFT orders per provider ───────────────── */
+   705→
+   706→type ProviderRow = { id: string; name: string }
+   707→
+   708→function SmartReorderModal({ onClose, onDone }: { onClose: () => void; onDone: (created: number) => void }) {
+   709→  const [products, setProducts] = useState<Product[]>([])
+   710→  const [loaded, setLoaded] = useState(false)
+   711→  const [providers, setProviders] = useState<ProviderRow[]>([])
+   712→  const [qtys, setQtys] = useState<Record<string, number>>({})
+   713→  const [excluded, setExcluded] = useState<Record<string, boolean>>({}) // by providerId
+   714→  const [skipped, setSkipped] = useState<Record<string, boolean>>({}) // per product
+   715→  const [busy, setBusy] = useState(false)
+   716→
+   717→  // فهرست کم‌موجودی‌ها از سرور (پارامتر lowstock=1 — مقیاس‌پذیر برای ۱۰هزار کالا)
+   718→  useEffect(() => {
+   719→    api<{ products: Product[] }>('/api/products?lowstock=1&page=1&pageSize=500')
+   720→      .then((d) => { setProducts(d.products); setLoaded(true) })
+   721→      .catch(() => setLoaded(true))
+   722→    api<{ providers: ProviderRow[] }>('/api/providers').then((d) => setProviders(d.providers)).catch(() => {})
+   723→  }, [])
+   724→
+   725→  const low = useMemo(() => products.filter((p) => p.stock <= p.reorderLevel), [products])
+   726→  const suggested = (p: Product) => Math.max(p.reorderLevel * 2 - p.stock, 1)
+   727→
+   728→  // initialize suggestion quantities once
+   729→  useEffect(() => {
+   730→    if (Object.keys(qtys).length === 0 && low.length > 0) {
+   731→      const init: Record<string, number> = {}
+   732→      for (const p of low) init[p.id] = suggested(p)
+   733→      setQtys(init)
+   734→    }
+   735→  }, [low.length])
+   736→
+   737→  const groups = useMemo(() => {
+   738→    const m = new Map<string, Product[]>()
+   739→    for (const p of low) {
+   740→      const key = p.providerId || '_none'
+   741→      if (!m.has(key)) m.set(key, [])
+   742→      m.get(key)!.push(p)
+   743→    }
+   744→    return [...m.entries()]
+   745→  }, [low])
+   746→
+   747→  const activeGroups = groups.filter(([pid]) => !excluded[pid])
+   748→  const activeItems = activeGroups.flatMap(([, ps]) => ps).filter((p) => !skipped[p.id])
+   749→  const estTotal = activeItems.reduce((s, p) => s + (qtys[p.id] || 0) * p.buyPrice, 0)
+   750→
+   751→  const create = async () => {
+   752→    if (activeItems.length === 0) return
+   753→    setBusy(true)
+   754→    const d = new Date()
+   755→    d.setDate(d.getDate() + 2)
+   756→    const deliveryDate = d.toISOString().slice(0, 10)
+   757→    let created = 0
+   758→    try {
+   759→      for (const [pid, ps] of activeGroups) {
+   760→        const items = ps.filter((p) => !skipped[p.id])
+   761→        if (items.length === 0) continue
+   762→        const prov = providers.find((x) => x.id === pid)
+   763→        await api('/api/orders', {
+   764→          method: 'POST',
+   765→          body: {
+   766→            providerId: pid,
+   767→            providerName: prov?.name || 'بدون تأمین‌کننده',
+   768→            status: 'DRAFT',
+   769→            deliveryDate,
+   770→            notes: 'پیش‌نویس هوشمند — بر اساس نقطه سفارش و موجودی فعلی',
+   771→            items: items.map((p) => ({ productId: p.id, qty: qtys[p.id] || suggested(p), unitBuyPrice: p.buyPrice })),
+   772→          },
+   773→        })
+   774→        created++
+   775→      }
+   776→      onDone(created)
+   777→    } catch (e: any) {
+   778→      toast.error(e.message)
+   779→    } finally {
+   780→      setBusy(false)
+   781→    }
+   782→  }
+   783→
+   784→  return (
+   785→    <Modal title="پیش‌نویس هوشمند سفارش 🤖" onClose={onClose} wide>
+   786→      <p className="mb-4 rounded-xl border border-[#77934a]/30 bg-[#e9f0e4]/60 p-3 text-[11px] leading-5">
+   787→        سامانه {faNum(low.length)} کالای رسیده به نقطه سفارش را پیدا کرده و بر اساس «دو برابر نقطه سفارش منهای موجودی فعلی» پیشنهاد تعداد می‌دهد.
+   788→        تعدادها را اصلاح کنید، تأمین‌کننده‌های غیرضروری را بردارید و سفارش‌های پیش‌نویس را یک‌جا بسازید — بعد از بخش سفارش‌ها ارسالشان کنید.
+   789→      </p>
+   790→
+   791→      {!loaded ? (
+   792→        <div className="space-y-2">
+   793→          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-muted/60" />)}
+   794→        </div>
+   795→      ) : low.length === 0 ? (
+   796→        <EmptyState emoji="🌿" title="همه موجودی‌ها سالم‌اند" hint="فعلاً کالایی به نقطه سفارش نرسیده" />
+   797→      ) : (
+   798→        <div className="scroll-gold max-h-[52vh] space-y-3 overflow-y-auto pl-1">
+   799→          {groups.map(([pid, ps]) => {
+   800→            const prov = providers.find((x) => x.id === pid)
+   801→            const isExcluded = !!excluded[pid]
+   802→            const groupTotal = ps.reduce((s, p) => s + (qtys[p.id] || 0) * p.buyPrice, 0)
+   803→            return (
+   804→              <div key={pid} className={cn('rounded-2xl border p-3 transition', isExcluded ? 'border-border bg-muted/40 opacity-60' : 'glow-card border-[#77934a]/30 bg-white/80')}>
+   805→                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+   806→                  <label className="flex cursor-pointer items-center gap-2">
+   807→                    <input
+   808→                      type="checkbox"
+   809→                      checked={!isExcluded}
+   810→                      onChange={(e) => setExcluded((x) => ({ ...x, [pid]: !e.target.checked }))}
+   811→                      className="h-4 w-4 accent-[#77934a]"
+   812→                    />
+   813→                    <span className="text-sm font-black">🚚 {prov?.name || 'بدون تأمین‌کننده مشخص'}</span>
+   814→                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-[#5c7236]">{faNum(ps.length)} قلم</span>
+   815→                  </label>
+   816→                  <span className="text-[11px] font-black text-[#8a6d10]">{faMoney(groupTotal)} تومان</span>
+   817→                </div>
+   818→                <div className="grid gap-1.5 sm:grid-cols-2">
+   819→                  {ps.map((p) => (
+   820→                    <div key={p.id} className={cn('flex items-center justify-between gap-2 rounded-xl border border-border/70 px-2.5 py-2', skipped[p.id] && 'opacity-40')}>
+   821→                      <label className="flex min-w-0 cursor-pointer items-center gap-2">
+   822→                        <input
+   823→                          type="checkbox"
+   824→                          checked={!skipped[p.id]}
+   825→                          disabled={isExcluded}
+   826→                          onChange={(e) => setSkipped((x) => ({ ...x, [p.id]: !e.target.checked }))}
+   827→                          className="h-3.5 w-3.5 accent-[#0e7a4a]"
+   828→                        />
+   829→                        <span className="min-w-0">
+   830→                          <span className="block truncate text-[11px] font-bold">{p.name}</span>
+   831→                          <span className="block text-[9px] text-muted-foreground">
+   832→                            موجودی {faNum(p.stock)} • نقطه سفارش {faNum(p.reorderLevel)} {p.stock === 0 ? '• 🔴 ناموجود' : ''}
+   833→                          </span>
+   834→                        </span>
+   835→                      </label>
+   836→                      <span className="flex shrink-0 items-center gap-1">
+   837→                        <button
+   838→                          disabled={isExcluded}
+   839→                          onClick={() => setQtys((q) => ({ ...q, [p.id]: Math.max((q[p.id] || 1) - 1, 1) }))}
+   840→                          className="stepper-btn !h-8 !w-8 text-sm disabled:opacity-30"
+   841→                        >
+   842→                          −
+   843→                        </button>
+   844→                        <span className="w-10 text-center text-xs font-black">{faNum(qtys[p.id] || 0)}</span>
+   845→                        <button
+   846→                          disabled={isExcluded}
+   847→                          onClick={() => setQtys((q) => ({ ...q, [p.id]: (q[p.id] || 0) + 1 }))}
+   848→                          className="stepper-btn !h-8 !w-8 text-sm disabled:opacity-30"
+   849→                        >
+   850→                          +
+   851→                        </button>
+   852→                      </span>
+   853→                    </div>
+   854→                  ))}
+   855→                </div>
+   856→              </div>
+   857→            )
+   858→          })}
+   859→        </div>
+   860→      )}
+   861→
+   862→      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+   863→        <div className="text-[11px] font-bold text-muted-foreground">
+   864→          {faNum(activeItems.length)} قلم در {faNum(activeGroups.length)} سفارش پیش‌نویس • برآورد خرید: <b className="text-[#8a6d10]">{faMoney(estTotal)} تومان</b>
+   865→        </div>
+   866→        <div className="flex gap-2">
+   867→          <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-xs font-bold">انصراف</button>
+   868→          <button
+   869→            onClick={create}
+   870→            disabled={busy || activeItems.length === 0}
+   871→            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-l from-[#0e7a4a] to-[#12905a] px-5 py-2.5 text-xs font-extrabold text-white shadow-lg disabled:opacity-40"
+   872→          >
+   873→            <Sparkles size={14} /> {busy ? 'در حال ساخت…' : `ساخت ${faNum(activeGroups.length)} سفارش پیش‌نویس`}
+   874→          </button>
+   875→        </div>
+   876→      </div>
+   877→    </Modal>
+   878→  )
+   879→}
+   880→
+   881→/* ───────────────── Product edit + image tools ───────────────── */
+   882→
+   883→function ProductEditModal({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
+   884→  const [form, setForm] = useState<any>(null)
+   885→  const [imgSearching, setImgSearching] = useState(false)
+   886→  const [imgQuery, setImgQuery] = useState('')
+   887→  const [imgResults, setImgResults] = useState<{ url: string }[]>([])
+   888→  const fileRef = useRef<HTMLInputElement>(null)
+   889→  const [busy, setBusy] = useState(false)
+   890→
+   891→  useEffect(() => {
+   892→    if (product) setForm({ ...product, barcodes: product.barcodes.join(', ') })
+   893→    else setForm({ name: '', barcodes: '', holooCode: '', unit: 'عدد', brand: '', category: 'عمومی', buyPrice: '', sellPrice: '', sellPrice2: '', stock: '0', reorderLevel: '12', imageUrl: '', notes: '' })
+   894→  }, [product])
+   895→
+   896→  if (!form) return null
+   897→  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }))
+   898→
+   899→  const searchImages = async () => {
+   900→    if (!imgQuery.trim()) return
+   901→    setImgSearching(true)
+   902→    try {
+   903→      const res = await api<{ images: { url: string }[] }>('/api/products/image-search', { method: 'POST', body: { query: imgQuery } })
+   904→      setImgResults(res.images)
+   905→      if (!res.images.length) toast.error('تصویری پیدا نشد — می‌توانید آدرس تصویر دستی وارد کنید یا فایل آپلود کنید')
+   906→    } catch (e: any) { toast.error(e.message) } finally { setImgSearching(false) }
+   907→  }
+   908→
+   909→  const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+   910→    const file = e.target.files?.[0]
+   911→    if (!file) return
+   912→    if (file.size > 400_000) return toast.error('حجم تصویر باید کمتر از ۴۰۰ کیلوبایت باشد')
+   913→    const reader = new FileReader()
+   914→    reader.onload = () => set('imageUrl', reader.result)
+   915→    reader.readAsDataURL(file)
+   916→  }
+   917→
+   918→  const save = async () => {
+   919→    if (!form.name?.trim()) return toast.error('نام کالا الزامی است')
+   920→    setBusy(true)
+   921→    const body = {
+   922→      ...form,
+   923→      barcodes: String(form.barcodes).split(',').map((s: string) => s.trim()).filter(Boolean),
+   924→    }
+   925→    try {
+   926→      if (product) await api(`/api/products/${product.id}`, { method: 'PATCH', body })
+   927→      else await api('/api/products', { method: 'POST', body })
+   928→      toast.success('کالا ذخیره شد ✅')
+   929→      onSaved()
+   930→    } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
+   931→  }
+   932→
+   933→  return (
+   934→    <Modal title={product ? `ویرایش «${product.name}»` : 'کالای جدید'} onClose={onClose} wide>
+   935→      <div className="grid gap-3 sm:grid-cols-2">
+   936→        <Labeled label="نام کالا *"><input value={form.name} onChange={(e) => set('name', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   937→        <Labeled label="بارکدها (با کاما جدا کنید)"><input value={form.barcodes} onChange={(e) => set('barcodes', e.target.value)} className="w-full rounded-xl border border-input p-3 font-mono text-sm" dir="ltr" /></Labeled>
+   938→        <Labeled label="کد هلو"><input value={form.holooCode} onChange={(e) => set('holooCode', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" dir="ltr" /></Labeled>
+   939→        <Labeled label="برند"><input value={form.brand} onChange={(e) => set('brand', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   940→        <Labeled label="دسته"><input value={form.category} onChange={(e) => set('category', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   941→        <Labeled label="واحد"><input value={form.unit} onChange={(e) => set('unit', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   942→        <Labeled label="قیمت خرید (تومان)"><input type="number" value={form.buyPrice} onChange={(e) => set('buyPrice', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   943→        <Labeled label="قیمت فروش (تومان)"><input type="number" value={form.sellPrice} onChange={(e) => set('sellPrice', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   944→        <Labeled label="قیمت فروش با تخفیف"><input type="number" value={form.sellPrice2} onChange={(e) => set('sellPrice2', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   945→        <Labeled label="موجودی انبار"><input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   946→        <Labeled label="حد سفارش مجدد (زیر این عدد، قرمز می‌شود)"><input type="number" value={form.reorderLevel} onChange={(e) => set('reorderLevel', e.target.value)} className="w-full rounded-xl border border-input p-3 text-sm" /></Labeled>
+   947→      </div>
+   948→
+   949→      {/* image section */}
+   950→      <div className="rounded-2xl border border-border bg-muted/30 p-4">
+   951→        <p className="mb-2 flex items-center gap-1.5 text-xs font-black"><ImagePlus size={14} /> تصویر کالا</p>
+   952→        <div className="mb-2 flex items-center gap-2">
+   953→          {form.imageUrl ? (
+   954→            <img src={form.imageUrl} alt="تصویر کالا" className="h-16 w-16 rounded-xl object-cover" />
+   955→          ) : (
+   956→            <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-secondary text-2xl">🖼️</span>
+   957→          )}
+   958→          <input value={form.imageUrl} onChange={(e) => set('imageUrl', e.target.value)} placeholder="یا آدرس اینترنتی تصویر…" className="flex-1 rounded-xl border border-input p-2.5 text-xs" dir="ltr" />
+   959→          <button onClick={() => fileRef.current?.click()} className="rounded-xl bg-secondary px-3 py-2.5 text-[11px] font-bold">📁 از دستگاه</button>
+   960→          <input ref={fileRef} type="file" accept="image/*" hidden onChange={onUpload} />
+   961→        </div>
+   962→        <div className="flex gap-2">
+   963→          <input value={imgQuery} onChange={(e) => setImgQuery(e.target.value)} placeholder="جستجوی عکس در اینترنت: مثلاً بسته شیر پگاه…" className="flex-1 rounded-xl border border-input p-2.5 text-xs" />
+   964→          <button onClick={searchImages} disabled={imgSearching} className="flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-[11px] font-extrabold text-white disabled:opacity-50">
+   965→            {imgSearching ? <RefreshCw size={13} className="animate-spin" /> : <Search size={13} />} جستجو
+   966→          </button>
+   967→        </div>
+   968→        {imgResults.length > 0 && (
+   969→          <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+   970→            {imgResults.map((r, i) => (
+   971→              <button key={i} onClick={() => { set('imageUrl', r.url); setImgResults([]); toast.success('تصویر انتخاب شد') }} className="overflow-hidden rounded-xl border-2 border-transparent transition hover:border-primary">
+   972→                <img src={r.url} alt={`گزینه ${i + 1}`} className="h-20 w-full object-cover" />
+   973→              </button>
+   974→            ))}
+   975→          </div>
+   976→        )}
+   977→      </div>
+   978→
+   979→      <button onClick={save} disabled={busy} className="w-full rounded-xl bg-primary py-3 text-sm font-extrabold text-white disabled:opacity-50">
+   980→        {busy ? 'در حال ذخیره…' : 'ذخیره ✅'}
+   981→      </button>
+   982→    </Modal>
+   983→  )
+   984→}
+   985→
+   986→function ProductDetailModal({ product, onClose }: { product: Product; onClose: () => void }) {
+   987→  const [history, setHistory] = useState<any>(null)
+   988→  const [labelOpen, setLabelOpen] = useState(false)
+   989→  useEffect(() => {
+   990→    api<{ history: any }>(`/api/products/${product.id}`).then((d) => setHistory(d.history)).catch(() => {})
+   991→  }, [product.id])
+   992→  const margin = product.buyPrice > 0 ? Math.round(((product.sellPrice - product.buyPrice) / product.buyPrice) * 100) : 0
+   993→  const trend = history?.priceTrend || []
+   994→  const trendData = trend.map((t: any) => ({ label: formatJalaliShort(t.at), value: t.printedPrice || t.unitBuyPrice }))
+   995→  const first = trend.length > 0 ? trend[0].printedPrice || trend[0].unitBuyPrice : 0
+   996→  const last = trend.length > 0 ? trend[trend.length - 1].printedPrice || trend[trend.length - 1].unitBuyPrice : 0
+   997→  const rise = first > 0 ? Math.round(((last - first) / first) * 100) : 0
+   998→
+   999→  // quick single-product label reprint — same sheet/steppers as the bulk modal
+  1000→  if (labelOpen) return <LabelPrintModal products={[product]} onClose={() => setLabelOpen(false)} />
+  1001→
+  1002→  return (
+  1003→    <Modal title={product.name} onClose={onClose}>
+  1004→      <div className="flex items-center gap-3">
+  1005→        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-20 w-20 rounded-xl object-cover" /> : <span className="flex h-20 w-20 items-center justify-center rounded-xl bg-secondary text-3xl">{CATEGORY_EMOJI[product.category] || '📦'}</span>}
+  1006→        <div className="flex-1 space-y-1 text-xs">
+  1007→          <p><b>برند:</b> {product.brand || '—'}</p>
+  1008→          <p><b>دسته:</b> {product.category}</p>
+  1009→          <p><b>بارکد:</b> <span className="font-mono" dir="ltr">{product.barcodes.join(', ') || '—'}</span></p>
+  1010→        </div>
+  1011→      </div>
+  1012→      <div className="grid grid-cols-2 gap-2">
+  1013→        <KeyValue k="قیمت خرید" v={`${faMoney(product.buyPrice)}`} />
+  1014→        <KeyValue k="قیمت فروش" v={`${faMoney(product.sellPrice)}`} />
+  1015→        <KeyValue k="حاشیه سود" v={<span style={{ color: margin < 10 ? '#b3372f' : margin < 25 ? '#a16207' : '#0e7a4a' }}>{faNum(margin)}٪</span>} />
+  1016→        <KeyValue k="موجودی" v={faNum(product.stock)} />
+  1017→      </div>
+  1018→      <button
+  1019→        onClick={() => setLabelOpen(true)}
+  1020→        className="quick-label-btn flex w-full items-center justify-center gap-2 rounded-xl border border-[#c9a227]/50 bg-[#fdf6dd]/70 py-2.5 text-xs font-extrabold text-[#8a6d10] transition hover:bg-[#fdf6dd]"
+  1021→        title="چاپ سریع لیبل قفسه فقط برای همین کالا"
+  1022→      >
+  1023→        <Printer size={14} /> چاپ لیبل قفسه این کالا 🏷️
+  1024→      </button>
+  1025→      {trendData.length >= 2 && (
+  1026→        <div className="rounded-2xl border border-[#c9a227]/35 bg-[#fdf6dd]/40 p-3">
+  1027→          <div className="mb-1 flex items-center justify-between">
+  1028→            <p className="flex items-center gap-1.5 text-xs font-black"><TrendingUp size={14} className="text-[#8a6d10]" /> روند قیمت در سفارش‌های اخیر</p>
+  1029→            <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-black text-white', rise > 0 ? 'bg-[#b3372f]' : rise < 0 ? 'bg-[#0e7a4a]' : 'bg-muted-foreground')}>
+  1030→              {rise > 0 ? '▲' : rise < 0 ? '▼' : '•'} {faNum(Math.abs(rise))}٪ نسبت به اولین سفارش
+  1031→            </span>
+  1032→          </div>
+  1033→          <LineChart data={trendData} height={120} color="#c9a227" autoMin formatValue={(v) => faMoney(v)} />
+  1034→          <p className="mt-1 text-center text-[10px] text-muted-foreground">قیمت چاپ‌شده (یا خرید) در هر سفارش — برای پیگیری تورم روزانه</p>
+  1035→        </div>
+  1036→      )}
+  1037→      {history && (
+  1038→        <div className="rounded-xl bg-muted/40 p-3 text-xs">
+  1039→          <p className="font-black">📊 ماه اخیر:</p>
+  1040→          <p className="mt-1">{faNum(history.orderedLastMonth)} عدد سفارش در {faNum(history.ordersLastMonth)} سفارش</p>
+  1041→          {history.lastOrders.slice(0, 4).map((o: any, i: number) => (
+  1042→            <p key={i} className="mt-0.5 text-[11px] text-muted-foreground">{o.code} — {faNum(o.qty)} عدد</p>
+  1043→          ))}
+  1044→        </div>
+  1045→      )}
+  1046→    </Modal>
+  1047→  )
+  1048→}
+  1049→
+  1050→/* ───────────────── گزارش تعاملی کالا — دانه‌بندی روز/هفته/ماه/فصل + بازهٔ دلخواه + مقایسه با سال قبل ───────────────── */
+  1051→
+  1052→type ReportBucket = {
+  1053→  start: string
+  1054→  end: string
+  1055→  label: string
+  1056→  salesQty: number
+  1057→  salesValue: number
+  1058→  ordersQty: number
+  1059→  ordersValue: number
+  1060→  lySalesQty?: number
+  1061→  lySalesValue?: number
+  1062→}
+  1063→
+  1064→type ReportBlock = {
+  1065→  stock: number
+  1066→  reorderLevel: number
+  1067→  sales30: number
+  1068→  avgMarginPct: number
+  1069→  sales: { date: string; qty: number; amount: number }[]
+  1070→  margins: { date: string; buyPrice: number; sellPrice: number; marginPct: number }[]
+  1071→  waste: { date: string; qty: number; estValue: number }[]
+  1072→  wasteTotal: number
+  1073→  expiry: { date: string; qty: number; status: string }[]
+  1074→  ordersBuy?: {
+  1075→    series: { date: string; qty: number; value: number }[]
+  1076→    providers: { id: string; name: string; qty: number; value: number; orders: number }[]
+  1077→    providersCount: number
+  1078→    ordersCount: number
+  1079→    totalQty90: number
+  1080→    totalBuy90: number
+  1081→    avgGapDays: number
+  1082→    nextExpectedIso: string
+  1083→  }
+  1084→  categoryShare: {
+  1085→    category: string
+  1086→    thisValue: number
+  1087→    siblings: { id: string; name: string; value: number }[]
+  1088→    othersValue: number
+  1089→    categoryTotal: number
+  1090→    storeTotal: number
+  1091→    windowDays: number
+  1092→  }
+  1093→  /* ── کلیدهای جدید سرور (additive) ── */
+  1094→  range?: { from: string; to: string; days: number; granularity: string; ly: boolean }
+  1095→  buckets?: ReportBucket[]
+
+[showing lines 536-1095 of 1954; use offset=1096 with limit to continue reading]

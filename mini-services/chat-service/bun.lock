@@ -3,9 +3,9 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "chat-service",
+      "name": "zeytoon-chat-service",
       "dependencies": {
-        "socket.io": "^4.7.5",
+        "socket.io": "^4.8.3",
       },
     },
   },

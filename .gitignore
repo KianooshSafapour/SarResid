@@ -51,5 +51,8 @@ prompt
 
 server.log
 # Skills directory
-/skills/tool-results/
-db/sandbox.db
+/skills/
+# sandbox tooling noise
+tool-results/
+dev.log
+docs/live-reference/

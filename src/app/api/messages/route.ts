@@ -1,172 +1,270 @@
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { fail, getSessionUser, json, logActivity, safeParse } from '@/lib/api-helpers'
+import { ok, fail, safeJson, logActivity } from '@/lib/api'
+import { getSessionUser, isManager } from '@/lib/auth'
+import { displayName, notify, realtimeEmit } from '@/lib/notify'
 
-/** پیوست امن: فقط تصویر/PDF/متن — سقف ۵۱۲ کیلوبایت پس از decode */
-const MAX_ATTACH_BYTES = 512 * 1024
-const ALLOWED_KINDS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf', 'text/plain']
-// پسوندهای خطرناک — هیچ‌وقت مجاز نیست (حتی اگر mime جعل شده باشد)
-const DENY_EXT = ['.exe', '.bat', '.cmd', '.sh', '.js', '.mjs', '.jar', '.ps1', '.msi', '.com', '.scr', '.vbs', '.wsf', '.hta']
+export const dynamic = 'force-dynamic'
 
-type Attachment = { name: string; kind: string; size: number; dataUrl: string }
+/**
+ * Message model has no attachment column — direct messages carrying an
+ * attachment store the body column as `HZJSON:{...}` envelope.
+ */
+const HZJSON = 'HZJSON:'
+const MAX_ATTACHMENT = 700_000 // ~500KB base64 + headroom
 
-function parseAttachment(raw: string): Attachment | null {
-  if (!raw) return null
-  const a = safeParse<Attachment | null>(raw, null)
-  if (!a || !a.dataUrl) return null
-  return { name: a.name || 'فایل', kind: a.kind || '', size: Number(a.size) || 0, dataUrl: a.dataUrl }
+function packBody(content: string, attachment?: string | null): string {
+  if (attachment) return HZJSON + JSON.stringify({ body: content, attachment })
+  return content
 }
 
-function serialize(m: {
-  id: string; fromId: string; fromName: string; toId: string; body: string
-  attachment: string; scheduledFor: string; status: string; readAt: Date | null; createdAt: Date
+function unpackBody(raw: string): { content: string; attachment: string | null } {
+  if (raw.startsWith(HZJSON)) {
+    const parsed = safeJson<{ body?: string; attachment?: string }>(raw.slice(HZJSON.length), {})
+    return { content: parsed.body ?? '', attachment: parsed.attachment ?? null }
+  }
+  return { content: raw, attachment: null }
+}
+
+function peerView(u: {
+  id: string
+  fullName: string
+  honorific: string
+  role: string
+  title: string
+  avatarJson: string | null
 }) {
-  return { ...m, attachment: parseAttachment(m.attachment) }
+  return {
+    id: u.id,
+    fullName: u.fullName,
+    honorific: u.honorific,
+    role: u.role,
+    title: u.title,
+    avatarJson: u.avatarJson,
+  }
 }
 
-function validateAttachment(input: { name?: string; kind?: string; size?: number; dataBase64?: string }): { error?: string; att?: Attachment } {
-  const name = String(input?.name || '').trim() || 'فایل'
-  // path traversal — نام فایل هرگز نباید مسیر باشد
-  if (/[\\/]/.test(name) || name.includes('..')) return { error: 'نام فایل نامعتبر است' }
-  if (name.length > 120) return { error: 'نام فایل بیش از حد بلند است' }
-  const lower = name.toLowerCase()
-  if (DENY_EXT.some((ext) => lower.endsWith(ext))) return { error: 'این نوع فایل برای امنیت سامانه مجاز نیست' }
-  const kind = String(input?.kind || '')
-  if (!ALLOWED_KINDS.includes(kind)) return { error: 'فقط تصویر، PDF یا متن ساده مجاز است (حداکثر ۵۱۲ کیلوبایت)' }
-  const b64 = String(input?.dataBase64 || '').replace(/^data:[^;]*;base64,/, '')
-  if (!b64) return { error: 'محتوای فایل خالی است' }
-  const bytes = Math.floor((b64.length * 3) / 4) - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0)
-  if (bytes <= 0) return { error: 'محتوای فایل خالی است' }
-  if (bytes > MAX_ATTACH_BYTES) return { error: 'حجم فایل بیش از سقف مجاز است — حداکثر ۵۱۲ کیلوبایت' }
-  return { att: { name, kind, size: bytes, dataUrl: `data:${kind};base64,${b64}` } }
-}
+/** GET /api/messages — conversations + broadcasts + roster (+ ?with={peerId} thread) */
+export async function GET(req: NextRequest) {
+  const me = await getSessionUser()
+  if (!me) return fail('نیاز به ورود', 401)
 
-export async function GET(req: Request) {
-  const me = await getSessionUser(req)
-  if (!me) return fail('ابتدا وارد شوید', 401)
-  const { searchParams } = new URL(req.url)
-  const withUser = searchParams.get('with')
+  const withPeer = req.nextUrl.searchParams.get('with')
 
-  const allUsers = await db.user.findMany({ where: { active: true }, orderBy: { name: 'asc' } })
-  const myMsgs = await db.message.findMany({
-    where: { OR: [{ fromId: me.id }, { toId: me.id }] },
-    orderBy: { createdAt: 'asc' },
-  })
+  // ---- single conversation thread ----
+  if (withPeer) {
+    const peer = await db.user.findUnique({ where: { id: withPeer } })
+    if (!peer || !peer.active) return fail('کاربر یافت نشد', 404)
 
-  // پیام‌های زمان‌بندی‌شده فقط برای خود فرستنده نمایان است تا وقت ارسال
-  const visible = myMsgs.filter((m) => m.status === 'SENT' || (m.status === 'SCHEDULED' && m.fromId === me.id))
-
-  // conversation list
-  const conversations = allUsers
-    .filter((u) => u.id !== me.id)
-    .map((u) => {
-      const msgs = visible.filter((m) => m.fromId === u.id || m.toId === u.id)
-      const last = msgs[msgs.length - 1]
-      const lastAtt = last ? parseAttachment(last.attachment) : null
-      const unread = msgs.filter((m) => m.toId === me.id && !m.readAt && m.status === 'SENT').length
-      return {
-        userId: u.id,
-        name: u.name,
-        role: u.role,
-        color: u.color,
-        lastAt: last?.createdAt || null,
-        lastBody: last ? last.body || (lastAtt ? `📎 ${lastAtt.name}` : '') : '',
-        unread,
-      }
-    })
-    .sort((a, b) => {
-      if (!a.lastAt && !b.lastAt) return a.name.localeCompare(b.name)
-      if (!a.lastAt) return 1
-      if (!b.lastAt) return -1
-      return new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+    const messages = await db.message.findMany({
+      where: { OR: [{ fromId: me.id, toId: peer.id }, { fromId: peer.id, toId: me.id }] },
+      orderBy: { createdAt: 'asc' },
+      take: 500,
     })
 
-  let messages: unknown[] = []
-  if (withUser) {
-    messages = visible.filter((m) => m.fromId === withUser || m.toId === withUser).map(serialize)
-    // mark incoming as read (only delivered ones)
+    // opening a chat marks the peer's messages as read (badge refresh follows)
     await db.message.updateMany({
-      where: { fromId: withUser, toId: me.id, readAt: null, status: 'SENT' },
+      where: { fromId: peer.id, toId: me.id, readAt: null },
       data: { readAt: new Date() },
     })
+
+    return ok({
+      peer: peerView(peer),
+      messages: messages.map((m) => ({
+        id: m.id,
+        fromId: m.fromId,
+        toId: m.toId,
+        content: unpackBody(m.body).content,
+        attachment: unpackBody(m.body).attachment,
+        createdAt: m.createdAt,
+        readAt: m.readAt,
+      })),
+    })
   }
 
-  const scheduled = myMsgs.filter((m) => m.status === 'SCHEDULED' && m.fromId === me.id).map(serialize)
-  const unreadTotal = visible.filter((m) => m.toId === me.id && !m.readAt && m.status === 'SENT').length
-  return json({ conversations, messages, unreadTotal, scheduled })
+  // ---- overview ----
+  const [myMessages, broadcasts, roster] = await Promise.all([
+    db.message.findMany({
+      where: { OR: [{ fromId: me.id }, { toId: me.id }] },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    }),
+    db.broadcast.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+    db.user.findMany({ where: { active: true } }),
+  ])
+
+  // conversations = distinct peers with last message between me and peer
+  const peerIds = new Set<string>()
+  for (const m of myMessages) peerIds.add(m.fromId === me.id ? m.toId : m.fromId)
+  const peerUsers = roster.filter((u) => peerIds.has(u.id))
+  const peerMap = new Map(peerUsers.map((u) => [u.id, u]))
+
+  const conversations = peerUsers
+    .map((p) => {
+      const thread = myMessages.filter(
+        (m) =>
+          (m.fromId === me.id && m.toId === p.id) || (m.fromId === p.id && m.toId === me.id)
+      )
+      const last = thread[0] // myMessages already sorted desc
+      if (!last) return null
+      return {
+        peer: {
+          id: p.id,
+          fullName: p.fullName,
+          honorific: p.honorific,
+          role: p.role,
+          avatarJson: p.avatarJson,
+        },
+        last: unpackBody(last.body).content,
+        lastAt: last.createdAt,
+        unread: thread.filter((m) => m.fromId === p.id && !m.readAt).length,
+        mine: last.fromId === me.id,
+      }
+    })
+    .filter((c): c is NonNullable<typeof c> => !!c)
+    .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
+
+  const fromIds = [...new Set(broadcasts.map((b) => b.fromId))]
+  const fromUsers = fromIds.length
+    ? await db.user.findMany({ where: { id: { in: fromIds } } })
+    : []
+  const fromMap = new Map(fromUsers.map((u) => [u.id, u]))
+
+  const broadcastViews = broadcasts.map((b) => {
+    const seen = safeJson<string[]>(b.seenJson, [])
+    const from = fromMap.get(b.fromId)
+    return {
+      id: b.id,
+      from: from
+        ? {
+            id: from.id,
+            fullName: from.fullName,
+            honorific: from.honorific,
+            role: from.role,
+            avatarJson: from.avatarJson,
+          }
+        : null,
+      content: b.content,
+      attachment: b.attachment,
+      createdAt: b.createdAt,
+      seenCount: seen.length,
+      mine: seen.includes(me.id),
+      fromMe: b.fromId === me.id,
+    }
+  })
+
+  return ok({
+    conversations,
+    broadcasts: broadcastViews,
+    roster: roster
+      .filter((u) => u.id !== me.id)
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, 'fa'))
+      .map(peerView),
+    unreadBroadcasts: broadcastViews.filter((b) => !b.mine).length,
+  })
 }
 
-export async function POST(req: Request) {
-  const me = await getSessionUser(req)
-  if (!me) return fail('ابتدا وارد شوید', 401)
-  const payload = await req.json().catch(() => null)
+/** PUT /api/messages — mark every broadcast as seen by me */
+export async function PUT() {
+  const me = await getSessionUser()
+  if (!me) return fail('نیاز به ورود', 401)
 
-  // ارسال همهٔ پیام‌های زمان‌رسیده (بدون cron — کلاینت در بارگذاری و هر ۶۰ ثانیه صدا می‌زند)
-  if (payload?.action === 'send-scheduled') {
-    const pend = await db.message.findMany({ where: { status: 'SCHEDULED' } })
-    const now = Date.now()
-    const due = pend.filter((m) => {
-      const t = new Date(m.scheduledFor)
-      return !isNaN(t.getTime()) && t.getTime() <= now
+  const broadcasts = await db.broadcast.findMany({ take: 200 })
+  let updated = 0
+  for (const b of broadcasts) {
+    const seen = safeJson<string[]>(b.seenJson, [])
+    if (!seen.includes(me.id)) {
+      seen.push(me.id)
+      await db.broadcast.update({ where: { id: b.id }, data: { seenJson: JSON.stringify(seen) } })
+      updated++
+    }
+  }
+  return ok({ updated })
+}
+
+/**
+ * POST /api/messages
+ *  - {toId:"<userId>", content, attachment?} → direct message
+ *  - {toId:null, content}                    → group broadcast (managers)
+ */
+export async function POST(req: NextRequest) {
+  const me = await getSessionUser()
+  if (!me) return fail('نیاز به ورود', 401)
+
+  const body = (await req.json().catch(() => ({}))) as {
+    toId?: string | null
+    content?: string
+    attachment?: string | null
+    body?: string
+  }
+  const content = String(body.content ?? body.body ?? '').trim()
+  if (!content) return fail('متن پیام الزامی است')
+  const attachment = body.attachment ? String(body.attachment) : null
+  if (attachment && attachment.length > MAX_ATTACHMENT) {
+    return fail('حجم فایل پیوست بیش از حد مجاز است')
+  }
+
+  // ---- broadcast ----
+  if (!body.toId) {
+    if (!isManager(me)) return fail('فقط مدیران می‌توانند پیام گروهی بفرستند', 403)
+
+    const broadcast = await db.broadcast.create({
+      data: { fromId: me.id, content, attachment },
     })
-    if (due.length) {
-      await db.message.updateMany({ where: { id: { in: due.map((m) => m.id) } }, data: { status: 'SENT' } })
-    }
-    return json({ sent: due.length })
+    await realtimeEmit('all', { kind: 'broadcast', fromId: me.id, id: broadcast.id })
+    await logActivity({
+      userId: me.id,
+      userName: displayName(me),
+      action: 'broadcast_send',
+      actionLabel: 'پیام گروهی',
+      category: 'messages',
+      detail: content.slice(0, 80),
+      entityId: broadcast.id,
+    })
+    return ok({ broadcast: { id: broadcast.id } })
   }
 
-  const { toId, body: text, attachment, scheduledFor } = payload || {}
-  let att: Attachment | null = null
-  if (attachment) {
-    const v = validateAttachment(attachment)
-    if (v.error) return fail(v.error)
-    att = v.att || null
-  }
-  if (!toId || (!text?.trim() && !att)) return fail('متن پیام یا فایل پیوست الزامی است')
-  const to = await db.user.findUnique({ where: { id: toId } })
-  if (!to) return fail('گیرنده یافت نشد', 404)
+  // ---- direct message ----
+  const peer = await db.user.findUnique({ where: { id: String(body.toId) } })
+  if (!peer || !peer.active) return fail('گیرنده یافت نشد', 404)
+  if (peer.id === me.id) return fail('نمی‌توانید به خودتان پیام بدهید')
 
-  // زمان‌بندی ارسال — فقط آینده معنا دارد؛ در غیر این صورت فوراً ارسال می‌شود
-  let status = 'SENT'
-  let scheduledAt = ''
-  if (scheduledFor) {
-    const t = new Date(String(scheduledFor))
-    if (!isNaN(t.getTime()) && t.getTime() > Date.now() + 15_000) {
-      status = 'SCHEDULED'
-      scheduledAt = t.toISOString()
-    }
-  }
-
-  const msg = await db.message.create({
+  const message = await db.message.create({
     data: {
       fromId: me.id,
-      fromName: me.name,
-      toId,
-      body: text?.trim() || '',
-      attachment: att ? JSON.stringify(att) : '',
-      scheduledFor: scheduledAt,
-      status,
+      toId: peer.id,
+      body: packBody(content, attachment),
     },
   })
-  await logActivity(
-    me,
-    status === 'SCHEDULED' ? 'زمان‌بندی پیام' : 'ارسال پیام',
-    'message',
-    msg.id,
-    `به ${to.name}${att ? ` — پیوست: ${att.name}` : ''}${status === 'SCHEDULED' ? ' — زمان‌بندی‌شده' : ''}`
-  )
-  return json({ message: serialize(msg) }, 201)
+
+  await notify({
+    userId: peer.id,
+    kind: 'message',
+    severity: 'info',
+    title: 'پیام جدید',
+    body: `${displayName(me)}: ${content.slice(0, 80)}`,
+    go: '#/tasks/messages',
+  })
+  await realtimeEmit(`user:${peer.id}`, {
+    kind: 'private',
+    fromId: me.id,
+    toId: peer.id,
+    id: message.id,
+  })
+
+  return ok({ message: { id: message.id } })
 }
 
-/** لغو پیام زمان‌بندی‌شدهٔ خودم */
-export async function DELETE(req: Request) {
-  const me = await getSessionUser(req)
-  if (!me) return fail('ابتدا وارد شوید', 401)
-  const id = new URL(req.url).searchParams.get('id')
-  if (!id) return fail('شناسه پیام الزامی است')
-  const msg = await db.message.findUnique({ where: { id } })
-  if (!msg || msg.fromId !== me.id) return fail('پیام یافت نشد', 404)
-  if (msg.status !== 'SCHEDULED') return fail('فقط پیام زمان‌بندی‌شده قابل لغو است')
+/** DELETE /api/messages?id= — own messages only */
+export async function DELETE(req: NextRequest) {
+  const me = await getSessionUser()
+  if (!me) return fail('نیاز به ورود', 401)
+
+  const id = req.nextUrl.searchParams.get('id') || ''
+  const message = await db.message.findUnique({ where: { id } })
+  if (!message) return fail('پیام یافت نشد', 404)
+  if (message.fromId !== me.id) return fail('فقط می‌توانید پیام خودتان را حذف کنید', 403)
+
   await db.message.delete({ where: { id } })
-  await logActivity(me, 'لغو پیام زمان‌بندی‌شده', 'message', id, msg.body.slice(0, 60))
-  return json({ ok: true })
+  return ok({ deleted: id })
 }

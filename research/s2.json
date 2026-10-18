@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://www.sciencedirect.com",
+    "name": "Daily retail demand forecasting using machine learning",
+    "snippet": "by J Huber · 2020 · Cited by 317 — We also found that machine learning methods not only provide more accurate forecasts but are also more suitable for applications in a large-scale demand ... Read more",
+    "host_name": "www.sciencedirect.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.relexsolutions.com",
+    "name": "Complete guide to machine learning in retail demand",
+    "snippet": "Machine learning tackles retail's demand forecasting challenges . Machine learning is an extremely powerful tool in the data-rich retail environment. It ... Read more",
+    "host_name": "www.relexsolutions.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://asrjetsjournal.org",
+    "name": "Demand Forecasting in Retail Business Using the",
+    "snippet": "Oct 10, 2024 — Yeasmin, Amin, and Tosarkani, “ Machine learning techniques for grocery sales forecasting by analyzing historical data,” Learning and Analytics ... Read more",
+    "host_name": "asrjetsjournal.org",
+    "rank": 2,
+    "date": "Oct 10, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.artefact.com",
+    "name": "Using machine learning to predict retail sales",
+    "snippet": "Predictive models can forecast sales months in advance by using a number of the signals that affect them (seasonality, consumption trends, price levels, etc). Read more",
+    "host_name": "www.artefact.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://repository.gatech.edu",
+    "name": "Improving Demand Prediction and Reducing Out-of-Stock",
+    "snippet": "by B Patrick · 2021 · Cited by 5 — How can advanced analytics and Machine Learning -based approaches be applied in retail supply chains to improve demand forecasting and out-of-stock detection? Read more",
+    "host_name": "repository.gatech.edu",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://ideas.repec.org",
+    "name": "Demand Forecasting Methods and the Potential of",
+    "snippet": "by T Aichner · 2023 · Cited by 9 — The purpose of this chapter is to investigate opportunities and challenges of machine learning forecasting methods in contrast to traditional forecasting ... Read more",
+    "host_name": "ideas.repec.org",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

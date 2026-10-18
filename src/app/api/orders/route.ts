@@ -1,92 +1,248 @@
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { fail, getSessionUser, json, logActivity } from '@/lib/api-helpers'
-import { toJalaliParts } from '@/lib/jalali'
-import { correctionState, isPendingApproval } from './lifecycle'
+import { ok, fail, logActivity, safeJson, clampInt } from '@/lib/api'
+import { getSessionUser } from '@/lib/auth'
+import { toFaDigits } from '@/lib/jalali'
 
-export async function GET(req: Request) {
-  const me = await getSessionUser(req)
-  if (!me) return fail('ابتدا وارد شوید', 401)
-  const { searchParams } = new URL(req.url)
-  const status = searchParams.get('status') || ''
-  const overdue = searchParams.get('overdue') === '1'
+const ORDER_STATUSES = [
+  'DRAFT',
+  'SUBMITTED',
+  'APPROVED',
+  'RECEIVING',
+  'RECEIVED',
+  'VERIFIED',
+  'ACCOUNTED',
+  'DONE',
+  'CANCELLED',
+] as const
 
-  const orders = await db.order.findMany({ orderBy: { createdAt: 'desc' } })
-  const items = await db.orderItem.findMany()
-  const today = new Date().toISOString().slice(0, 10)
-
-  let list = orders
-  if (status) list = list.filter((o) => o.status === status)
-  if (overdue)
-    list = list.filter(
-      (o) => ['APPROVED', 'RECEIVING'].includes(o.status) && o.deliveryDate < today
-    )
-
-  return json({
-    orders: list.map((o) => ({
-      ...o,
-      history: JSON.parse(o.history || '[]'),
-      itemsCount: items.filter((i) => i.orderId === o.id).length,
-      itemsTotalQty: items.filter((i) => i.orderId === o.id).reduce((s, i) => s + i.qty, 0),
-      isOverdue: ['APPROVED', 'RECEIVING'].includes(o.status) && o.deliveryDate < today,
-      // round-19e: گیت تأیید نهایی مدیر + وضعیت پنجرهٔ اصلاح
-      pendingApproval: isPendingApproval(o.status),
-      correction: correctionState(o),
-    })),
-  })
+const GROUPS: Record<string, string[]> = {
+  open: ['DRAFT', 'SUBMITTED'],
+  active: ['APPROVED', 'RECEIVING', 'RECEIVED', 'VERIFIED', 'ACCOUNTED'],
+  done: ['DONE'],
+  cancelled: ['CANCELLED'],
+  queue: ['APPROVED', 'RECEIVING'], // receiving view: approved orders enter the queue automatically
 }
 
-export async function POST(req: Request) {
-  const me = await getSessionUser(req)
-  if (!me) return fail('ابتدا وارد شوید', 401)
-  const body = await req.json()
-  const { providerId, providerName, items, deliveryDate, payMethod, notes } = body
-  if (!providerId || !Array.isArray(items) || items.length === 0)
-    return fail('تأمین‌کننده و اقلام سفارش الزامی است')
-  if (!deliveryDate) return fail('تاریخ تحویل را انتخاب کنید')
+/** Persian money with ٬ separators — used in history details (live: «جمع ۱۸٬۰۸۵٬۲۰۰ ریال») */
+function faMoney(n: number): string {
+  return toFaDigits(Math.round(n).toLocaleString('en-US')).replace(/,/g, '٬')
+}
 
-  const now = new Date()
-  const { jy } = toJalaliParts(now)
-  const count = await db.order.count()
-  const code = `HZ-${jy}-${String(count + 1).padStart(4, '0')}`
-  const total = items.reduce((s: number, it: any) => s + (Number(it.qty) || 0) * (Number(it.unitBuyPrice) || 0), 0)
+type OrderExtras = {
+  note?: string | null
+  paymentRef?: string | null
+  history?: { at: string; by: string; action: string; detail?: string }[]
+  approvedById?: string | null
+  approvedByName?: string | null
+  receivedById?: string | null
+  receivedByName?: string | null
+  verifiedById?: string | null
+  verifiedByName?: string | null
+}
 
-  const order = await db.order.create({
+function parseOrderExtras(raw: string | null): OrderExtras {
+  if (!raw) return {}
+  if (raw.startsWith('{')) {
+    const parsed = safeJson<OrderExtras>(raw, {})
+    if (parsed && typeof parsed === 'object' && 'history' in parsed) return parsed
+  }
+  return { note: raw || null }
+}
+
+function toNumber(v: unknown, dflt = 0): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : dflt
+}
+
+/** GET /api/orders?status=&q=&page=&pageSize= — live list shape */
+export async function GET(req: NextRequest) {
+  const user = await getSessionUser()
+  if (!user) return fail('ابتدا وارد شوید', 401)
+
+  const sp = req.nextUrl.searchParams
+  const statusParam = (sp.get('status') ?? 'all').trim() || 'all'
+  const q = (sp.get('q') ?? '').trim()
+  const page = Math.max(1, clampInt(sp.get('page'), 1, 100000, 1))
+  const pageSize = Math.max(1, clampInt(sp.get('pageSize'), 1, 100, 20))
+
+  const statuses =
+    GROUPS[statusParam] ?? ((ORDER_STATUSES as readonly string[]).includes(statusParam) ? [statusParam] : null)
+
+  const and: Record<string, unknown>[] = []
+  if (statuses) and.push({ status: { in: statuses } })
+  if (q) and.push({ OR: [{ code: { contains: q } }, { supplierName: { contains: q } }] })
+  const where = and.length ? { AND: and } : {}
+
+  const total = await db.order.count({ where })
+  const rows = await db.order.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+    include: { _count: { select: { items: true } } },
+  })
+
+  // supplier mini-objects (live: {id, name, code} or null for free-text suppliers)
+  const supplierIds = [...new Set(rows.map((r) => r.supplierId).filter((v): v is string => !!v))]
+  const suppliers = await db.supplier.findMany({ where: { id: { in: supplierIds } }, select: { id: true, name: true, code: true } })
+  const supplierMap = new Map(suppliers.map((s) => [s.id, s]))
+
+  const items = rows.map((o) => {
+    const sup = o.supplierId ? (supplierMap.get(o.supplierId) ?? null) : null
+    return {
+      id: o.id,
+      code: o.code,
+      status: o.status,
+      supplierId: o.supplierId,
+      supplierName: o.supplierName,
+      supplier: sup ? { id: sup.id, name: sup.name, code: sup.code } : null,
+      deliveryDate: o.deliveryDate,
+      payMethod: o.payMethod,
+      totalAmount: o.totalAmount,
+      createdAt: o.createdAt,
+      createdById: o.createdById,
+      itemsCount: o._count.items,
+    }
+  })
+
+  // global counts (live capture: computed over ALL orders, ignoring filters)
+  const all = await db.order.findMany({ select: { status: true } })
+  const statusTally: Record<string, number> = {}
+  for (const o of all) statusTally[o.status] = (statusTally[o.status] ?? 0) + 1
+  const count = (names: string[]) => names.reduce((s, k) => s + (statusTally[k] ?? 0), 0)
+  const counts = {
+    open: count(GROUPS.open),
+    active: count(GROUPS.active),
+    done: count(GROUPS.done),
+    cancelled: count(GROUPS.cancelled),
+    all: all.length,
+  }
+  const statusCounts: Record<string, number> = {}
+  for (const st of ORDER_STATUSES) {
+    if (statusTally[st]) statusCounts[st] = statusTally[st]
+  }
+
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  return ok({ items, counts, statusCounts, total, page, pageSize, pages })
+}
+
+/** POST /api/orders {supplierId?, supplierName?, deliveryDate?, payMethod?, paymentRef?, note?, items:[...], submit?} */
+export async function POST(req: NextRequest) {
+  const user = await getSessionUser()
+  if (!user) return fail('ابتدا وارد شوید', 401)
+
+  const body = await req.json().catch(() => null)
+  if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')
+
+  const rawItems = Array.isArray(body.items) ? body.items : []
+  if (rawItems.length === 0) return fail('اقلام سفارش الزامی است')
+
+  // supplier: id → lookup; otherwise free text supplierName (live HZ-ORD-004 pattern)
+  let supplierId: string | null = null
+  let supplierName: string | null = null
+  let supplierCode: string | null = null
+  if (body.supplierId) {
+    const sup = await db.supplier.findUnique({ where: { id: String(body.supplierId) } })
+    if (!sup) return fail('تأمین‌کننده یافت نشد')
+    supplierId = sup.id
+    supplierName = sup.name
+    supplierCode = sup.code
+  } else if (body.supplierName) {
+    supplierName = String(body.supplierName)
+  }
+
+  const items = rawItems.map((it: Record<string, unknown>) => ({
+    productId: it.productId ? String(it.productId) : null,
+    name: String(it.name ?? '').trim() || 'کالا',
+    barcode: it.barcode ? String(it.barcode) : null,
+    qty: Math.max(1, Math.round(toNumber(it.qty, 1)) || 1),
+    unitBuyPrice: Math.max(0, toNumber(it.unitBuyPrice, 0)),
+    printedPrice: it.printedPrice === null || it.printedPrice === undefined || it.printedPrice === '' ? null : toNumber(it.printedPrice, 0) || null,
+  }))
+  const totalAmount = items.reduce((s, it) => s + it.qty * it.unitBuyPrice, 0)
+
+  // next code: HZ-ORD-NNN
+  const last = await db.order.findFirst({ orderBy: { code: 'desc' } })
+  let next = 1
+  if (last) {
+    const m = last.code.match(/HZ-ORD-(\d+)$/)
+    if (m) next = Math.max(1, parseInt(m[1], 10) + 1)
+  }
+  const code = `HZ-ORD-${String(next).padStart(3, '0')}`
+
+  const submitted = body.submit !== false
+  const now = new Date().toISOString()
+  const history: NonNullable<OrderExtras['history']> = [
+    { at: now, by: user.fullName, action: 'create', detail: `${items.length} قلم، جمع ${faMoney(totalAmount)} ریال` },
+  ]
+  if (submitted) history.push({ at: now, by: user.fullName, action: 'submit', detail: 'ارسال برای تأیید' })
+
+  const extras: OrderExtras = {
+    note: body.note ? String(body.note) : null,
+    paymentRef: body.paymentRef ? String(body.paymentRef) : null,
+    history,
+  }
+
+  const payMethod = ['CASH', 'CHEQUE', 'POS'].includes(String(body.payMethod)) ? String(body.payMethod) : 'CASH'
+
+  const created = await db.order.create({
     data: {
       code,
-      providerId,
-      providerName,
-      createdById: me.id,
-      createdByName: me.name,
-      status: body.status || 'SUBMITTED',
-      deliveryDate,
-      payMethod: payMethod || 'CASH',
-      notes: notes || '',
-      totalAmount: total,
-      history: JSON.stringify([
-        {
-          at: now.toISOString(),
-          userId: me.id,
-          userName: me.name,
-          action: body.status === 'APPROVED' ? 'ایجاد و تأیید سفارش' : 'ایجاد سفارش',
-          detail: `${items.length} قلم کالا`,
-        },
-      ]),
-    },
-  })
-  for (const it of items) {
-    const p = await db.product.findUnique({ where: { id: it.productId } })
-    await db.orderItem.create({
-      data: {
-        orderId: order.id,
-        productId: it.productId,
-        productName: p?.name || it.productName || '',
-        barcode: p ? JSON.parse(p.barcodes || '[]')[0] || '' : '',
-        qty: Number(it.qty) || 1,
-        unitBuyPrice: Number(it.unitBuyPrice) || 0,
-        vat: 9,
+      status: submitted ? 'SUBMITTED' : 'DRAFT',
+      supplierId,
+      supplierName,
+      deliveryDate: body.deliveryDate ? String(body.deliveryDate) : null,
+      payMethod,
+      notes: JSON.stringify(extras),
+      totalAmount,
+      createdById: user.id,
+      createdByName: user.fullName,
+      items: {
+        create: items.map((it) => ({ ...it, status: 'PENDING' })),
       },
-    })
-  }
-  await logActivity(me, 'ثبت سفارش جدید', 'order', order.id, `${code} - ${providerName}`)
-  return json({ order }, 201)
+    },
+    include: { items: true },
+  })
+
+  void supplierCode
+
+  await logActivity({
+    userId: user.id,
+    userName: user.fullName,
+    action: 'order_create',
+    actionLabel: 'ثبت سفارش',
+    category: 'orders',
+    detail: `ثبت سفارش ${code} برای «${supplierName ?? 'بدون تأمین‌کننده'}» — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال`,
+    entityId: created.id,
+  })
+
+  return ok({
+    id: created.id,
+    code: created.code,
+    status: created.status,
+    supplierId: created.supplierId,
+    supplierName: created.supplierName,
+    deliveryDate: created.deliveryDate,
+    payMethod: created.payMethod,
+    note: extras.note ?? null,
+    paymentRef: extras.paymentRef ?? null,
+    totalAmount: created.totalAmount,
+    createdAt: created.createdAt,
+    createdById: created.createdById,
+    items: created.items.map((it) => ({
+      id: it.id,
+      orderId: it.orderId,
+      productId: it.productId,
+      name: it.name,
+      barcode: it.barcode,
+      qty: it.qty,
+      unitBuyPrice: it.unitBuyPrice,
+      printedPrice: it.printedPrice,
+      receivedQty: it.receivedQty,
+      status: it.status,
+      expiryDate: it.expiryDate,
+      note: it.note,
+    })),
+  })
 }

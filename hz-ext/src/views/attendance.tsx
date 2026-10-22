@@ -426,7 +426,7 @@ export default function AttendanceView() {
                   <TableRow>
                     <TableHead className="text-right">پرسنل</TableHead>
                     <TableHead className="text-center">ورود</TableHead>
-                    <TableHead className="text-center">تأخیر (ساعت:دقیق)</TableHead>
+                    <TableHead className="text-center">تأخیر (ساعت:دقیقه)</TableHead>
                     <TableHead className="text-center">مرخصی ساعتی</TableHead>
                     <TableHead className="text-center">اضافه‌کاری</TableHead>
                     <TableHead className="text-center">اجازه مدیر</TableHead>

@@ -13,14 +13,14 @@ import {
    home/guide — «راهنما و دانش‌نامه»
    ۱) تب مقالات: فهرست /api/kb + جست‌وجوی ۳۰۰ms + چیپ دسته‌ها +
       دیالوگ مقاله + مدیریت (ساخت/ویرایش/حذف) — بازسازی چانک 0a7d8101
-   ۲) تب تورهای تعاملی: ۱۱ تور (خوش‌آمدگینی + ۱۰ تور بخش‌محور)
+   ۲) تب تورهای تعاملی: ۱۱ تور (خوش‌آمدگویی + ۱۰ تور بخش‌محور)
    ─────────────────────────────────────────────────────────────
 
    نکتهٔ معماری (برای هماهنگی با همکاران):
    TourEngine کتابخانهٔ مشترک داخل درخت React همین view نصب می‌شود؛
    با تغییر هش (رفتن به بخش دیگر) کل view از درخت خارج می‌شود
    (بررسی تجربی شد — div.view-enter و محتوایش بازسازی می‌شوند).
-   تور خوش‌آمدگینی چون جایی ناوبری ندارد با خودِ TourEngine اجرا
+   تور خوش‌آمدگویی چون جایی ناوبری ندارد با خودِ TourEngine اجرا
    می‌شود؛ اما تورهای بخش‌محور که باید به view دیگری «بروند» با
    موتور پایدارِ همین فایل اجرا می‌شوند: overlay در document.body
    ساخته می‌شود، نه در درخت React، پس با ناوبری زنده می‌ماند.
@@ -62,7 +62,7 @@ function dateFa(iso: any): string {
    ۱) تعریف تورها
    ═══════════════════════════════════════════════════════════ */
 
-/** تور خوش‌آمدگینی — ۷ مرحله، فقط عناصر پوسته (در همین صفحه اجرا می‌شود) */
+/** تور خوش‌آمدگویی — ۷ مرحله، فقط عناصر پوسته (در همین صفحه اجرا می‌شود) */
 export const WELCOME_STEPS: TourStep[] = [
   {
     title: 'به سر رسید خوش آمدید! 🫒',
@@ -546,7 +546,7 @@ export default function GuideView() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [badFormImg, setBadFormImg] = useState(false)
 
-  /* ---- تور خوش‌آمدگینی (TourEngine) ---- */
+  /* ---- تور خوش‌آمدگویی (TourEngine) ---- */
   const [welcomeOpen, setWelcomeOpen] = useState(false)
   const [welcomeBusy, setWelcomeBusy] = useState(false)
 
@@ -664,7 +664,7 @@ export default function GuideView() {
   function finishWelcome(done: boolean) {
     setWelcomeOpen(false)
     void api('/api/me/tour', { method: 'POST', body: {} }) // ثبت انجام‌شدن
-    if (done) toast.success('تور خوش‌آمدگینی تمام شد')
+    if (done) toast.success('تور خوش‌آمدگویی تمام شد')
   }
 
   function startSectionTour(def: TourDef) {
@@ -802,7 +802,7 @@ export default function GuideView() {
   function renderTours() {
     return (
       <>
-        {/* کارت تور خوش‌آمدگینی */}
+        {/* کارت تور خوش‌آمدگویی */}
         <Card className="gap-0 border-emerald-200 bg-emerald-50 py-0">
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-wrap items-center gap-3">
@@ -811,7 +811,7 @@ export default function GuideView() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-extrabold text-emerald-800">تور خوش‌آمدگینی</h2>
+                  <h2 className="text-lg font-extrabold text-emerald-800">تور خوش‌آمدگویی</h2>
                   <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
                     {fa(WELCOME_STEPS.length)} مرحله · حدود {fa(1)} دقیقه
                   </Badge>
@@ -1057,7 +1057,7 @@ export default function GuideView() {
         </DialogContent>
       </Dialog>
 
-      {/* تور خوش‌آمدگینی — TourEngine کتابخانهٔ مشترک (بدون ناوبری) */}
+      {/* تور خوش‌آمدگویی — TourEngine کتابخانهٔ مشترک (بدون ناوبری) */}
       <TourEngine
         open={welcomeOpen}
         steps={WELCOME_STEPS}

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
+import { canApproveOrdersUser } from '@/lib/access'
 import { toFaDigits } from '@/lib/jalali'
 
 const MANAGERS = ['OWNER', 'GM', 'ADMIN', 'EXEC']
@@ -242,7 +243,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     case 'approve': {
       if (o.status !== 'SUBMITTED') return fail('فقط سفارش در انتظار تأیید قابل تأیید است')
-      if (!MANAGERS.includes(user.role) && user.role !== 'ACC') return fail('تأیید سفارش فقط با دسترسی مدیران ممکن است', 403)
+      if (!(await canApproveOrdersUser(user))) return fail('تأیید سفارش فقط با دسترسی مدیران ممکن است', 403)
       extras.approvedById = user.id
       extras.approvedByName = by
       await pushHistory(extras, { at: now, by, action: 'approve', detail: `تأیید توسط ${by}` })
@@ -378,7 +379,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       for (const it of items) {
         if (it.productId && (it.receivedQty ?? 0) > 0) {
           await db.product
-            .update({ where: { id: it.productId }, data: { stock: { increment: it.receivedQty as number } } })
+            .update({
+              where: { id: it.productId },
+              data: {
+                stock: { increment: it.receivedQty as number },
+                /* قیمت خرید اصلاح‌شدهٔ مدیر در فرم سفارش، به یاد کالا منتقل شود */
+                ...(it.unitBuyPrice > 0 ? { lastBuyPrice: it.unitBuyPrice } : {}),
+              },
+            })
             .catch(() => {})
         }
       }

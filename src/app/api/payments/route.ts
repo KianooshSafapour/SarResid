@@ -2,7 +2,9 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash, formatJalaliDash, toFaDigits } from '@/lib/jalali'
+import { queueSms, renderTemplate, normalizeMobile } from '@/lib/sms'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +26,8 @@ function monthLabelNow(): string {
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(me, 'finance/payments')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
   const kind = (url.searchParams.get('kind') || '').trim().toUpperCase()
@@ -76,6 +80,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(me, 'finance/payments')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   if (!body) return fail('درخواست نامعتبر است')
@@ -116,6 +122,34 @@ export async function POST(req: NextRequest) {
     detail: `${kind} — ${toFaDigits(String(amount))} ریال${supplierName ? ` — ${supplierName}` : ''}`,
     entityId: created.id,
   })
+
+  // R4-5 — سناریوی پیامک: اطلاع ثبت پرداخت به مدیران مالی + ثبت‌کننده
+  try {
+    const tpl = await db.smsTemplate.findUnique({ where: { key: 'PAYMENT_SUBMITTED' } })
+    if (!tpl || tpl.enabled) {
+      const tplBody = tpl?.body || '{by} پرداخت {amount} ریالی ({method}) را برای {code} ثبت کرد. — هایپر زیتون'
+      const methodFa = kind === 'CASH' ? 'نقدی' : kind === 'POS' ? 'کارت‌خوان' : 'انتقال بانکی'
+      const text = renderTemplate(tplBody, {
+        by: me.fullName,
+        amount: toFaDigits(Number(amount).toLocaleString('en-US')),
+        method: methodFa,
+        code: orderCode || supplierName || 'بدون کد',
+      })
+      const recipients = await db.user.findMany({
+        where: { active: true, OR: [{ role: { in: ['OWNER', 'GM', 'ADMIN', 'ACC'] } }, { id: me.id }] },
+        select: { id: true, fullName: true, phone: true },
+      })
+      const seen = new Set<string>()
+      for (const r of recipients) {
+        const phone = normalizeMobile(r.phone)
+        if (!phone || seen.has(phone)) continue
+        seen.add(phone)
+        await queueSms('PAYMENT_SUBMITTED', phone, text, created.id, r.fullName)
+      }
+    }
+  } catch {
+    // پیامک هرگز نباید جریان ثبت پرداخت را متوقف کند
+  }
 
   return ok({
     id: created.id,

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canZones } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash, addDaysJalaliDash, jalaliWeekdayDash } from '@/lib/jalali'
 import {
   ZONE_TYPE_LABELS,
@@ -19,7 +19,8 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canZones(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/zones')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const today = todayJalaliDash()
   const zones = await db.zone.findMany()
@@ -73,7 +74,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canZones(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/zones')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const name = typeof body?.name === 'string' ? body.name.trim() : ''
@@ -106,7 +108,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canZones(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/zones')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const id = typeof body?.id === 'string' ? body.id : ''
@@ -145,7 +148,8 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canZones(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/zones')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const id = req.nextUrl.searchParams.get('id') || ''
   const zone = await db.zone.findUnique({ where: { id } })

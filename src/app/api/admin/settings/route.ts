@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canSystem, canSettingsWrite } from '@/lib/access'
+import { canSettingsWrite, assertPageAccess } from '@/lib/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +22,8 @@ const STORE_SETTING_DEFAULTS: Record<string, string> = {
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canSystem(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'system/settings')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const rows = await db.setting.findMany()
   const settings: Record<string, string> = { ...STORE_SETTING_DEFAULTS }
@@ -39,6 +40,8 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(user, 'system/settings')
+  if (!gate.ok) return fail(gate.deny, 403)
   if (!canSettingsWrite(user.role)) return fail('فقط مدیر عامل یا مدیر عملیات می‌تواند تنظیمات را ذخیره کند', 403)
 
   const body = await req.json().catch(() => null)

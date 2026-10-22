@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
   const subGroup = sp.get('subGroup') ?? '' // products view sends it as `category`
   const category = sp.get('category') ?? ''
   const status = sp.get('status') ?? ''
+  const unit = (sp.get('unit') ?? '').trim() // R4-8: فیلتر واحد («عدد/کیلوگرم/دستی…»)
   const lowStock = sp.get('lowStock') === '1'
   const sort = (sp.get('sort') ?? '').trim()
 
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
   const sg = subGroup || category
   if (sg) and.push({ subGroup: sg })
   if (status) and.push({ status })
+  if (unit) and.push({ unit }) // R4-8
   if (lowStock) and.push(lowStockWhere())
   if (and.length) where.AND = and
 
@@ -109,6 +111,8 @@ export async function GET(req: NextRequest) {
     name: p.name,
     code: p.code,
     unit: p.unit,
+    lastCountDate: p.lastCountDate, // R4-8: آخرین انبارگردانی در جدول
+    monthlySold: p.monthlySold, // R4-8: فروش ماه (برای برچسب جدول)
     category: p.category,
     mainGroup: p.mainGroup,
     subGroup: p.subGroup,

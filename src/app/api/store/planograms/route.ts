@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canPlanogram } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +41,8 @@ function serializeList(pg: {
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPlanogram(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/planograms')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const pgs = await db.planogram.findMany()
   return ok({ planograms: pgs.map(serializeList) })
@@ -51,7 +52,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPlanogram(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/planograms')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')

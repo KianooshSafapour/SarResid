@@ -1,0 +1,393 @@
+{
+ "14079": [
+  "default"
+ ],
+ "16715": [
+  "RefreshCw"
+ ],
+ "20801": [
+  "default"
+ ],
+ "25652": [
+  "TrendingUp"
+ ],
+ "29062": [
+  "default"
+ ],
+ "29481": [
+  "api",
+  "qs"
+ ],
+ "105195": [
+  "default"
+ ],
+ "107233": [
+  "Plus"
+ ],
+ "110204": [
+  "Label"
+ ],
+ "114683": [
+  "Circle"
+ ],
+ "124535": [
+  "PackageX"
+ ],
+ "147605": [
+  "default"
+ ],
+ "168148": [
+  "Progress"
+ ],
+ "174886": [
+  "Copy"
+ ],
+ "178583": [
+  "FileText"
+ ],
+ "187378": [
+  "Banknote"
+ ],
+ "191741": [
+  "ClipboardList"
+ ],
+ "195116": [
+  "Wrench"
+ ],
+ "197774": [
+  "default"
+ ],
+ "217923": [
+  "BarChart3"
+ ],
+ "223945": [
+  "Store"
+ ],
+ "227516": [
+  "History"
+ ],
+ "234566": [
+  "Sunrise"
+ ],
+ "246349": [
+  "default"
+ ],
+ "252754": [
+  "Wallet"
+ ],
+ "263345": [
+  "default"
+ ],
+ "263457": [
+  "CalendarRange"
+ ],
+ "274457": [
+  "Cake"
+ ],
+ "280879": [
+  "Barcode"
+ ],
+ "283086": [
+  "Sparkles"
+ ],
+ "284765": [
+  "Settings2"
+ ],
+ "286536": [
+  "Eye"
+ ],
+ "292270": [
+  "LogOut"
+ ],
+ "294918": [
+  "FileSpreadsheet"
+ ],
+ "296626": [
+  "Presence"
+ ],
+ "299023": [
+  "Minus"
+ ],
+ "299626": [
+  "proxyImg"
+ ],
+ "302747": [
+  "Skeleton"
+ ],
+ "303281": [
+  "Printer"
+ ],
+ "316930": [
+  "default"
+ ],
+ "332102": [
+  "Inbox"
+ ],
+ "343103": [
+  "default"
+ ],
+ "343432": [
+  "Phone"
+ ],
+ "346897": [
+  "MapPin"
+ ],
+ "356909": [
+  "Save"
+ ],
+ "367240": [
+  "RotateCcw"
+ ],
+ "373264": [
+  "LayoutGrid"
+ ],
+ "373375": [
+  "ChevronLeft"
+ ],
+ "373884": [
+  "XCircle"
+ ],
+ "381353": [
+  "ALERT_LABELS",
+  "THRESHOLD_YELLOW"
+ ],
+ "385481": [
+  "default"
+ ],
+ "400736": [
+  "default"
+ ],
+ "423609": [
+  "Landmark"
+ ],
+ "423963": [
+  "MoonStar"
+ ],
+ "429061": [
+  "scaleBand",
+  "scaleDiverging",
+  "scaleDivergingLog",
+  "scaleDivergingPow",
+  "scaleDivergingSqrt",
+  "scaleDivergingSymlog",
+  "scaleIdentity",
+  "scaleImplicit"
+ ],
+ "463059": [
+  "ChevronRight"
+ ],
+ "470152": [
+  "clamp"
+ ],
+ "472747": [
+  "default"
+ ],
+ "475254": [
+  "default"
+ ],
+ "487486": [
+  "Badge"
+ ],
+ "488844": [
+  "Package"
+ ],
+ "493903": [
+  "faMoney",
+  "faMoneyCompact",
+  "faNum",
+  "moneyWordsTomans",
+  "parseFaNumber",
+  "rialToToman"
+ ],
+ "503116": [
+  "Clock"
+ ],
+ "504499": [
+  "ScanBarcode"
+ ],
+ "514764": [
+  "Send"
+ ],
+ "515288": [
+  "Card",
+  "CardContent",
+  "CardHeader",
+  "CardTitle"
+ ],
+ "531278": [
+  "Loader2"
+ ],
+ "559181": [
+  "default"
+ ],
+ "561659": [
+  "CreditCard"
+ ],
+ "573254": [
+  "AppShell",
+  "useShell"
+ ],
+ "582458": [
+  "default"
+ ],
+ "595468": [
+  "CheckCircle2"
+ ],
+ "624687": [
+  "Textarea"
+ ],
+ "631171": [
+  "default"
+ ],
+ "635408": [
+  "TrendingDown"
+ ],
+ "655119": [
+  "default"
+ ],
+ "657924": [
+  "default"
+ ],
+ "663854": [
+  "Users2"
+ ],
+ "694733": [
+  "default"
+ ],
+ "702749": [
+  "default"
+ ],
+ "713354": [
+  "Toaster"
+ ],
+ "715788": [
+  "Truck"
+ ],
+ "722915": [
+  "Archive"
+ ],
+ "727612": [
+  "Trash2"
+ ],
+ "733060": [
+  "Wand2"
+ ],
+ "733785": [
+  "Warehouse"
+ ],
+ "757254": [
+  "default"
+ ],
+ "761911": [
+  "Users"
+ ],
+ "772747": [
+  "HeartHandshake"
+ ],
+ "784774": [
+  "Table",
+  "TableBody",
+  "TableCell",
+  "TableHead",
+  "TableHeader",
+  "TableRow"
+ ],
+ "788699": [
+  "Pencil"
+ ],
+ "794771": [
+  "CheckCheck"
+ ],
+ "810980": [
+  "BookOpen"
+ ],
+ "817646": [
+  "PieChart"
+ ],
+ "837647": [
+  "Undo2"
+ ],
+ "840433": [
+  "Pin"
+ ],
+ "841947": [
+  "default"
+ ],
+ "852008": [
+  "Layers"
+ ],
+ "870273": [
+  "Star"
+ ],
+ "878894": [
+  "AlertTriangle"
+ ],
+ "885103": [
+  "default"
+ ],
+ "921557": [
+  "Calculator"
+ ],
+ "931091": [
+  "Megaphone"
+ ],
+ "939951": [
+  "ListTodo"
+ ],
+ "952571": [
+  "Info"
+ ],
+ "956657": [
+  "JALALI_MONTHS",
+  "addJalaliDays",
+  "formatJalali",
+  "formatJalaliLong",
+  "jalaliMonthLength",
+  "jalaliToDate",
+  "jalaliWeekStart",
+  "jalaliWeekday",
+  "parseJalali",
+  "toEnDigits",
+  "toFaDigits",
+  "toJalali",
+  "todayJalali"
+ ],
+ "959208": [
+  "CalendarClock"
+ ],
+ "959411": [
+  "Root",
+  "VISUALLY_HIDDEN_STYLES"
+ ],
+ "962590": [
+  "default"
+ ],
+ "972080": [
+  "ImagePlus"
+ ],
+ "979357": [
+  "scaleBand",
+  "scaleDiverging",
+  "scaleDivergingLog",
+  "scaleDivergingPow",
+  "scaleDivergingSqrt",
+  "scaleDivergingSymlog",
+  "scaleIdentity",
+  "scaleImplicit"
+ ],
+ "991799": [
+  "Moon"
+ ],
+ "991914": [
+  "default"
+ ],
+ "999003": [
+  "default"
+ ],
+ "999353": [
+  "StickyNote"
+ ],
+ "999682": [
+  "usePrevious"
+ ]
+}

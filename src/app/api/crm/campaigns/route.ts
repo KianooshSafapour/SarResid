@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,6 @@ function saveNotes(n: Record<string, string>) {
 
 const KINDS = ['BIRTHDAY', 'WINBACK', 'VIP_EVENT', 'OFFER']
 const TIERS = ['ALL', 'VIP', 'LOYAL', 'REGULAR', 'NEW', 'AT_RISK', 'DORMANT']
-const CAMPAIGN_ROLES = ['OWNER', 'GM', 'ADMIN']
 
 interface CampaignRow {
   id: string
@@ -53,6 +53,8 @@ function toOut(c: CampaignRow, notes: Record<string, string>) {
 export async function GET() {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(me, 'crm/campaigns')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const rows = await db.campaign.findMany({ orderBy: { createdAt: 'desc' } })
   const notes = loadNotes()
@@ -63,7 +65,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  if (!CAMPAIGN_ROLES.includes(me.role)) return fail('شما مجاز به مدیریت کمپین‌ها نیستید', 403)
+  const gate = await assertPageAccess(me, 'crm/campaigns')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   if (!body) return fail('درخواست نامعتبر است')
@@ -103,7 +106,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  if (!CAMPAIGN_ROLES.includes(me.role)) return fail('شما مجاز به مدیریت کمپین‌ها نیستید', 403)
+  const gate = await assertPageAccess(me, 'crm/campaigns')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const id = String(body?.id ?? '').trim()
@@ -162,7 +166,8 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  if (!CAMPAIGN_ROLES.includes(me.role)) return fail('شما مجاز به مدیریت کمپین‌ها نیستید', 403)
+  const gate = await assertPageAccess(me, 'crm/campaigns')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
   const id = (url.searchParams.get('id') || '').trim()

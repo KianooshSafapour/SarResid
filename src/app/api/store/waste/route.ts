@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser, isManager } from '@/lib/auth'
-import { canWaste } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash, parseJalaliDash } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +26,8 @@ function monthStart(dash: string): string {
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canWaste(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/waste')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const today = todayJalaliDash()
   const from = validDash(req.nextUrl.searchParams.get('from')) || monthStart(today)
@@ -94,7 +95,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canWaste(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/waste')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const name = typeof body?.name === 'string' ? body.name.trim() : ''
@@ -155,7 +157,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canWaste(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/waste')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const id = req.nextUrl.searchParams.get('id') || ''
   const rec = await db.wasteRecord.findUnique({ where: { id } })

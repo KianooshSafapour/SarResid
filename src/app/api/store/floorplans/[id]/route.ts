@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { canFloorplan } from '@/lib/access'
+import { parseOutline } from '../route'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,12 +45,13 @@ function blockData(b: BlockPayload) {
   }
 }
 
-function serializePlan(p: { id: string; name: string; width: number; height: number; blocks: Array<{ id: string; kind: string; x: number; y: number; w: number; h: number; rotation: number; label: string | null; zoneName: string | null; metaJson: string | null }> }) {
+function serializePlan(p: { id: string; name: string; width: number; height: number; outlineJson: string | null; blocks: Array<{ id: string; kind: string; x: number; y: number; w: number; h: number; rotation: number; label: string | null; zoneName: string | null; metaJson: string | null }> }) {
   return {
     id: p.id,
     name: p.name,
     width: p.width,
     height: p.height,
+    outlineJson: safeJson<number[][] | null>(p.outlineJson, null),
     blocks: p.blocks.map((b) => ({
       id: b.id,
       kind: b.kind,
@@ -66,7 +69,7 @@ function serializePlan(p: { id: string; name: string; width: number; height: num
 
 type RouteContext = { params: Promise<{ id: string }> }
 
-/** PATCH /api/store/floorplans/[id] — {name?,width?,height?} OR {blocks:[...]} → {plan} */
+/** PATCH /api/store/floorplans/[id] — {name?,width?,height?,outlineJson?} OR {blocks:[...]} → {plan} */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
@@ -79,26 +82,46 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')
 
+  // B3: optional real-store outline — validated against the EFFECTIVE plan dims
+  let outlinePairs: number[][] | null | undefined
+  if (body.outlineJson !== undefined) {
+    const effWidth = body.width !== undefined ? Math.max(200, Math.round(Number(body.width) || plan.width)) : plan.width
+    const effHeight = body.height !== undefined ? Math.max(200, Math.round(Number(body.height) || plan.height)) : plan.height
+    const outline = parseOutline(body.outlineJson, effWidth, effHeight)
+    if (outline.error) return fail(outline.error)
+    outlinePairs = outline.pairs
+  }
+  const outlineData =
+    outlinePairs === undefined ? {} : { outlineJson: outlinePairs ? JSON.stringify(outlinePairs) : null }
+
   if (Array.isArray(body.blocks)) {
     // Replace the whole block set (live editor "ذخیره تغییرات")
     const rows = body.blocks
       .map((b: BlockPayload) => blockData(b))
       .filter((d: ReturnType<typeof blockData>) => d !== null && d!.w > 0 && d!.h > 0)
-    await db.$transaction([
+    const tx: Prisma.PrismaPromise<unknown>[] = [
       db.floorBlock.deleteMany({ where: { planId: id } }),
       db.floorBlock.createMany({ data: rows.map((r) => ({ ...r, planId: id })) }),
-    ])
+    ]
+    if (Object.keys(outlineData).length > 0) {
+      tx.push(db.floorplan.update({ where: { id }, data: outlineData }))
+    }
+    await db.$transaction(tx)
     await logActivity({
       userId: user.id,
       userName: user.fullName,
       action: 'floorplan.update',
       actionLabel: 'نقشه فروشگاه',
       category: 'floorplan',
-      detail: `${plan.name} — ${rows.length} بلوک`,
+      detail: `${plan.name} — ${rows.length} بلوک${
+        outlinePairs ? ' + خط دور' : outlinePairs === null ? ' — حذف خط دور' : ''
+      }`,
       entityId: id,
     })
   } else {
-    const data: { name?: string; width?: number; height?: number } = {}
+    const data: { name?: string; width?: number; height?: number; outlineJson?: string | null } = {
+      ...outlineData,
+    }
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (body.width !== undefined) data.width = Math.max(200, Math.round(Number(body.width) || plan.width))
     if (body.height !== undefined) data.height = Math.max(200, Math.round(Number(body.height) || plan.height))

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canPriceCheck } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +19,8 @@ function marginPct(sell: number, cost: number): number | null {
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPriceCheck(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/pricecheck')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const date = req.nextUrl.searchParams.get('date') || todayJalaliDash()
 
@@ -91,7 +92,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPriceCheck(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'store/pricecheck')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const name = typeof body?.name === 'string' ? body.name.trim() : ''

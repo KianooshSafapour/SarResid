@@ -2,19 +2,28 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canPayroll } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 import { dateToJalali, JALALI_MONTHS, toFaDigits } from '@/lib/jalali'
-import { computePayroll, normalizeStatutory, buildSaved, type SavedPayroll } from '@/lib/payroll'
+import { computePayroll, normalizeStatutory, buildSaved, type SavedPayroll, type Statutory } from '@/lib/payroll'
 import { resolvePersonnelUserId } from '@/lib/hr-order'
 import { getStatutory } from '@/lib/payroll-statutory'
 
 export const dynamic = 'force-dynamic'
 
-/** GET /api/hr/payroll?year=&month= → full payroll sheet */
+/** GET /api/hr/payroll?year=&month= → full payroll sheet
+ *  GET /api/hr/payroll?userId= → سوابق فیش‌های یک پرسنل (همهٔ دوره‌ها — R4-6) */
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPayroll(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'hr/payroll')
+  if (!gate.ok) return fail(gate.deny, 403)
+
+  const staffId = req.nextUrl.searchParams.get('userId') || ''
+  if (staffId) {
+    const staff = await staffRecords(staffId)
+    if (!staff) return fail('کاربر مورد نظر یافت نشد', 404)
+    return ok(staff)
+  }
 
   const now = dateToJalali()
   const year = clampYear(req.nextUrl.searchParams.get('year')) || now.jy
@@ -91,7 +100,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPayroll(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'hr/payroll')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const year = clampYear(body?.year?.toString?.())
@@ -154,4 +164,69 @@ function clampMonth(v: unknown): number | null {
   const n = Number(v)
   if (!Number.isFinite(n) || n < 1 || n > 12) return null
   return Math.round(n)
+}
+
+/** سوابق فیش‌های یک پرسنل — همهٔ دوره‌ها با پروفایل و محاسبات (R4-6) */
+async function staffRecords(staffId: string) {
+  const [u, p, sp, records] = await Promise.all([
+    db.user.findUnique({ where: { id: staffId } }),
+    db.personnel.findUnique({ where: { userId: staffId } }),
+    db.salaryProfile.findUnique({ where: { userId: staffId } }),
+    db.payrollRecord.findMany({ where: { userId: staffId }, orderBy: [{ year: 'desc' }, { month: 'desc' }] }),
+  ])
+  if (!u) return null
+
+  const years = [...new Set(records.map((r) => r.year))]
+  const statutoryByYear = new Map<number, Statutory>()
+  for (const y of years) statutoryByYear.set(y, await getStatutory(y))
+
+  const person = p ?? null
+  const items = records.map((r) => {
+    const statutory = statutoryByYear.get(r.year)
+    if (!statutory) return null
+    const profile = {
+      baseSalary: sp?.baseSalary ?? statutory.minWage,
+      housingAllowance: sp?.housingAllowance ?? statutory.housing,
+      foodAllowance: sp?.foodAllowance ?? statutory.food,
+      childAllowance: sp?.childAllowance ?? 0,
+      children: sp?.children ?? 0,
+      seniorityDaily: sp?.seniorityDaily ?? 0,
+    }
+    const inputs = {
+      overtimeMinutes: r.overtimeMinutes,
+      absenceDays: r.absenceDays,
+      adjustment: r.adjustment,
+    }
+    const computed = computePayroll(profile, inputs, statutory)
+    return {
+      id: r.id,
+      userId: r.userId,
+      year: r.year,
+      month: r.month,
+      monthLabel: `${JALALI_MONTHS[r.month - 1]} ${toFaDigits(r.year)}`,
+      inputs,
+      profile,
+      computed,
+      saved: safeJson<SavedPayroll | null>(r.savedJson, null),
+    }
+  })
+
+  return {
+    userId: staffId,
+    fullName: person?.fullName ?? u.fullName,
+    jobTitle: person?.jobTitle ?? null,
+    nationalId: person?.nationalId ?? null,
+    department: person?.department ?? null,
+    salaryProfile: sp
+      ? {
+          baseSalary: sp.baseSalary,
+          housingAllowance: sp.housingAllowance,
+          foodAllowance: sp.foodAllowance,
+          childAllowance: sp.childAllowance,
+          children: sp.children,
+          seniorityDaily: sp.seniorityDaily,
+        }
+      : null,
+    items: items.filter((x): x is NonNullable<typeof x> => x !== null),
+  }
 }

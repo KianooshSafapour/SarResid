@@ -2,16 +2,12 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { canApproveReturnsUser } from '@/lib/access'
 import { toFaDigits } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
 
 type RouteContext = { params: Promise<{ id: string }> }
-
-/** live capability: approveReturns = OWNER/GM/ADMIN/EXEC */
-function canApproveReturns(role: string): boolean {
-  return ['OWNER', 'GM', 'ADMIN', 'EXEC'].includes(role)
-}
 
 /**
  * POST /api/returns/[id]/approve — manager approves a pending return.
@@ -22,7 +18,7 @@ function canApproveReturns(role: string): boolean {
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  if (!canApproveReturns(me.role)) return fail('شما مجاز به تأیید مرجوعی نیستید', 403)
+  if (!(await canApproveReturnsUser(me))) return fail('شما مجاز به تأیید مرجوعی نیستید', 403)
 
   const { id } = await ctx.params
   const r = await db.returnRequest.findUnique({ where: { id } })

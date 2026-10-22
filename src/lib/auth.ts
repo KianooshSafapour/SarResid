@@ -14,6 +14,9 @@ export interface SessionUser {
   role: string
   title: string
   phone: string | null
+  mobile: string | null
+  address: string | null
+  postalCode: string | null
   avatarJson: string | null
   points: number
   active: boolean
@@ -63,6 +66,9 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     role: u.role,
     title: u.title,
     phone: u.phone,
+    mobile: u.mobile,
+    address: u.address,
+    postalCode: u.postalCode,
     avatarJson: u.avatarJson,
     points: u.points,
     active: u.active,

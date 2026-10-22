@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   const rows = await db.returnRequest.findMany({
     where: { customerPhone: phone },
     orderBy: { createdAt: 'desc' },
-    include: { items: { select: { id: true } } },
+    include: { items: { select: { id: true, name: true, qty: true, unitPrice: true, lineTotal: true } } },
   })
   if (rows.length === 0) return fail('مشتری یافت نشد', 404)
 
@@ -55,6 +55,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       totalAmount: r.totalAmount,
       transferAmount: r.transferAmount,
       itemCount: r.items.length,
+      items: r.items.map((it) => ({ name: it.name, qty: it.qty, lineTotal: it.lineTotal })),
       cashierName: r.cashierId ? nameById.get(r.cashierId) ?? '—' : '—',
     })),
   })

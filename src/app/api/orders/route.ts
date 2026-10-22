@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson, clampInt } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 import { toFaDigits } from '@/lib/jalali'
 
 const ORDER_STATUSES = [
@@ -59,6 +60,9 @@ function toNumber(v: unknown, dflt = 0): number {
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
+  const pageKey = (req.nextUrl.searchParams.get('status') || '').trim() === 'queue' ? 'supply/receiving' : 'supply/orders'
+  const gate = await assertPageAccess(user, pageKey)
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const sp = req.nextUrl.searchParams
   const statusParam = (sp.get('status') ?? 'all').trim() || 'all'
@@ -131,6 +135,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(user, 'supply/orders')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')
@@ -158,7 +164,13 @@ export async function POST(req: NextRequest) {
     barcode: it.barcode ? String(it.barcode) : null,
     qty: Math.max(1, Math.round(toNumber(it.qty, 1)) || 1),
     unitBuyPrice: Math.max(0, toNumber(it.unitBuyPrice, 0)),
-    printedPrice: it.printedPrice === null || it.printedPrice === undefined || it.printedPrice === '' ? null : toNumber(it.printedPrice, 0) || null,
+    // non-nullable column — always a number (null here caused Prisma 500s)
+    printedPrice: Math.max(0, toNumber(it.printedPrice, 0)),
+    // v0.2 carton ordering (qty already includes carton units per VIEW-1 contract)
+    cartonQty: Math.max(0, Math.round(toNumber(it.cartonQty, 0)) || 0),
+    unitsPerCarton: Math.max(0, Math.round(toNumber(it.unitsPerCarton, 0)) || 0),
+    lineTotal: Math.max(0, toNumber(it.lineTotal, 0)),
+    supplierProductId: it.supplierProductId ? String(it.supplierProductId) : null,
   }))
   const totalAmount = items.reduce((s, it) => s + it.qty * it.unitBuyPrice, 0)
 

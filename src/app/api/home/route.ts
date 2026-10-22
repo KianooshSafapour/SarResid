@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { ok, fail, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { todayJalaliDash, addDaysJalaliDash, jalaliToDate, parseJalaliDash } from '@/lib/jalali'
+import { getLowStockSettings, computeThreshold, analyzableWhere } from '@/lib/lowstock'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,7 @@ export async function GET() {
   const today = todayJalaliDash()
   const weekEnd = addDaysJalaliDash(today, 7)
   const [dayStart, dayEnd] = jalaliDayRange(today)
+  const lowStockSettings = await getLowStockSettings()
 
   const [
     templates,
@@ -39,6 +41,9 @@ export async function GET() {
     zonesDoneToday,
     shiftAssignments,
     topUsers,
+    problemsOpenCount,
+    handoverLatestRow,
+    lowStockCandidates,
   ] = await Promise.all([
     db.checklistTemplate.findMany({
       where: { active: true, OR: [{ roleKey: null }, { roleKey: me.role }] },
@@ -82,6 +87,26 @@ export async function GET() {
         points: true,
         role: true,
         createdAt: true,
+      },
+    }),
+    // v0.3 (B1): مشکلات باز
+    db.problem.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
+    // v0.3 (B1): آخرین گزارش تحویل شیفت
+    db.shiftReport.findFirst({
+      where: { type: 'HANDOVER' },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    }),
+    // v0.3 (B1): کم‌موجودترین کالاها
+    db.product.findMany({
+      where: analyzableWhere(lowStockSettings),
+      select: {
+        id: true,
+        name: true,
+        stock: true,
+        lowStockThreshold: true,
+        reorderLevel: true,
+        monthlySold: true,
+        leadTimeDays: true,
       },
     }),
   ])
@@ -143,6 +168,44 @@ export async function GET() {
   const myRankIdx = leaderboard.findIndex((u) => u.id === me.id)
   const myRank = myRankIdx >= 0 ? myRankIdx + 1 : 0
 
+  // ---- v0.3 (B1): مشکلات باز / آخرین تحویل شیفت / ۳ کالای بحرانی ----
+  const lowStockAnalyzed = lowStockCandidates
+    .map((p) => {
+      const threshold = computeThreshold(p, lowStockSettings)
+      return {
+        id: p.id,
+        name: p.name,
+        stock: p.stock,
+        threshold,
+        criticality: threshold !== null && threshold > 0 ? p.stock / threshold : p.stock <= 0 ? -1 : Number.MAX_SAFE_INTEGER,
+      }
+    })
+    .filter((p) => p.threshold !== null && p.stock <= (p.threshold as number))
+    .sort((a, b) => a.criticality - b.criticality)
+  const lowStockTop3 = lowStockAnalyzed.slice(0, 3).map((p) => ({ id: p.id, name: p.name, stock: p.stock }))
+
+  const handoverAuthor = handoverLatestRow
+    ? await db.user.findUnique({
+        where: { id: handoverLatestRow.userId },
+        select: { fullName: true, honorific: true, role: true },
+      })
+    : null
+  const handoverLatest = handoverLatestRow
+    ? {
+        id: handoverLatestRow.id,
+        date: handoverLatestRow.date,
+        shift: handoverLatestRow.shift,
+        createdAt: handoverLatestRow.createdAt.toISOString(),
+        acknowledged: !!handoverLatestRow.acknowledgedAt,
+        acknowledgedAt: handoverLatestRow.acknowledgedAt
+          ? handoverLatestRow.acknowledgedAt.toISOString()
+          : null,
+        author: handoverAuthor
+          ? { fullName: handoverAuthor.fullName, honorific: handoverAuthor.honorific, role: handoverAuthor.role }
+          : null,
+      }
+    : null
+
   return ok({
     today,
     checklistCards,
@@ -177,5 +240,8 @@ export async function GET() {
     todayShifts,
     leaderboard,
     myRank,
+    problemsOpen: problemsOpenCount,
+    handoverLatest,
+    lowStockTop3,
   })
 }

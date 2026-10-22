@@ -2,8 +2,9 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { canSignChequesUser } from '@/lib/access'
 import { toFaDigits } from '@/lib/jalali'
-import { chequeOut, FINANCE_ROLES, SIGN_ROLES, type HistoryEntry, type ChequeRow } from '../route'
+import { chequeOut, FINANCE_ROLES, type HistoryEntry, type ChequeRow } from '../route'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,7 +80,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   if (!t) return fail('عملیات نامعتبر است')
 
   if (t.sign) {
-    if (!SIGN_ROLES.includes(me.role)) return fail('امضا فقط توسط مدیرعامل/مدیرکل/مدیر عملیات انجام می‌شود', 403)
+    if (!(await canSignChequesUser(me))) return fail('امضا فقط توسط مدیرعامل/مدیرکل/مدیر عملیات انجام می‌شود', 403)
   } else if (!FINANCE_ROLES.includes(me.role)) {
     return fail('شما مجاز به این عملیات نیستید', 403)
   }

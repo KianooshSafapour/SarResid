@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 import { toFaDigits } from '@/lib/jalali'
 import { invoiceDateKey } from '../route'
 
@@ -21,6 +22,8 @@ const THRESHOLD_YELLOW = 21
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(me, 'profit/stats')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
   const from = (url.searchParams.get('from') || '').trim().replace(/\//g, '-')

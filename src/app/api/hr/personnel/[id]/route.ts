@@ -21,7 +21,14 @@ const PERSONNEL_FIELDS = [
   'emergencyName',
   'emergencyPhone',
   'note',
+  // قرارداد کار (R4-6) — contractSalary جداگانه پردازش می‌شود (Float?)
+  'contractType',
+  'contractStart',
+  'contractEnd',
+  'contractNote',
 ] as const
+
+const CONTRACT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT'] as const
 
 /** PATCH /api/hr/personnel/[id] {…personnelFields, userId?, salaryProfile?} */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
@@ -36,12 +43,35 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')
 
-  const data: Record<string, string | null> = {}
+  const data: Record<string, string | number | null> = {}
   for (const field of PERSONNEL_FIELDS) {
     if (field in body) data[field] = optStr(body[field])
   }
-  if ('fullName' in data && (data.fullName ?? '').trim().length < 3) {
+  if ('fullName' in data && String(data.fullName ?? '').trim().length < 3) {
     return fail('نام و نام خانوادگی الزامی است')
+  }
+
+  // فیلدهای قرارداد کار (R4-6) — فقط مدیران (گفتگوی PATCH همین است)
+  if ('contractType' in body) {
+    const ct = optStr(body.contractType)
+    if (ct && !(CONTRACT_TYPES as readonly string[]).includes(ct)) return fail('نوع قرارداد نامعتبر است')
+    data.contractType = ct
+  }
+  for (const df of ['contractStart', 'contractEnd'] as const) {
+    if (df in body) {
+      const v = optStr(body[df])
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return fail(`تاریخ ${df === 'contractStart' ? 'شروع' : 'پایان'} قرارداد معتبر نیست (مثال: ۱۴۰۵-۰۷-۲۸)`)
+      data[df] = v
+    }
+  }
+  if ('contractSalary' in body) {
+    if (body.contractSalary === null || body.contractSalary === '' || body.contractSalary === undefined) {
+      data.contractSalary = null
+    } else {
+      const n = Number(body.contractSalary)
+      if (!Number.isFinite(n) || n < 0) return fail('حقوق قرارداد معتبر نیست')
+      data.contractSalary = n
+    }
   }
 
   let linkedUserId = person.userId

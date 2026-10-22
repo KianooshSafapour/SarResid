@@ -2,14 +2,15 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canPersonnel } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPersonnel(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'hr/personnel')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const [personnel, users, profiles] = await Promise.all([
     db.personnel.findMany(),
@@ -38,6 +39,11 @@ export async function GET() {
       emergencyName: p.emergencyName,
       emergencyPhone: p.emergencyPhone,
       note: p.note,
+      contractType: p.contractType,
+      contractStart: p.contractStart,
+      contractEnd: p.contractEnd,
+      contractSalary: p.contractSalary,
+      contractNote: p.contractNote,
       active: p.active,
       user: u ? { id: u.id, username: u.username, fullName: u.fullName, role: u.role } : null,
       salaryProfile: sp
@@ -68,7 +74,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canPersonnel(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'hr/personnel')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   const fullName = typeof body?.fullName === 'string' ? body.fullName.trim() : ''

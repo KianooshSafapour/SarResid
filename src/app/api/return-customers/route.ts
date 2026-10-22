@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, clampInt } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +73,8 @@ export async function aggregateReturnCustomers(q: string): Promise<Agg[]> {
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(me, 'returns/customers')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
   const sort = url.searchParams.get('sort') === 'count' ? 'count' : 'recent'

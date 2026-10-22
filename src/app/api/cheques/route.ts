@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash, parseJalaliDash, jalaliToDate, formatJalaliDash, toFaDigits } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
@@ -103,6 +104,8 @@ async function chequeStats() {
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(me, 'finance/cheques')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
   const status = (url.searchParams.get('status') || '').trim()
@@ -135,7 +138,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  if (!FINANCE_ROLES.includes(me.role)) return fail('شما مجاز به ثبت چک نیستید', 403)
+  const gate = await assertPageAccess(me, 'finance/cheques')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const body = await req.json().catch(() => null)
   if (!body) return fail('درخواست نامعتبر است')

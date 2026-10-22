@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
       supplierName,
       note,
       status: 'draft',
-      dateJalali: todayJalaliDash(),
+      dateJalali: (typeof body?.dateJalali === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dateJalali.trim())) ? body.dateJalali.trim() : todayJalaliDash(),
       items: { create: items },
     },
   })

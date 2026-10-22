@@ -56,3 +56,4 @@ server.log
 tool-results/
 dev.log
 docs/live-reference/
+scripts/deploy-helper.py

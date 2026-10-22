@@ -7,6 +7,9 @@ function canMutateProducts(u: SessionUser | null): boolean {
   return !!u && (['OWNER', 'GM', 'ADMIN', 'EXEC'].includes(u.role) || u.role === 'ACC' || u.role === 'PM')
 }
 
+/** R4-8: واحدهای مجاز — پژوهش research/product-units-research.md §۳ (هم‌ارز ALLOWED_UNITS در scripts/apply-default-units.ts) */
+const ALLOWED_UNITS = ['عدد', 'کیلوگرم', 'گرم', 'بسته', 'دستی']
+
 /** Product extras are kept in ProductImage rows keyed by productId (schema has no imageUrl column). */
 async function imageUrlOf(productId: string): Promise<string | null> {
   const row = await db.productImage.findUnique({ where: { key: productId } })
@@ -64,12 +67,23 @@ async function detail(id: string) {
     searchName: p.name,
     code: p.code,
     unit: p.unit,
+    manualUnit: p.manualUnit, // R4-8: قفل واحد دستی مدیر
     category: p.category,
     mainGroup: p.mainGroup,
     subGroup: p.subGroup,
     sellPrice: p.sellPrice,
     sellPrice2: p.sellPrice2,
     lastBuyPrice: p.lastBuyPrice,
+    stock: p.stock,
+    reorderLevel: p.reorderLevel,
+    lowStockThreshold: p.lowStockThreshold,
+    leadTimeDays: p.leadTimeDays,
+    monthlySold: p.monthlySold,
+    lastCountDate: p.lastCountDate ?? null,
+    defaultOrderQty: p.defaultOrderQty,
+    defaultCartonQty: p.defaultCartonQty,
+    unitsPerCarton: p.unitsPerCarton,
+    imported: p.imported,
     stock: p.stock,
     reorderLevel: p.reorderLevel,
     shelfLifeDays: p.shelfLifeDays,
@@ -140,7 +154,19 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     data.code = code
   }
-  if (body.unit !== undefined) data.unit = String(body.unit).trim() || 'عدد'
+  // R4-8: واحد کالا — فقط از مجموعهٔ مجاز؛ تغییر واحد از UI/API ⇒ manualUnit=true
+  // (manualUnit:false صریح پذیرفته می‌شود تا بازیابی/بازگردانی مدیر ممکن باشد)
+  if (body.unit !== undefined) {
+    const unit = String(body.unit).trim()
+    if (!ALLOWED_UNITS.includes(unit)) {
+      return fail(`واحد کالا باید یکی از این‌ها باشد: ${ALLOWED_UNITS.join('، ')}`)
+    }
+    data.unit = unit
+    if (body.manualUnit !== undefined) data.manualUnit = body.manualUnit === true
+    else data.manualUnit = true // تغییر واحد = انتخاب دستی
+  } else if (body.manualUnit !== undefined) {
+    data.manualUnit = body.manualUnit === true
+  }
   if (body.category !== undefined) data.category = body.category === null ? null : String(body.category)
   if (body.mainGroup !== undefined) data.mainGroup = body.mainGroup === null ? null : String(body.mainGroup)
   if (body.subGroup !== undefined) data.subGroup = body.subGroup === null ? null : String(body.subGroup)

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, clampInt } from '@/lib/api'
 import { getSessionUser, isManager } from '@/lib/auth'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash, parseJalaliDash, jalaliToDate, pad2, toFaDigits } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
@@ -57,6 +58,12 @@ async function userMap(ids: string[]): Promise<Map<string, { id: string; fullNam
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
+  // approvals board vs history page — both consume this list endpoint
+  const pageKey = (new URL(req.url).searchParams.get('status') || '').trim() === 'pending'
+    ? 'returns/approvals'
+    : 'returns/history'
+  const gate = await assertPageAccess(me, pageKey)
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
   const page = clampInt(url.searchParams.get('page'), 1, 100000, 1)

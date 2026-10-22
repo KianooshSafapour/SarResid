@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
-import { canReports } from '@/lib/access'
+import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash, formatJalaliDash } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
@@ -28,7 +28,8 @@ function inRange(date: string | null | undefined, from: string, to: string): boo
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  if (!canReports(user.role)) return fail('دسترسی به این بخش ندارید', 403)
+  const gate = await assertPageAccess(user, 'reports/exports')
+  if (!gate.ok) return fail(gate.deny, 403)
 
   const sp = req.nextUrl.searchParams
   const type = (sp.get('type') || '') as ExportType

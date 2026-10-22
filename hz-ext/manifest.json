@@ -1,0 +1,27 @@
+{
+  "views": [
+    { "key": "supply/orders", "src": "orders", "section": "supply", "title": "سفارش‌گذاری هوشمند", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "ACC"], "replaces": true },
+    { "key": "supply/products", "src": "products", "section": "supply", "title": "کالاها و بانک بارکد", "roles": ["*"], "replaces": true },
+    { "key": "profit/builder", "src": "profit", "section": "profit", "title": "سودسنج پیشرفته", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "ACC", "PM"], "replaces": true },
+    { "key": "tasks/tasks", "src": "tasks", "section": "tasks", "title": "دستور کار و وظایف من", "roles": ["*"], "replaces": true },
+    { "key": "finance/cheques", "src": "cheques", "section": "finance", "title": "چک و تقویم پرداخت", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "ACC"], "replaces": true },
+    { "key": "returns/new", "src": "returns", "section": "returns", "title": "ثبت مرجوعی جدید", "roles": ["*"], "replaces": true },
+    { "key": "tasks/attendance", "src": "attendance", "section": "tasks", "title": "بررسی تیم (حضور، لباز و بهداشت)", "roles": ["OWNER", "GM", "ADMIN", "EXEC"], "replaces": false },
+    { "key": "store/reviews", "src": "reviews", "section": "store", "title": "ارزیابی چیدمان و عملکرد", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM"], "replaces": false },
+    { "key": "store/stockcount", "src": "stockcount", "section": "store", "title": "انبارگردانی و شمارش", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM", "SK"], "replaces": false },
+    { "key": "hr/performance", "src": "performance", "section": "hr", "title": "کارنامه عملکرد کارکنان", "roles": ["OWNER", "GM", "ADMIN", "EXEC"], "replaces": false },
+    { "key": "store/liveboard", "src": "liveboard", "section": "store", "title": "نقشه زنده فروشگاه", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM", "SK"], "replaces": false },
+    { "key": "home/home", "src": "dashboard", "section": "home", "title": "میزکار من", "roles": ["*"], "replaces": true },
+    { "key": "home/guide", "src": "guide", "section": "home", "title": "راهنما و دانش‌نامه", "roles": ["*"], "replaces": true },
+    { "key": "home/account", "src": "account", "section": "home", "title": "حساب و شخصی‌سازی من", "roles": ["*"], "replaces": false },
+    { "key": "system/users", "src": "users", "section": "system", "title": "کاربران و دسترسی", "roles": ["OWNER", "GM", "ADMIN"], "replaces": true },
+    { "key": "system/holoo", "src": "holoo", "section": "system", "title": "اتصال هلو", "roles": ["OWNER", "GM", "ADMIN"], "replaces": false },
+    { "key": "tasks/reports", "src": "handover", "section": "tasks", "title": "گزارش تحویل شیفت", "roles": ["*"], "replaces": true },
+    { "key": "tasks/problems", "src": "problemsv", "section": "tasks", "title": "ثبت مشکلات و پیگیری", "roles": ["*"], "replaces": true },
+    { "key": "store/floorplan", "src": "floorplan", "section": "store", "title": "نقشه فروشگاه", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM", "SK", "MERCH"], "replaces": true },
+    { "key": "hr/hrdocs", "src": "hrdocs", "section": "hr", "title": "پرونده پرسنل", "roles": ["OWNER", "GM", "ADMIN"], "replaces": false },
+    { "key": "hr/leaves", "src": "leaves", "section": "hr", "title": "مرخصیها", "roles": ["*"], "replaces": true },
+    { "key": "system/smscenter", "src": "smscenter", "section": "system", "title": "مرکز پیامک", "roles": ["OWNER", "GM", "ADMIN"], "replaces": false },
+    { "key": "system/data", "src": "data", "section": "system", "title": "پشتیبان و بازنشانی داده", "roles": ["OWNER", "GM", "ADMIN"], "replaces": false }
+  ]
+}

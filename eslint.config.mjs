@@ -8,7 +8,7 @@ const __dirname = dirname(__filename);
 
 const eslintConfig = [
   {
-    ignores: ["public/**/*", "prisma/seed-live.ts", "mini-services/**/*"],
+    ignores: ["public/**/*", "prisma/seed-live.ts", "mini-services/**/*", "hz-ext/**/*"],
   },
   ...nextCoreWebVitals, ...nextTypescript, {
   rules: {

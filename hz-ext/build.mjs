@@ -138,6 +138,10 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
   // 3. Patch loader + registry chunks (from pristine originals)
   copyIfMissing(LOADER, join(ORIG, '2fb9e5ced3d1b0e6.js'))
   copyIfMissing(REGISTRY, join(ORIG, 'f58febe0f4682bee.js'))
+  // 3a. Surgical fixes to the PRISTINE originals BEFORE they are used to
+  //     regenerate the live chunks (radix RTL default + registry term/defaultPage)
+  await import('./patch-radix-dir.mjs')
+  await import('./patch-registry-fixes.mjs')
 
   // ---- loader patch: append async entries before the final "]);"
   let loader = readFileSync(join(ORIG, '2fb9e5ced3d1b0e6.js'), 'utf8')
@@ -176,6 +180,9 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
       reg = reg.slice(0, insertAt) + ',' + regEntry + reg.slice(insertAt)
       console.log(`  + added view "${entry.key}"`)
       // nav entry
+      if (entry.nav === false) {
+        console.log(`  · nav SKIPPED for "${entry.key}" (nav:false)`)
+      } else {
       const navRe = new RegExp(`(\\{key:"${entry.section}"[^\\[]*pages:\\[)`)
       const m = reg.match(navRe)
       if (m) {
@@ -192,6 +199,7 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
         reg = reg.slice(0, pagesPos) + pageEntry + ',' + reg.slice(pagesPos)
         console.log(`  + nav "${entry.title}" → section ${entry.section}${iconExpr ? ` (icon ${iconExpr})` : ' (no icon)'}`)
       }
+      }
       // access map
       const accessAnchor = '"system/activity":["OWNER"'
       const accessPos = reg.indexOf(accessAnchor)
@@ -201,12 +209,33 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
       }
     }
   }
+
+  // ---- nav removals: drop frozen nav entries superseded by our views
+  const removeNavKeys = manifest.removeNavKeys || []
+  for (const rk of removeNavKeys) {
+    const esc = rk.replace(/\//g, '\\/')
+    const re = new RegExp('\\{key:"' + esc + '",title:"[^"]*",icon:[^{}\\[\\]]*\\},?')
+    if (re.test(reg)) {
+      reg = reg.replace(re, '')
+      console.log(`  − nav removed "${rk}" (superseded)`)
+    } else {
+      console.log(`  = nav "${rk}" already absent`)
+    }
+  }
+
   writeFileSync(REGISTRY, reg)
   console.log(`✓ registry chunk patched (${manifest.views.length} entries)`)
 
   // 4. Post-build: re-apply surgical fixes to frozen app chunks (idempotent)
   await import('./patch-checklists.mjs')
   await import('./patch-tour-acl.mjs')
+  await import('./patch-notifications.mjs')
+  await import('./patch-login-roster.mjs')
+  await import('./patch-returns-card.mjs')
+  // 5. Extend frozen CSS with arbitrary-value utilities used by our views
+  //    (idempotent — regenerated from pristine original each build)
+  const { patchCss } = await import('./gen-arb-css.mjs')
+  patchCss()
 }
 
 function copyIfMissing(from, to) {

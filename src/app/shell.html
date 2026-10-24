@@ -1,13 +1,35 @@
 <!DOCTYPE html><!--beAIsjrl1RIepLOuaIq_W--><html lang="fa" dir="rtl"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/><link rel="stylesheet" href="/_next/static/chunks/b8c5081c57c11dd3.css" data-precedence="next"/><style data-hz-ux="readability">/* ── بزرگ‌سازی نوار کناری برای خوانایی بهتر (کاربران غیر فنی) ── */
-.workspace-rail{width:88px}
+.workspace-rail{width:88px;min-width:88px}
 .workspace-rail>button{width:76px;height:62px;gap:5px;flex-shrink:0}
 .workspace-rail>button>svg{width:30px;height:30px}
 .workspace-rail>button>span{font-size:12px;line-height:1.3;font-weight:600}
-.workspace-sidebar{width:272px}
+.workspace-sidebar{width:272px;min-width:272px}
 .workspace-sidebar .p-4>h2{font-size:19px}
 .workspace-sidebar nav>button{font-size:15.5px;padding:13px 14px;min-height:52px}
 .workspace-sidebar nav>button>svg{width:22px;height:22px}
-@media(max-width:420px){.workspace-rail{width:76px}.workspace-rail>button{width:66px;height:56px}.workspace-rail>button>svg{width:26px;height:26px}.workspace-rail>button>span{font-size:11px}}</style><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/f6da3433981b0125.js"/><script src="/_next/static/chunks/2e9c5333df59f348.js" async=""></script><script src="/_next/static/chunks/a024e94bb56323e5.js" async=""></script><script src="/_next/static/chunks/turbopack-ea80b7f2a53da687.js" async=""></script><script src="/_next/static/chunks/452a3479b1b93bbe.js" async=""></script><script src="/_next/static/chunks/5105b1fa99b48db0.js" async=""></script><script src="/_next/static/chunks/2fb9e5ced3d1b0e6.js" async=""></script><script src="/_next/static/chunks/f58febe0f4682bee.js" async=""></script><script src="/_next/static/chunks/c68fd1f39a67d827.js" async=""></script><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f4ea"/><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a2019"/><title>سر رسید | سامانه یکپارچه مدیریت هایپر زیتون</title><meta name="description" content="سامانه یکپارچه مدیریت هایپر زیتون — انبار و سفارش، مرجوعی، سودسنج، مالی و چک، چیدمان فروشگاه، کارکنان و چک‌لیست‌های استاندارد"/><meta name="application-name" content="سر رسید"/><link rel="manifest" href="/manifest.webmanifest"/><meta name="format-detection" content="telephone=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-title" content="سر رسید"/><meta name="apple-mobile-web-app-status-bar-style" content="default"/><link rel="icon" href="/brand/icon-192.png" type="image/png" sizes="192x192"/><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" sizes="180x180"/><script>
+/* ── R7: حالت جمع‌شدهٔ منو (دسکتاپ) — با دکمهٔ لبهٔ نوار، منو جمع می‌شود تا فضای کار باز شود ── */
+.workspace-sidebar{transition:width .22s ease,opacity .16s ease}
+.hz-nav-compact .workspace-sidebar{width:0;min-width:0;padding:0;border:0;opacity:0;overflow:hidden;pointer-events:none}
+.hz-nav-compact .workspace-rail{width:56px;min-width:56px}
+.hz-nav-compact .workspace-rail>button{width:44px;height:46px;gap:0;border-radius:12px}
+.hz-nav-compact .workspace-rail>button>svg{width:22px;height:22px}
+.hz-nav-compact .workspace-rail>button>span{display:none}
+#hz-nav-toggle{position:fixed;top:64px;right:calc(88px + 272px - 11px);z-index:45;width:22px;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border,#d6d3d1);border-radius:8px;background:var(--card,#fff);color:var(--muted-foreground,#78716c);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.10);transition:right .22s ease;padding:0}
+#hz-nav-toggle:hover{color:var(--foreground,#292524);background:var(--accent,#f5f5f4)}
+#hz-nav-toggle svg{width:13px;height:13px}
+.hz-nav-compact #hz-nav-toggle{right:calc(56px - 11px)}
+/* ── R7: موبایل — منوی اصلی به‌صورت تب‌بار پایین صفحه (الگوی استاندارد اپ‌های فارسی) و
+      زیرمنو با کشوی همبرگری + لمس بخشِ فعال، کشو را باز می‌کند ── */
+@media(max-width:767px){
+  #hz-nav-toggle{display:none}
+  .workspace-rail{position:fixed;bottom:0;right:0;left:0;top:auto;width:100%!important;height:auto;flex-direction:row;justify-content:space-around;align-items:stretch;padding:4px 4px calc(4px + env(safe-area-inset-bottom))!important;border-top:1px solid var(--border,#e7e5e4);border-inline-end:0!important;background:var(--sidebar,#fafaf9);z-index:40;overscroll-behavior:contain;box-shadow:0 -4px 14px rgba(0,0,0,.06)}
+  .workspace-rail>button{width:auto!important;height:52px;flex:1 1 0;min-width:0;gap:2px!important;border-radius:12px}
+  .workspace-rail>button>svg{width:21px!important;height:21px!important}
+  .workspace-rail>button>span{font-size:9.5px!important;line-height:1.2!important}
+  .workspace-rail>button>span.absolute{display:none}
+  main .view-enter{padding-bottom:calc(74px + env(safe-area-inset-bottom))}
+  footer{margin-bottom:calc(62px + env(safe-area-inset-bottom))}
+}</style><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/f6da3433981b0125.js"/><script src="/_next/static/chunks/2e9c5333df59f348.js" async=""></script><script src="/_next/static/chunks/a024e94bb56323e5.js" async=""></script><script src="/_next/static/chunks/turbopack-ea80b7f2a53da687.js" async=""></script><script src="/_next/static/chunks/452a3479b1b93bbe.js" async=""></script><script src="/_next/static/chunks/5105b1fa99b48db0.js" async=""></script><script src="/_next/static/chunks/2fb9e5ced3d1b0e6.js" async=""></script><script src="/_next/static/chunks/f58febe0f4682bee.js" async=""></script><script src="/_next/static/chunks/c68fd1f39a67d827.js" async=""></script><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f4ea"/><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a2019"/><title>سر رسید | سامانه یکپارچه مدیریت هایپر زیتون</title><meta name="description" content="سامانه یکپارچه مدیریت هایپر زیتون — انبار و سفارش، مرجوعی، سودسنج، مالی و چک، چیدمان فروشگاه، کارکنان و چک‌لیست‌های استاندارد"/><meta name="application-name" content="سر رسید"/><link rel="manifest" href="/manifest.webmanifest"/><meta name="format-detection" content="telephone=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-title" content="سر رسید"/><meta name="apple-mobile-web-app-status-bar-style" content="default"/><link rel="icon" href="/brand/icon-192.png" type="image/png" sizes="192x192"/><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" sizes="180x180"/><script>
 (function () {
   try {
     var t = localStorage.getItem('hz-theme');
@@ -34,8 +56,8 @@ document.addEventListener('keydown', function (e) {
 }, true);
 </script><script>
 /* ── تاریخ‌گیر شمسی سراسری — همهٔ ورودی‌های تاریخ اپ (حتی صفحات قدیمی) ──
-   ورودی‌هایی که placeholder یا مقدارشان الگوی تاریخ شمسی دارد (۱۴۰۴-۱۰-۲۰ …)
-   با کلیک، تقویم شمسی بازشو می‌گیرند. مقدار با رویداد input واقعی ست می‌شود
+   ورودی‌هایی که placeholder یا مقدارشان الگوی تاریخ شمسی دارد (۱۴۰۴/۱۰/۲۰ …)
+   با کلیک، تقویم شمسی برایشان باز می‌شود. مقدار با رویداد input واقعی ست می‌شود
    تا React هم state را به‌روز کند. کامپوننت‌های جدید (hz-jalali-input) رد می‌شوند. */
 (function () {
   'use strict';
@@ -89,9 +111,10 @@ document.addEventListener('keydown', function (e) {
     var h='';
     h+='<style>#'+PANEL_ID+' *{box-sizing:border-box}#'+PANEL_ID+' button{font-family:inherit;cursor:pointer;border:0;background:none}</style>';
     h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
-    h+='<button data-nav="1" title="ماه بعد" style="padding:4px 8px;border-radius:8px;color:var(--muted-foreground,#78716c)">‹</button>';
+    /* SVG chevrons — نویسه‌های ‹ › در RTL آینه می‌شوند و جهت را وارونه نشان می‌دهند؛ SVG هرگز آینه نمی‌شود */
+    h+='<button data-nav="-1" title="ماه قبل" aria-label="ماه قبل" style="padding:4px 8px;border-radius:8px;color:var(--muted-foreground,#78716c);display:flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>';
     h+='<div style="font-size:13px;font-weight:800;color:var(--foreground,#292524)">'+JM[jm-1]+' '+toFa(String(jy))+'</div>';
-    h+='<button data-nav="-1" title="ماه قبل" style="padding:4px 8px;border-radius:8px;color:var(--muted-foreground,#78716c)">›</button></div>';
+    h+='<button data-nav="1" title="ماه بعد" aria-label="ماه بعد" style="padding:4px 8px;border-radius:8px;color:var(--muted-foreground,#78716c);display:flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button></div>';
     h+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px">';
     for(var w=0;w<7;w++) h+='<div style="text-align:center;font-size:10px;font-weight:600;color:'+(w===6?'#e11d48':'var(--muted-foreground,#a8a29e)')+'">'+JW[w]+'</div>';
     h+='</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
@@ -109,7 +132,7 @@ document.addEventListener('keydown', function (e) {
     }
     h+='</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#e7e5e4)">';
     h+='<button data-today="1" style="padding:4px 10px;border-radius:8px;font-size:11px;font-weight:800;color:#0e7a49">امروز</button>';
-    h+='<span style="font-size:9.5px;color:var(--muted-foreground,#a8a29e)">'+toFa(t[0]+'/'+t[1]+'/'+t[2])+'</span></div>';
+    h+='<span style="font-size:9.5px;color:var(--muted-foreground,#a8a29e)">'+toFa(t[0]+'/'+pad2(t[1])+'/'+pad2(t[2]))+'</span></div>';
     panel.innerHTML=h;
     panel.querySelectorAll('[data-nav]').forEach(function(b){
       b.addEventListener('click',function(){ var n=+b.getAttribute('data-nav'); var jm2=curView[1]+n, jy2=curView[0];
@@ -194,7 +217,16 @@ document.addEventListener('keydown', function (e) {
       clone.addEventListener('click',function(ev){
         ev.preventDefault(); ev.stopPropagation();
         try{ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); }catch(e){}
-        setTimeout(function(){ if(location.hash!=='#/home/account') location.hash='#/home/account'; },120);
+        /* پیمایش فوری + بازتأیید در ۶۰/۳۰۰/۶۰۰/۹۰۰ms — اگر بستن منو یا پردازش
+           همراه، هش را برگرداند، دوباره ست می‌کنیم (سازگار با دستگاه‌های کند) */
+        var delays=[0,60,300,600,900];
+        for(var di=0;di<delays.length;di++){
+          (function(ms){
+            setTimeout(function(){
+              try{ if(location.hash!=='#/home/account') location.hash='#/home/account'; }catch(e){}
+            },ms);
+          })(delays[di]);
+        }
       });
       anchor.parentNode.insertBefore(clone,anchor);
     }catch(e){}
@@ -220,5 +252,95 @@ document.addEventListener('keydown', function (e) {
     }
   });
   mo.observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script><script data-hz-ux="hide-account-nav">
+/* ── «حساب و شخصی‌سازی من» در زیرمنوی خانه پنهان است (R5-P5) ──
+   صفحهٔ home/account باید از مسیریابیHash قابل دسترس باشد (منوی کاربر ←
+   «پروفایل من»)؛ برای همین در فهرست pages خانه ثبت شده اما دکمهٔ آن در
+   نوار کناری نمایش داده نمی‌شود — دسترسی فقط از منوی کاربر و جستجوی سامانه. */
+(function(){
+  var TITLE='حساب و شخصی‌سازی من';
+  function hide(root){
+    try{
+      var scope=root&&root.querySelectorAll?root:document;
+      var btns=scope.querySelectorAll('.workspace-sidebar nav>button, aside nav>button, nav button');
+      for(var i=0;i<btns.length;i++){
+        var b=btns[i];
+        if(b.getAttribute('data-hz-hidden-nav'))continue;
+        if((b.textContent||'').replace(/\s+/g,' ').trim()===TITLE){
+          b.setAttribute('data-hz-hidden-nav','1');
+          b.style.display='none';
+          b.setAttribute('aria-hidden','true');
+          b.setAttribute('tabindex','-1');
+        }
+      }
+    }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',function(){hide(document)});
+  var mo=new MutationObserver(function(muts){
+    for(var i=0;i<muts.length;i++){
+      var m=muts[i];
+      for(var j=0;j<m.addedNodes.length;j++){
+        var n=m.addedNodes[j];
+        if(n.nodeType!==1)continue;
+        if((n.tagName==='BUTTON'||n.querySelector)&&((n.textContent||'').indexOf(TITLE)>-1))hide(n.parentNode||document);
+      }
+    }
+  });
+  mo.observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script><script data-hz-ux="nav-system">
+/* ── R7: سامانهٔ منو — دکمهٔ جمع‌کردن منو (دسکتاپ) + باز شدن کشوی زیرمنو با لمس بخشِ فعال (موبایل)
+   + هدایت hr/personnel قدیمی به پرونده پرسنل جدید ── */
+(function(){
+  'use strict';
+  /* ۱) بازگرداندن حالت جمع‌شده پیش از رندر (بدون فلش منوی باز) */
+  try{ if(localStorage.getItem('hz-nav-compact')==='1') document.documentElement.classList.add('hz-nav-compact'); }catch(e){}
+
+  var SVG_COLLAPSE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+  var SVG_EXPAND='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+  function updateToggle(){
+    var b=document.getElementById('hz-nav-toggle'); if(!b)return;
+    var compact=document.documentElement.classList.contains('hz-nav-compact');
+    b.innerHTML=compact?SVG_EXPAND:SVG_COLLAPSE;
+    b.title=compact?'باز کردن منو':'جمع کردن منو';
+    b.setAttribute('aria-label',b.title);
+    b.setAttribute('aria-expanded',compact?'false':'true');
+  }
+  function ensureToggle(){
+    if(document.getElementById('hz-nav-toggle')||!document.body)return;
+    var b=document.createElement('button');
+    b.id='hz-nav-toggle';b.type='button';
+    b.addEventListener('click',function(){
+      var on=document.documentElement.classList.toggle('hz-nav-compact');
+      try{localStorage.setItem('hz-nav-compact',on?'1':'0')}catch(e){}
+      updateToggle();
+    });
+    document.body.appendChild(b);
+    updateToggle();
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',ensureToggle)}else{ensureToggle()}
+  var moT=new MutationObserver(function(){ensureToggle()});
+  moT.observe(document.documentElement,{childList:true,subtree:true});
+
+  /* ۲) موبایل: لمس بخشِ فعال در تب‌بار، کشوی زیرمنو (همبرگر) را باز می‌کند */
+  document.addEventListener('click',function(e){
+    try{
+      if(window.innerWidth>=768)return;
+      var t=e.target;
+      var btn=t&&t.closest?t.closest('.workspace-rail>button'):null;
+      if(!btn||btn.getAttribute('aria-current')!=='page')return;
+      var burger=document.querySelector('header button[aria-label="منو"]');
+      if(burger){e.preventDefault();e.stopPropagation();burger.click();}
+    }catch(err){}
+  },true);
+
+  /* ۳) نشانی‌های قدیمی hr/personnel → پرونده پرسنل (hrdocs) */
+  function fixHash(){
+    var h=location.hash||'';
+    if(h==='#/hr/personnel'||h==='#/hr/personnel/'){try{location.replace('#/hr/hrdocs')}catch(e){location.hash='#/hr/hrdocs'}}
+  }
+  window.addEventListener('hashchange',fixHash);
+  fixHash();
 })();
 </script><script src="/_next/static/chunks/a6dad97d9634a72d.js" noModule=""></script></head><body class="antialiased bg-background text-foreground min-h-screen"><div hidden=""><!--$--><!--/$--></div><div class="min-h-screen flex items-center justify-center"><div class="text-center"><div class="w-14 h-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center text-2xl mx-auto mb-3 animate-pulse">🫒</div><p class="text-sm text-muted-foreground">در حال بارگذاری سامانه…</p></div></div><!--$--><!--/$--><section aria-label="Notifications alt+T" tabindex="-1" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></section><script src="/_next/static/chunks/f6da3433981b0125.js" id="_R_" async=""></script><script>(self.__next_f=self.__next_f||[]).push([0])</script><script>self.__next_f.push([1,"1:\"$Sreact.fragment\"\n2:I[339756,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"default\"]\n3:I[837457,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"default\"]\n4:I[713354,[\"/_next/static/chunks/5105b1fa99b48db0.js\"],\"Toaster\"]\n5:I[573254,[\"/_next/static/chunks/5105b1fa99b48db0.js\",\"/_next/static/chunks/2fb9e5ced3d1b0e6.js\",\"/_next/static/chunks/f58febe0f4682bee.js\",\"/_next/static/chunks/c68fd1f39a67d827.js\"],\"AppShell\"]\n6:I[897367,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"OutletBoundary\"]\n7:\"$Sreact.suspense\"\n9:I[897367,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"ViewportBoundary\"]\nb:I[897367,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"MetadataBoundary\"]\nd:I[168027,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"default\"]\n:HL[\"/_next/static/chunks/b8c5081c57c11dd3.css\",\"style\"]\n"])</script><script>self.__next_f.push([1,"0:{\"P\":null,\"b\":\"beAIsjrl1RIepLOuaIq-W\",\"c\":[\"\",\"\"],\"q\":\"\",\"i\":false,\"f\":[[[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true],[[\"$\",\"$1\",\"c\",{\"children\":[[[\"$\",\"link\",\"0\",{\"rel\":\"stylesheet\",\"href\":\"/_next/static/chunks/b8c5081c57c11dd3.css\",\"precedence\":\"next\",\"crossOrigin\":\"$undefined\",\"nonce\":\"$undefined\"}],[\"$\",\"script\",\"script-0\",{\"src\":\"/_next/static/chunks/5105b1fa99b48db0.js\",\"async\":true,\"nonce\":\"$undefined\"}]],[\"$\",\"html\",null,{\"lang\":\"fa\",\"dir\":\"rtl\",\"suppressHydrationWarning\":true,\"children\":[[\"$\",\"head\",null,{\"children\":[\"$\",\"script\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"\\n(function () {\\n  try {\\n    var t = localStorage.getItem('hz-theme');\\n    if (!t) t = 'light';\\n    if (t === 'dark' || (t === 'system' \u0026\u0026 window.matchMedia('(prefers-color-scheme: dark)').matches)) {\\n      document.documentElement.classList.add('dark');\\n    }\\n  } catch (e) {}\\n})();\\n\"}}]}],[\"$\",\"body\",null,{\"className\":\"antialiased bg-background text-foreground min-h-screen\",\"children\":[[\"$\",\"$L2\",null,{\"parallelRouterKey\":\"children\",\"error\":\"$undefined\",\"errorStyles\":\"$undefined\",\"errorScripts\":\"$undefined\",\"template\":[\"$\",\"$L3\",null,{}],\"templateStyles\":\"$undefined\",\"templateScripts\":\"$undefined\",\"notFound\":[[[\"$\",\"title\",null,{\"children\":\"404: This page could not be found.\"}],[\"$\",\"div\",null,{\"style\":{\"fontFamily\":\"system-ui,\\\"Segoe UI\\\",Roboto,Helvetica,Arial,sans-serif,\\\"Apple Color Emoji\\\",\\\"Segoe UI Emoji\\\"\",\"height\":\"100vh\",\"textAlign\":\"center\",\"display\":\"flex\",\"flexDirection\":\"column\",\"alignItems\":\"center\",\"justifyContent\":\"center\"},\"children\":[\"$\",\"div\",null,{\"children\":[[\"$\",\"style\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}\"}}],[\"$\",\"h1\",null,{\"className\":\"next-error-h1\",\"style\":{\"display\":\"inline-block\",\"margin\":\"0 20px 0 0\",\"padding\":\"0 23px 0 0\",\"fontSize\":24,\"fontWeight\":500,\"verticalAlign\":\"top\",\"lineHeight\":\"49px\"},\"children\":404}],[\"$\",\"div\",null,{\"style\":{\"display\":\"inline-block\"},\"children\":[\"$\",\"h2\",null,{\"style\":{\"fontSize\":14,\"fontWeight\":400,\"lineHeight\":\"49px\",\"margin\":0},\"children\":\"This page could not be found.\"}]}]]}]}]],[]],\"forbidden\":\"$undefined\",\"unauthorized\":\"$undefined\"}],[\"$\",\"$L4\",null,{\"position\":\"bottom-center\",\"richColors\":true,\"closeButton\":true,\"dir\":\"rtl\"}]]}]]}]]}],{\"children\":[[\"$\",\"$1\",\"c\",{\"children\":[[\"$\",\"$L5\",null,{}],[[\"$\",\"script\",\"script-0\",{\"src\":\"/_next/static/chunks/2fb9e5ced3d1b0e6.js\",\"async\":true,\"nonce\":\"$undefined\"}],[\"$\",\"script\",\"script-1\",{\"src\":\"/_next/static/chunks/f58febe0f4682bee.js\",\"async\":true,\"nonce\":\"$undefined\"}],[\"$\",\"script\",\"script-2\",{\"src\":\"/_next/static/chunks/c68fd1f39a67d827.js\",\"async\":true,\"nonce\":\"$undefined\"}]],[\"$\",\"$L6\",null,{\"children\":[\"$\",\"$7\",null,{\"name\":\"Next.MetadataOutlet\",\"children\":\"$@8\"}]}]]}],{},null,false,false]},null,false,false],[\"$\",\"$1\",\"h\",{\"children\":[null,[\"$\",\"$L9\",null,{\"children\":\"$La\"}],[\"$\",\"div\",null,{\"hidden\":true,\"children\":[\"$\",\"$Lb\",null,{\"children\":[\"$\",\"$7\",null,{\"name\":\"Next.Metadata\",\"children\":\"$Lc\"}]}]}],null]}],false]],\"m\":\"$undefined\",\"G\":[\"$d\",[]],\"S\":true}\n"])</script><script>self.__next_f.push([1,"a:[[\"$\",\"meta\",\"0\",{\"charSet\":\"utf-8\"}],[\"$\",\"meta\",\"1\",{\"name\":\"viewport\",\"content\":\"width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover\"}],[\"$\",\"meta\",\"2\",{\"name\":\"theme-color\",\"media\":\"(prefers-color-scheme: light)\",\"content\":\"#f7f4ea\"}],[\"$\",\"meta\",\"3\",{\"name\":\"theme-color\",\"media\":\"(prefers-color-scheme: dark)\",\"content\":\"#1a2019\"}]]\n"])</script><script>self.__next_f.push([1,"e:I[27201,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"IconMark\"]\n8:null\nc:[[\"$\",\"title\",\"0\",{\"children\":\"سر رسید | سامانه یکپارچه مدیریت هایپر زیتون\"}],[\"$\",\"meta\",\"1\",{\"name\":\"description\",\"content\":\"سامانه یکپارچه مدیریت هایپر زیتون — انبار و سفارش، مرجوعی، سودسنج، مالی و چک، چیدمان فروشگاه، کارکنان و چک‌لیست‌های استاندارد\"}],[\"$\",\"meta\",\"2\",{\"name\":\"application-name\",\"content\":\"سر رسید\"}],[\"$\",\"link\",\"3\",{\"rel\":\"manifest\",\"href\":\"/manifest.webmanifest\",\"crossOrigin\":\"$undefined\"}],[\"$\",\"meta\",\"4\",{\"name\":\"format-detection\",\"content\":\"telephone=no\"}],[\"$\",\"meta\",\"5\",{\"name\":\"mobile-web-app-capable\",\"content\":\"yes\"}],[\"$\",\"meta\",\"6\",{\"name\":\"apple-mobile-web-app-title\",\"content\":\"سر رسید\"}],[\"$\",\"meta\",\"7\",{\"name\":\"apple-mobile-web-app-status-bar-style\",\"content\":\"default\"}],[\"$\",\"link\",\"8\",{\"rel\":\"icon\",\"href\":\"/brand/icon-192.png\",\"type\":\"image/png\",\"sizes\":\"192x192\"}],[\"$\",\"link\",\"9\",{\"rel\":\"apple-touch-icon\",\"href\":\"/brand/apple-touch-icon.png\",\"sizes\":\"180x180\"}],[\"$\",\"$Le\",\"10\",{}]]\n"])</script></body></html>

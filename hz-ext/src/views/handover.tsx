@@ -5,16 +5,16 @@ import {
   Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Tabs, TabsContent, TabsList, TabsTrigger, Checkbox,
   Dialog, DialogContent, DialogHeader, DialogTitle,
-  JalaliDate, jsDateToJalali,
+  JalaliDate, jsDateToJalali, TimeInput, faSlash,
   money, toman, fa,
-  parseJalali, toEnDigits, toFaDigits, todayJalali, formatJalaliLong,
+  parseJalali, toEnDigits, toFaDigits, todayJalali,
   Icon, I,
 } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
    tasks/reports — گزارش تحویل شیفت (بازطراحی ساختاریافته R1)
    ۱) فرم ۶ بخشی SBAR/I-PASS بومی: صندوق → دریافت‌ها → پرسنل →
-      مشکلات واگذارشده (با اقدام شرطی اگر/آنگاه) → کارهای شیفت بعد
+      مشکلات واگذار‌شده (با اقدام شرطی اگر/آنگاه) → کارهای شیفت بعد
       (مسئول + ساعت هدف صریح — بدون کار یتیم) → یادداشت آزاد
    ۲) اختلاف صندوق زنده: تطابق / کهربایی ≤۵۰٬۰۰۰ / سرخ >۵۰٬۰۰۰
       + توضیح الزامی برای اختلاف بزرگ
@@ -58,9 +58,11 @@ const LEGACY_KEYS: { key: string; label: string }[] = [
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n))
 
-function longFa(dash: string): string {
-  const d = parseJalali(String(dash || ''))
-  return d ? toFaDigits(formatJalaliLong(d)) : toFaDigits(String(dash || '—'))
+/** تاریخ جلالی → «۱۴۰۵/۰۷/۲۸» (ارقام فارسی + ممیز — هرگز خط تیره) */
+function dateFa(dash: string): string {
+  const v = String(dash || '')
+  if (!v) return '—'
+  return parseJalali(v) ? faSlash(v) : toFaDigits(v)
 }
 
 /** ISO → «۰۵:۴۱» فارسی */
@@ -75,7 +77,7 @@ function dateTimeFa(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${toFaDigits(jsDateToJalali(d))} · ساعت ${clockFa(iso)}`
+  return `${faSlash(jsDateToJalali(d))} · ساعت ${clockFa(iso)}`
 }
 
 function shiftFa(s: string): string {
@@ -123,18 +125,6 @@ function MoneyInput({ value, onChange, placeholder }: { value: string; onChange:
   )
 }
 
-/** ورودی ساعت HH:MM */
-function TimeInput({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
-  return (
-    <Input
-      dir="ltr" inputMode="numeric" placeholder="۱۸:۳۰" maxLength={5}
-      className={cn('num text-center', className)}
-      value={value ? toFaDigits(value) : ''}
-      onChange={(e: any) => onChange(toEnDigits(String(e.target.value)).replace(/[^\d:]/g, '').slice(0, 5))}
-    />
-  )
-}
-
 /** بخش شماره‌دار فرم */
 function SectionCard({ n, title, icon, children, note }: { n: number; title: string; icon: string; children: any; note?: string }) {
   return (
@@ -164,12 +154,12 @@ function DiffBadge({ diff }: { diff: number }) {
   return <Badge variant="outline" className={cn('text-[11px]', cls)}>{label}</Badge>
 }
 
-/** ردیف «برچسب: مقدار» در نمایش فقط‌خواندنی */
+/** ردیف «برچسب: مقدار» در نمایش فقط‌خواندنی — مقدار از راست (جهت طبیعی متن فارسی) */
 function KV({ label, children }: { label: string; children: any }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-dashed py-1.5">
       <span className="shrink-0 text-xs text-stone-500">{label}</span>
-      <span className="min-w-0 break-words text-left text-xs font-bold text-stone-700">{children}</span>
+      <span className="min-w-0 break-words text-xs font-bold text-stone-700">{children}</span>
     </div>
   )
 }
@@ -214,7 +204,7 @@ function ReportView({ report, roster }: { report: any; roster: any[] }) {
           {report?.user?.honorific ? `${report.user.honorific} ` : ''}{report?.user?.fullName || '—'}
         </span>
         <span className="text-[11px] text-stone-500">
-          {longFa(report?.date || '')} · شیفت {shiftFa(report?.shift || '')} · ثبت: {dateTimeFa(report?.createdAt)}
+          {dateFa(report?.date || '')} · شیفت {shiftFa(report?.shift || '')} · ثبت: {dateTimeFa(report?.createdAt)}
         </span>
         {report?.acknowledged ? (
           <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-[10px] text-emerald-700">
@@ -270,11 +260,11 @@ function ReportView({ report, roster }: { report: any; roster: any[] }) {
             </Card>
           )}
 
-          {/* ۴. مشکلات واگذارشده */}
+          {/* ۴. مشکلات واگذار‌شده */}
           {(carried.length > 0 || carriedIds.length > 0) && (
             <Card>
               <CardContent className="p-3">
-                <h4 className="mb-1 text-xs font-bold text-stone-700">۴. مشکلات واگذارشده به شیفت بعد</h4>
+                <h4 className="mb-1 text-xs font-bold text-stone-700">۴. مشکلات واگذار‌شده به شیفت بعد</h4>
                 {carried.length > 0 ? carried.map((p: any, i: number) => (
                   <div key={i} className="border-b border-dashed py-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -283,7 +273,7 @@ function ReportView({ report, roster }: { report: any; roster: any[] }) {
                     </div>
                     {p.action ? <p className="mt-1 text-[11px] text-stone-600">اقدام لازم: <span className="font-medium">{p.action}</span></p> : null}
                   </div>
-                )) : <KV label="تعداد مشکلات واگذارشده">{fa(carriedIds.length)}</KV>}
+                )) : <KV label="تعداد مشکلات واگذار‌شده">{fa(carriedIds.length)}</KV>}
               </CardContent>
             </Card>
           )}
@@ -448,7 +438,7 @@ export default function HandoverView() {
     }
     const carriedIds = Object.keys(carried)
     for (const id of carriedIds) {
-      if (!carried[id].trim()) return toast.error('برای هر مشکل واگذارشده، «اقدام لازم» (اگر/آنگاه) را بنویسید')
+      if (!carried[id].trim()) return toast.error('برای هر مشکل واگذار‌شده، «اقدام لازم» (اگر/آنگاه) را بنویسید')
     }
     const taskRows = tasks.filter((r) => r.text.trim() || r.assigneeId || r.targetTime)
     for (const r of taskRows) {
@@ -548,7 +538,7 @@ export default function HandoverView() {
         </CardContent>
       </Card>
 
-      <Tabs value={tab} onValueChange={(v: string) => setTab(v)}>
+      <Tabs value={tab} onValueChange={(v: string) => setTab(v)} dir="rtl">
         <TabsList>
           <TabsTrigger value="today">گزارش امروز</TabsTrigger>
           <TabsTrigger value="prev">شیفت قبل</TabsTrigger>
@@ -674,10 +664,10 @@ export default function HandoverView() {
                   </Button>
                 </SectionCard>
 
-                {/* ۴. مشکلات واگذارشده */}
-                <SectionCard n={4} title="مشکلات واگذارشده به شیفت بعد" icon="alertTriangle" note="با علامت‌زدن، مشکل به تحویل شیفت بعد پیوست می‌شود">
+                {/* ۴. مشکلات واگذار‌شده */}
+                <SectionCard n={4} title="مشکلات واگذار‌شده به شیفت بعد" icon="alertTriangle" note="با علامت‌زدن، مشکل به تحویل شیفت بعد پیوست می‌شود">
                   {openProblems.length === 0 ? (
-                    <p className="rounded-lg bg-emerald-50 p-2 text-center text-xs text-emerald-700">مشکل بازی برای واگذاری وجود ندارد ✓</p>
+                    <p className="rounded-lg bg-emerald-50 p-2 text-center text-xs text-emerald-700">مشکلی برای واگذاری به شیفت بعد وجود ندارد ✓</p>
                   ) : (
                     <div className="space-y-2">
                       {openProblems.map((p: any) => {
@@ -802,7 +792,7 @@ export default function HandoverView() {
                       <I.barChart size={15} className="text-emerald-600" />
                       شاخص‌های زندهٔ فروشگاه
                     </CardTitle>
-                    <p className="text-[10px] text-stone-400">خودکار از سامانه — بدون ثبت دستی · تاریخ {longFa(date)}</p>
+                    <p className="text-[10px] text-stone-400">خودکار از سامانه — بدون ثبت دستی · تاریخ {dateFa(date)}</p>
                   </CardHeader>
                   <CardContent className="space-y-1.5">
                     {METRICS.map((m) => {
@@ -875,7 +865,7 @@ export default function HandoverView() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-amber-800">دریافت این گزارش تأیید نشده است</p>
                       <p className="text-xs text-amber-700">
-                        گزارش {longFa(previous.date)} (شیفت {shiftFa(previous.shift)}) را مطالعه کنید و دریافت آن را تأیید کنید — تأیید دریافت یعنی read-back الکترونیکی محتوای تحویل.
+                        گزارش {dateFa(previous.date)} (شیفت {shiftFa(previous.shift)}) را مطالعه کنید و دریافت آن را تأیید کنید — تأیید دریافت یعنی read-back الکترونیکی محتوای تحویل.
                       </p>
                     </div>
                     <Button onClick={() => ack(previous.id)} disabled={acking}>
@@ -920,7 +910,7 @@ export default function HandoverView() {
                       >
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-500"><I.handshake size={14} /></span>
                         <span className="min-w-0">
-                          <span className="block text-xs font-bold text-stone-700">{longFa(h.date)} · شیفت {shiftFa(h.shift)}</span>
+                          <span className="block text-xs font-bold text-stone-700">{dateFa(h.date)} · شیفت {shiftFa(h.shift)}</span>
                           <span className="block text-[10px] text-stone-500">{h.user?.fullName || '—'} · ثبت {clockFa(h.createdAt)}</span>
                         </span>
                         <span className="mr-auto flex flex-wrap items-center gap-1.5">
@@ -947,7 +937,7 @@ export default function HandoverView() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-sm">
               <I.handshake size={16} className="text-emerald-600" />
-              گزارش تحویل شیفت — {viewing ? `${longFa(viewing.date)} · شیفت ${shiftFa(viewing.shift)}` : ''}
+              گزارش تحویل شیفت — {viewing ? `${dateFa(viewing.date)} · شیفت ${shiftFa(viewing.shift)}` : ''}
             </DialogTitle>
           </DialogHeader>
           {viewing ? <ReportView report={viewing} roster={roster} /> : null}

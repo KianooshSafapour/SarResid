@@ -1,5 +1,13 @@
 # SarResid (سر رسید) — Unified Hyper Zeytoon Platform — RESTORE REBUILD
 
+> ## 🚫 CURRENT DEPLOYMENT RULE (R6, 2026-10-23 — HIGHEST PRIORITY, READ FIRST)
+> **NO code may be pushed to the demo server (195.248.241.14 / https://sarresid.hyperzeytoon.com) until the
+> user (Kianoosh Safapour) EXPLICITLY approves it in writing.** All fixes this round (R6) are verified locally
+> in this sandbox only. The prepared-but-NOT-run deployment artifacts live in `deploy/` (make-package-r6.sh →
+> sarresid-r6-*.tar.gz + deploy-r6.sh). Deployment is CODE-ONLY — the local `db/custom.db` must NEVER be
+> pushed (it contains R6 QA test rows: return HZ-050801-0001, margin invoice #1, floorplan block «گوندولا 7»).
+> Any future deploy must: rsync package → run deploy-r6.sh as root → health checks → verify live.
+
 ## CRITICAL CONTEXT (read first)
 The platform's source was lost (workspace wiped). The LATEST deployed version runs at https://nootyezrepyh.space-z.ai (v0.2 production build).
 **RESTORE STRATEGY**: The live build's frontend chunks (48 JS + CSS, all static assets) are served EXACTLY as-is from `public/_next/static/chunks/` — pixel-perfect identical UI. Only the BACKEND API must be rebuilt from scratch to match the live API contract.
@@ -560,7 +568,7 @@ Agent: general-purpose (frontend hz-ext — team review + performance views)
 
 Work Log:
 - Read SPEC-R3 (§0-7/§3 F3), SPEC-AGENT, worklog (R1/B1/B3/B2 last sections) + live routes (staff-checks, performance) to confirm B3 contracts: POST rows `{staffId, arrival, lateMinutes, hourlyLeaveMinutes, overtimeMinutes, hadPermission, uniform, hygiene, behavior, workQuality, note?}` with `present` DERIVED server-side; GET returns new minute fields; /api/performance composites are 0-100 round1 + grade A-D.
-- **attendance.tsx** (tasks/attendance): (1) REMOVED the «حضور» checkbox column entirely (header + cell + `present` in row state/payload); row opacity now driven by `r.arrival==='absent'`. (2) «تأخیر» single input → TWO mini inputs ساعت w-14 + دقیق w-14 (Persian digits, dir ltr, `num` class, 2-digit cap) enabled only when arrival==='late' — new in-file `MiniNum` + `HMCell(name,h,m,onH,onM,disabled)` components laid out dir=ltr so the pair mirrors «۱:۳۵». (3) NEW «مرخصی ساعتی» column (same pair, enabled when arrival==='permitted_leave' OR any value present → editable/clearable). (4) NEW «اضافه‌کاری» column (always enabled). Helpers `splitHm(total)` (0 → empty inputs) + `joinHm(h,m)`; load() splits lateMinutes AND reads hourlyLeaveMinutes/overtimeMinutes; save() maps joinHm → the three API minute fields, `present` dropped. Per-row summary line under staff name (text-[10px] text-stone-400) via `minutesToHM`: «تأخیر ۱:۱۵ · مرخصی ۰:۳۰ · اضافه‌کاری ۲:۰۰» — only non-zero parts. Headers: «تأخیر (ساعت:دقیقه)» «مرخصی ساعتی» «اضافه‌کاری»; table min-w 1080→1200; all other columns (ورود/اجازه مدیر/لباس/بهداشت/برخورد/کیفیت/یادداشت) untouched.
+- **attendance.tsx** (tasks/attendance): (1) REMOVED the «حضور» checkbox column entirely (header + cell + `present` in row state/payload); row opacity now driven by `r.arrival==='absent'`. (2) «تأخیر» single input → TWO mini inputs ساعت w-14 + دقیق w-14 (Persian digits, dir ltr, `num` class, 2-digit cap) enabled only when arrival==='late' — new in-file `MiniNum` + `HMCell(name,h,m,onH,onM,disabled)` components laid out dir=ltr so the pair mirrors «۱:۳۵». (3) NEW «مرخصی ساعتی» column (same pair, enabled when arrival==='permitted_leave' OR any value present → editable/clearable). (4) NEW «اضافه‌کاری» column (always enabled). Helpers `splitHm(total)` (0 → empty inputs) + `joinHm(h,m)`; load() splits lateMinutes AND reads hourlyLeaveMinutes/overtimeMinutes; save() maps joinHm → the three API minute fields, `present` dropped. Per-row summary line under staff name (text-[10px] text-stone-400) via `minutesToHM`: «تأخیر ۱:۱۵ · مرخصی ۰:۳۰ · اضافه‌کاری ۲:۰۰» — only non-zero parts. Headers: «تأخیر (ساعت:دقیق)» «مرخصی ساعتی» «اضافه‌کاری»; table min-w 1080→1200; all other columns (ورود/اجازه مدیر/لباس/بهداشت/برخورد/کیفیت/یادداشت) untouched.
 - **performance.tsx** (hr/performance): (1) breakdown bars now labeled «{x} از ۱۰۰» (new `faScore`: integer plain, fractional 1 decimal with Persian ٫ separator; width w-8→w-20) and the composite big number uses `faScore1` = ALWAYS one decimal per R1. (2) Grade presentation switched to Persian band letters الف/ب/ج/د (`GRADE_FA` map over API A-D) in staff-card chips + the «معیار افزایش حقوق و پاداش» block (kept, letters localized). (3) Manager-review tab: sliders stay 1-5 (Likert inputs per R1 — no false precision) but each indicator now shows a teal chip «{score×20} از ۱۰۰» beside the value, and a mini-BARS anchor row under the slider: ۱=بسیار ضعیف · ۲=ضعیف · ۳=قابل قبول · ۴=خوب · ۵=عالی (current anchor bold-teal highlighted; RTL order matches slider min-right). (4) NEW research-note Card «چرا این مقیاس؟» at the bottom of the main (staff) tab: 4 Persian lines (system criteria auto-computed from 100; human criteria 1-5 recorded → displayed «از ۱۰۰» for evaluator precision + easy comparison; weighted composite 35/25/15/10/10/5; absolute rating, no forced distribution) + grade legend chips «الف (A) ≥ ۹۰ پاداش · ب (B) ≥ ۸۰ در نظر گرفته شود · ج (C) ≥ ۷۰ آموزش · د (D) < ۷۰ هشدار».
 - VERIFY: `bunx tsx hz-ext/check.mjs attendance` → exit 0 ✓; `bunx tsx hz-ext/check.mjs performance` → exit 0 ✓; full `check.mjs` (all 18 views) still ALL OK; no direct react/lucide imports (all from '../lib/hz' incl. new minutesToHM + I.bookOpen); eslint ignores hz-ext by design (view verifier is check.mjs). Did NOT run build.mjs; touched ONLY the two owned files.
 
@@ -643,7 +651,7 @@ Task ID: F6
 Agent: Z.ai Code — general-purpose sub agent (knowledge center + tours)
 
 Work Log:
-- Built hz-ext/src/views/guide.tsx (1322 lines, replaces home/guide): 2 tabs — «مقالات» (search + category chips + article cards grid + article dialog + manager CRUD via /api/kb) and «تورهای تعاملی» (11 tour cards: خوش‌آمدگویی + 10 per-section tours, each launching TourEngine from shared lib with go-navigation + centered explanation steps)
+- Built hz-ext/src/views/guide.tsx (1322 lines, replaces home/guide): 2 tabs — «مقالات» (search + category chips + article cards grid + article dialog + manager CRUD via /api/kb) and «تورهای تعاملی» (11 tour cards: خوش‌آمدگینی + 10 per-section tours, each launching TourEngine from shared lib with go-navigation + centered explanation steps)
 - Welcome tour reset: POST /api/me/tour {reset:true} → start TourEngine → mark done after
 - Compile: bunx tsx hz-ext/check.mjs guide → OK (agent hit context deadline before final report; coordinator verified)
 
@@ -952,3 +960,353 @@ Work Log:
 
 Stage Summary:
 - Round 4 fully deployed and live-verified on the demo server; LE SSL confirmed working
+
+---
+Task ID: R5-P3
+Agent: sub agent R5-P3 (profit margin)
+
+Task:
+- Verify + complete the dead session's R5-B rework of profit.tsx (سودسنج) + /api/margin/** against the 8 owner requirements (free-100 products, retail-price correction with live 4-decimal %, editable list rows, purchase-cost history warnings, «ثبت تحویل و خرید» → Order + stock + Holoo Apex, manager-definable thresholds, provider-doc invoice number, RTL/Persian polish), fix gaps, rebuild chunk, live-verify on :3000, cleanup test rows.
+
+Work Log:
+- Mapped existing work: profit.tsx (1659 lines, R5-B rework) + 8 margin API routes + prisma MarginItem(salePrice/marginPct/free100/baseCost Float quantity)/MarginInvoice(providerDocNumber/purchaseOrderId) — schema already pushed to db/custom.db; check.mjs profit ✓ baseline.
+- GAPS FOUND & FIXED (all in owned files only):
+  1) profit.tsx COST_CHANGE_WARN 0.5→0.2 (owner: warning at ±۲۰٪ بهای خرید، نه ۵۰٪).
+  2) fmtQuick now emits Persian ٬ thousands separator (owner example «۲۰۵٬۰۰۰»); cost-change texts match the owner's exact sentence «بهای خرید نسبت به دفعه قبل افزایش جدی داشته — بهای قبلی هر واحد ۲۰۵٬۰۰۰ ریال بود و الان ۶۵۰٬۰۰۰ ریال است (+۲۱۷٪). اگر این تغییر عمدی نیست، جمع مبلغ خرید را بررسی کنید.» in BOTH the entry-form alert card and the row icon tooltip; + «بازگشت به بهای قبلی» one-click fix via new Alert.suggestionField ('sale'|'totalCost') — applySuggestion now patches جمع خرید for cost fixes, not قیمت فروش.
+  3) Warning icon + tooltip added next to «جمع بهای خرید» label in the entry form (fires on liveCostDev regardless of price entry).
+  4) Enter-chain fixed in free100 mode: مبنا Enter → درصد سود (was → dead printed-price ref); normal chain preserved barcode→qty→cost→printed→add→barcode.
+  5) History-by-name: /api/margin/history now accepts ?name= (exact then contains product match); name-field Enter fires background lookup → auto-links productId/unit + history chips (req#4 «by barcode/name»).
+  6) purchase/route.ts: product sellPrice now updated alongside stock/lastBuyPrice (req#5b: «updates product stock/lastBuyPrice/sellPrice» — retail = salePrice||چاپی).
+  7) purchase/route.ts: server-side Holoo Apex attempt when body.pushToHoloo — reuses the existing /api/holoo/sync integration via same-origin internal fetch (cookie forwarded, no logic duplication); on failure/unavailable writes HolooSyncLog PUSH_ORDER FAIL {pending:true} and returns holoo:{pending} — order stays holooErp=null in the holoo view's bulk-push queue (req#5c fallback «log to HolooSyncLog and mark pending»); profit.tsx submitPurchase now passes pushToHoloo + renders pushed/pending/failed toasts (removed the old client-side second call).
+  8) Row free100-toggle bug: مبنا fell back to lastBuyPrice because uc was computed post-patch — now uses pre-toggle unit cost (800000/4→مبنا ۲۰۰٬۰۰۰ verified live).
+- BUILD: check.mjs profit ✓ ×3 · tsc --noEmit → 0 margin/profit errors · flock build → hzext-a0d1532e.js (27 views, loader+registry patched).
+- LIVE VERIFIED on :3000 (kianoosh PIN ۱۲۳۴, session p3, screenshots /tmp/r5p3-01..05.png):
+  * Scan 6261149041772 → product fills, focus→qty (EMPTY, placeholder تعداد), Enter chain qty→جمع خرید→قیمت چاپی→افزودن→barcode ✓.
+  * Cost-warning: qty 1 + جمع خرید ۶۵۰٬۰۰۰ (prev 205000) → label ⚠ icon + alert card with the exact owner sentence (+۲۱۷٪) + fix chip; row shows amber ⚠ with same tooltip; price-jump info (چاپی ۸۵۰٬۰۰۰ vs 250000 → +۲۴۰٪) also fires.
+  * Live 4-decimal %: row salePrice edited 850000→811963 → ٪ cell + badge live «۲۴٫۹۱۷۴٪» (owner example 24.9173-style) ✓; row qty 3→6 edit → فی واحد/pct/سود کل recompute; row remove ✓; row free-toggle → مبنا/رایگان/ندارد columns ✓ (both directions).
+  * Free-product flow: toggle → مبنا auto-filled ۲۰۵٬۰۰۰ from history, pct ۲۵ → derived sale ۲۵۶٬۲۵۰ (base×1.25), مؤثر ۲۵٫۰۰۰۰٪, row «رایگان (تخفیف ۱۰۰٪)», totalCost 0 ✓.
+  * Name-only entry (no barcode): typed name + Enter → history chips (آخرین خرید ۶۵۰٬۰۰۰ · آخرین قیمت چاپی ۸۵۰٬۰۰۰) via new ?name= path; «سابقهٔ کامل قیمت» dialog renders 6 rows (سودسنج + سفارش خرید sources, ۱۴۰۵/۰۷/۳۰ slash dates).
+  * Thresholds: dialog ۱۵/۳۰ saved → Setting margin:thresholds={"alert":15,"ok":30} + header chips/gauge caption update live; restored ۱۲/۲۱ (DB confirmed).
+  * «ثبت تحویل و خرید» (supplier لورا picked from dropdown, شماره سند تأمین‌کننده ۱۲۳۴۵, همزمان ثبت در هلو ✓): invoice #3 (final, providerDocNumber, purchaseOrderId) + Order HZ-ORD-001 RECEIVED (items 1×650000@811963 + free 2×0@256250, totalAmount 650000, notes {source:margin, marginInvoiceNumber, providerDocNumber, history create+receive}) + product stock 2→5/lastBuyPrice→650000/sellPrice→256250 + Holoo Apex push OK (holooErp set, invoiceNo ۸, HolooSyncLog PUSH_ORDER OK).
+  * Holoo-unavailable path: holoo:enabled=false → same submit → toast «ثبت در هلو انجام نشد (اتصال هلو غیرفعال است) — … در صف ارسال هلو است», order holooErp=null (pending), HolooSyncLog PUSH_ORDER FAIL {pending:true, source:margin}; holoo re-enabled after.
+  * RTL dir=rtl, no horizontal overflow (1280=1280), Persian digits everywhere, date ۱۴۰۵/۰۷/۳۰, internal invoice number read-only auto «شمارهٔ داخلی (خودکار)».
+- CLEANUP: deleted all 4 test MarginInvoices (2 dead-session + 2 mine), 2 test Orders (HZ-ORD-001/002), 5 PUSH_ORDER HolooSyncLog rows + 18 profit ActivityLog rows (all test artifacts), restored product (stock 2, lastBuyPrice 205000, sellPrice 250000). Post-cleanup: invoices 0, orders 0, view reloads clean (next number ۱). No repo test files; product.holooErp kept (maps to real holoo-sim product created during push test — removing would duplicate on next push).
+
+Stage Summary:
+- All 8 owner requirements verified end-to-end live; dead session's architecture confirmed sound, 8 gaps fixed (20% cost-warning threshold, ٬-separated owner-text warnings in form+row with one-click rollback, free-mode Enter chain, history-by-name, sellPrice propagation, server-side Holoo push with HolooSyncLog pending fallback, row free-toggle baseCost).
+- Chunk hzext-a0d1532e.js built + live-verified; DB left pristine (0 margin invoices/orders, thresholds 12/21, product memory restored).
+- Note: thresholds editable by OWNER/GM/ADMIN only (owner verbatim: «modifiable by managers»); ACC uses them read-only in the profit view.
+
+---
+Task ID: R5-P4
+Agent: sub agent R5-P4 (products/sops/guide/reviews)
+
+Task: Owner reqs — (۱) افزودن/ویرایش کالا (critical)، (۲) شمارندهٔ اجرای روال‌های SOP، (۳) حذف متن چینی از «ارزیابی چیدمان»، (۴) مقالات واقعی «راهنما و دانش‌نامه»، (۵) بازبینی واژگان فارسی در نمای‌های owned.
+
+Work Log:
+- READ FIRST: tail 250 worklog + ممیزی کامل products.tsx (945→1012ln) / sops.tsx / guide.tsx / reviews.tsx + /api/products/** + /api/sops + /api/kb. کشف شد: فرم ثبت/ویرایش کالا (R5-F) از قبل ~۸۰٪ آماده بود ولی بخشِ «بخش فروشگاه» و «تأمین‌کنندهٔ اصلی» و دکمهٔ غیرفعال‌سازی ردیفی و ثبت sops.tsx در manifest وجود نداشت — نمای SOP زنده همان صفحهٔ فروزن بود که شمارنده‌اش کار نمی‌کند.
+- **اسکیما** (bun run db:push، بدون از بین بردن داده): Product += `sectionLabel String?` (برچسب بلوک کالادار نقشه) · Sop += `completions Int @default(0)` (شمارندهٔ ماندگار اجرای کامل). src/lib/db.ts: پروب کهنگی فیلدی به FIELD_PROBES تعمیم یافت ([User,mobile] + [Product,sectionLabel] + [Sop,completions]) تا کلاینتِ کهنهٔ پرسیما روی dev server زنده ترمیم شود.
+- **API /api/products (route.ts)**: meta=1 += `sections` (بلوک‌های کالادار نقشه: GONDOLA/SHELF/FRIDGE_*/…، همان منطق isProductBlock در section-reviews) · POST += sectionLabel (اعتبارسنجی «بخش … در نقشه فروشگاه وجود ندارد») + supplierId (تأیید وجود → پس از ساخت، upsert SupplierProduct با isPrimary و unitPrice=قیمت خرید؛ فقط یک اصلی) · باگ R5-F: هشدار هم‌نامی روی خودِ کالای تازه‌ساخته شلیک می‌شد → nameWarnings(name, created.id) · list += sectionLabel.
+- **API /api/products/[id]**: detail += sectionLabel + supplierId/supplierName (دو پرس‌وجو — SupplierProduct رابطهٔ Prisma ندارد) · PATCH += sectionLabel (null=حذف، رشته=اعتبارسنجی) + supplierId (null=سلب اصلی، رشته=upsert اصلی؛ unitPrice از lastBuyPrice). DELETE (غیرفعال‌سازی نرم) دست‌نخورده.
+- **API /api/products/search/route.ts**: باگ tsc/رانتایم R5-F — barcodesJson از select جا افتاده بود (bankBarcode همیشه null) → افزودن شد. tsc کل پروژه: هر ۳ فایل products API پاک (خطاهای باقی‌مانده pre-existing در فایل‌های دیگران: cheques/store/section-columns/…).
+- **products.tsx**: ProductFormDialog += «بخش فروشگاه (قفسه)» Select (از meta.sections، با zone) + «تأمین‌کنندهٔ اصلی (اختیاری)» Select (۱۰۰ تأمین‌کنندهٔ اول /api/suppliers) — پیش‌پرکردن در ویرایش از detail · ردیف جدول += دکمهٔ «غیرفعال/فعال» (confirm با توضیح حذف نرم؛ PATCH {active}؛ refreshAll) · شناسنامه += نمایش «بخش» و «تأمین‌کنندهٔ اصلی». واحد = ALLOWEDUnits پژوهش R4-8 (عدد/کیلوگرم/گرم/بسته/دستی) عمداً حفظ شد — «کارتن» در این سامانه مفهوم تعداد-در-کارتن سفارش است نه واحد شمارش. جست‌وجو/فیلترها/شناسنامه/نمودارها/کنترل واحد R4-8 همه دست‌نخورده.
+- **SOP شمارنده**: NEW /api/sops/visit (POST {id} → completions+1، لاگ sop_complete «اجرای کامل روال») · GET list/detail += completions · sops.tsx: پایان موفق «شروع روال» → POST visit + به‌روزرسانی زندهٔ چیپ‌ها؛ CompletionsChip (I.check، ارقام فارسی) در کارت‌ها + دیالوگ + صفحهٔ پایان + چیپ جمع «اجرای کامل» در سربرگ. باگ crash: I.checkCircle در پل آیکون‌ها وجود نداشت (crash کل SPA هنگام باز شدن صفحه) → I.check؛ آیکون‌های هر ۴ نمای owned ممیزی شد (اسکریپت، همه موجود).
+- **ثبت نمای sops**: manifest.json += {"key":"tasks/sops","src":"sops","replaces":true,roles:["*"]} — پیش از این، صفحهٔ زندهٔ SOP همان SPA فروزن بود (چانک cb5609df) که شمارنده‌اش کار نمی‌کرد؛ حالا نمای hz-ext با شمارندهٔ واقعی جایگزینش شد (PAGE_DEFAULTS 'tasks/sops': ['*'] از قبل بود).
+- **reviews.tsx**: «تاریخ تولید/انقضا — 临期 در جلو (FEFO)» → «تاریخ تولید/انقضا — نزدیک‌انقضا در جلو (FEFO)» — گِرپ CJK روی هر ۴ نمای owned: پاک.
+- **دانش‌نامه (۱۸ مقالهٔ واقعی)**: scripts/seed-kb-articles.ts + scripts/kb-articles-2.ts — تمام ۱۶ مقالهٔ body-خالی پر شد + ۲ مقالهٔ جدید (بررسی تیم و حضور: شیفت صبح ۷:۳۰–۱۵:۳۰ لطفی / عصر ۱۵:۳۰–۲۳:۰۰ ملایی، اضافه‌کاری، مرخصی · کنترل تاریخ انقضا و ردیف‌های قفسه FEFO/چرخهٔ ۲۸ روزه). هر مقاله ۳۰۰+ واژه (۳۱۰–۵۳۸)، محتوای واقعی و منطبق بر سامانه (BIN کارت، هدف ۲۱٪ سودسنج، سقف‌های روزانه/هفتگی/ماهانهٔ چک، چرخهٔ کنترل تاریخ، سقف اعتبار، درگاه…). موضوعات (a)–(h) مالک پوشش داده شد. Idempotent (پرش از body پر مگر --force). guide.tsx: ArticleBody — رندر ساخت‌یافته («## » سرتیتر، «- » فهرست، خط خالی فاصلهٔ بند؛ همان قالبی که placeholder فرم مدیران توضیح می‌داد) جای pre-wrap خام. تورها دست‌نخورده.
+- **واژگان**: خوش‌آمدگینی→خوش‌آمدگویی (×۸ guide.tsx) · مسئول→مسؤول (sops.tsx، هم‌راستا با reviews.tsx) · ممیزی می‌خواهم/می‌شود/برنامه‌ریزی/بسته‌بندی: بدون خطا.
+
+Verification (همه به‌عنوان کیانوش/ADMIN روی :3000، session p4):
+1. check.mjs: products/sops/guide/reviews هرکدام ✓ و اجرای کامل = ALL 27 VIEWS OK؛ eslint پاک روی فایل‌های API/اسکریپت؛ tsc پاک روی هر ۳ فایل products API.
+2. flock build ×۳ (نهایی: hzext-d1ebf111.js، ۲۷ نما، «~ replaced view tasks/sops» + loader/registry patched).
+3. LIVE: ورود با پین → کالاها: «کالای جدید» → فرم کامل (نام/بارکد ۶۲۶۱۲۳۴۵۶۷۸۹۰/واحد/بخش «گوندولا ۵ (خشک)»/تأمین‌کننده «آجیل برادران حسینی شماره ۲»/قیمت خرید ۲۰٬۰۰۰/فروش ۲۵٬۰۰۰/موجودی ۱۰) → ثبت شد؛ DB: sectionLabel=گوندولا ۵ + SupplierLink isPrimary با unitPrice ۲۰۰۰۰ ✓ · ویرایش (قیمت→۳۰٬۰۰۰، پیش‌پرکردن بخش/تأمین‌کننده ✓) · دکمهٔ ردیفی «غیرفعال» با confirm → status «غیر فعال» → «فعال» برگشت ✓ · بارکد تکراری → «بارکد تکراری است — کالای … همین بارکد را دارد» ✓ · ثبت کالای دوم: دیگریگر هشدار خود-هم‌نامی نمی‌گیرد ✓ · شناسنامه: بخش/تأمین‌کننده نمایش + نمودارها سالم ✓
+4. SOP: نمای hz-ext جایگزین شد؛ باز کردن جزئیات «روال چیدمان و شارژ قفسه»: بازدید ۲→۳ ✓؛ «شروع روال» → ۸ مرحله → «روال کامل شد» + چیپ «۱ اجرای کامل»؛ DB: completions 0→1 ماندگار ✓؛ بستن دیالوگ → کارت به‌روز ✓
+5. ارزیابی چیدمان: برچسب «نزدیک‌انقضا در جلو (FEFO)» — بدون هیچ چینی ✓ · دانش‌نامه: ۱۸ مقاله، باز کردن FEFO و حضور — سرتیتر/فهرست/محتوای واقعی (۷:۳۰/۱۵:۳۰/۲۳:۰۰/لطفی/ملایی) ✓
+6. پاک‌سازی: هر ۲ کالای آزمونی + لینک‌های تأمین‌کننده‌شان hard-delete؛ شمارندهٔ SOP آزمونی به ۲بازدید/۰اجرا برگشت؛ جداول: products=۱۴,۹۱۳ (برابر قبل)، kb=۱۸ (۰ خالی) — ردیف‌های ActivityLog (ثبت/ویرایش/اجرای روال) طبق طراحی audit-trail باقی‌اند.
+7. اسکرین‌شات‌ها: /tmp/r5p4-products-{row,form-flow,passport,final}.png + r5p4-sops-complete.png + r5p4-reviews-fefo.png + r5p4-guide-{fefo,attendance}-article.png · بدون فایل تست در repo (هر دو اسکریپت seed، seedهای production مثل seed-holidays هستند).
+
+Stage Summary:
+- (۱) افزودن/ویرایش کالا کامل شد: کالای جدید + ویرایش ردیفی + غیرفعال‌سازی نرم ردیفی + بخش فروشگاه از نقشه + تأمین‌کنندهٔ اصلی + اعتبارسنجی فارسی (تکراری بارکد/کد، اعداد منفی) — همهٔ ویژگی‌های R4-8 (جست‌وجو/فیلتر/شناسنامه/نمودار/کنترل واحد) سالم.
+- (۲) شمارندهٔ SOP واقعاً ماندگار شد: views با باز کردن جزئیات + completions با اجرای کامل مرحله‌به‌مرحله (فیلد DB + /api/sops/visit) و نمای hz-ext sops.tsx در manifest ثبت و جایگزین صفحهٔ فروزن شد.
+- (۳) متن چینی ارزیابی چیدمان حذف و با «نزدیک‌انقضا در جلو (FEFO)» فارسی شد.
+- (۴) دانش‌نامه از ۱۶ مقالهٔ خالی به ۱۸ مقالهٔ واقعی ۳۰۰+واژه‌ای رسید (seed idempotent + --force؛ رندر ساخت‌یافته سرتیتر/فهرست).
+- (۵) خوش‌آمدگویی/مسؤول/نیم‌فاصله‌ها اصلاح؛ بدون CJK در نمای‌های owned.
+- نکتهٔ هماهنگی: manifest.json (سطر tasks/sops) و src/lib/db.ts (پروب کهنگی) به‌روز شد — دلیل هر دو در لاگ؛ build نهایی hzext-d1ebf111.js آمادهٔ deploy.
+
+---
+Task ID: R5-P5
+Agent: Z.ai Code — coordinator (on behalf of sub agent R5-P5, which died at max-turns after completing implementation but before verification/worklog)
+
+Task: Owner reqs — problems section (date-of-problem field w/ today default, follow-up notifications + SMS to responsible, RTL dropdowns, time auto-format, better list grid), cheque month-selector arrows + owner sign workflow, shell date-picker arrows + pad2 dates, Home-submenu «حساب و شخصی‌سازی من» hiding.
+
+Work Log:
+- problemsv.tsx (+191): تاریخ وقوع مشکل (default today) + مهلت رسیدگی + ساعت وقوع (TimeInput auto hh:mm) + شیفت وقوع RTL dropdown in «ثبت مشکل جدید»; SMS alert toggle «اطلاع‌رسانی پیامکی به مسئول» appears for managers when a responsible party is selected; responsive card grid (no stranded half-width blank on odd counts)
+- problems APIs: NEW /api/problems/alerts + shared _due.ts — lazy due-alert evaluation (3 phases: 1-day-before / due-day / overdue) fired on every GET /api/problems; idempotent via problem:alert:{id}:{phase} KV; Notification to responsible + SMS via default SMS panel when problem:smsalert:{id} enabled and mobile valid
+- cheques.tsx (+742): full cheque lifecycle PENDING_OWNER «در انتظار امضا» → sign → SIGNED → deliver → DELIVERED → clear → CLEARED (+reject/bounce/return with reasons); owner sign queue cards «در انتظار امضا یا دریافت»; payment-calendar month arrows fixed (prev=right › / next=left ‹, aria-labels ماه قبل/ماه بعد); Hijri+Gregorian secondary dates on calendar day cells
+- shell.html: global Jalali mini-picker month arrows swapped to RTL-correct; dates padded (۱۴۰۵/۰۷/۰۳); «حساب و شخصی‌سازی من» hidden from Home submenu via MutationObserver CSS (page still reachable from user menu «پروفایل من»)
+- Coordinator fix: parseJalali-shape bug in cheques.tsx jalaliToHijri/secondDateFa/secondDateLongFa — bridge parseJalali returns a Date, not {jy,jm,jd} → day cells rendered «NaN undefined · NaN undefined»; fixed to use the Date directly (3 functions) — verified live: NaN gone, day cells show «۱۵ ربیع‌الاول · 12 Nov» style secondary dates
+
+Verification (coordinator, kianoosh/ADMIN on :3000):
+1. check.mjs problemsv/cheques/dashboard ✓ ALL 27 VIEWS OK; lint clean; final build hzext-0ba573e7.js
+2. Problems form: تاریخ وقوع ✓ (default today), مهلت رسیدگی ✓, ساعت وقوع ✓, شیفت RTL ✓, SMS toggle appears with assignee ✓ («اطلاع‌رسانی پیامکی به مسئول»)
+3. Cheques: month arrows prev-x=843 (right) / next-x=733 (left) ✓; sign-workflow statuses + queue cards present (0 فقره — DB intentionally clean of fake cheques); calendar day cells NaN→proper Hijri·Greg ✓ (VLM verified)
+4. Nav: no شخصی‌سازی/حساب items in nav ✓; dashboard خوش‌آمدگویی correct ✓
+5. 26-route full sweep: 0 page errors
+
+---
+Task ID: COORD-R5
+Agent: Z.ai Code — main orchestrator (Round 5)
+
+Work Log:
+- Recovered dead R5 session state (4.3k uncommitted lines): audited DB (fixed personnel names ✓, 40-block R5-E geometry ✓, «ردیف ۱» terminology ✓), cleaned test junk (2 test orders, «تست» problem, 6 test leave requests), refreshed BASELINE snapshot (48 tables, ۱۶٬۴۸۳ rows)
+- ROOT-CAUSE FIX «نقشه فروشگاه broken/no height»: frozen CSS lacked ALL arbitrary-value Tailwind classes (h-[420px] etc.) used by hz-ext views → map container collapsed to 2px. Built hz-ext/gen-arb-css.mjs — scans sources, generates CSS for arbitrary utilities (lengths/colors/grids/shadows/translate + sm:/md:/lg:/xl: media + hover:/focus:/odd:/even: pseudos), appends to frozen CSS idempotently from pristine original; integrated into build.mjs step 5 (55 rules generated). Floorplan now renders 560px map with trapezoid outline + chamfer bottom-left — VLM verified
+- Build blocker: dead session's cheque-calc/split imported unexported readLimits from cheques/settings route (route modules only export handlers) → extracted src/lib/cheque-settings.ts shared lib; route-to-route imports audited across all new routes
+- Deploy pipeline fixes: packaged .env had sandbox DATABASE_URL path breaking server-side scripts → deploy-r5.sh now force-writes server .env; DB consistency via WAL-checkpoint + brief server pause (dev-server restart procedure); deploy-r5.sh runs idempotent scripts (outline/geometry/names/columns) with server-correct env
+- DEPLOYED R5 to https://sarresid.hyperzeytoon.com (12MB package code+DB): build passed, all scripts applied (40 blocks rescaled, 78 ردیف, contour 31×15, names aligned), services healthy (:3000 200, :3030, :3040), data verified (products 14913 / holidays 114 / snapshots 3 / orders 0 / leaves 0 / columns 78); LIVE: login + floorplan 560px ✓ (VLM verified trapezoid+chamfer+blocks) + notification mark-as-read works (badge ۲۳→۲۲ on click)
+- Sub-agents: R5-P1 (orders RTL + direct-add no-dedicated-button ✓, tasks space redesign ✓, messages chat names RTL ✓, handover RTL ✓, ui.tsx date/time pickers), R5-P2 (payroll RTL + compact top + فیش حقوقی print ✓, leaves form RTL/height ✓, hrdocs toolbar row (w=822 flex-row) + redesign ✓, shifts compact + no-NIGHT + ۷:۳۰/۲۳:۰۰ ✓ + leave-aware, attendance kianoosh-included + ثبت در حقوق ✓, غیبت/مرخصی semantics ✓), R5-P3 (profit: 20% threshold, owner-exact warning text, live % recalc ۲۴٫۹۱۷۴٪ verified, free-100 flow, name-history, thresholds KV UI, providerDocNumber, ثبت تحویل و خرید → Order+stock+Holoo push — all live-verified + cleaned), R5-P4 (products add/edit/deactivate + section/supplier ✓, SOP registered in manifest + persistent completions counter ✓, 临期 removed ✓, 18 real knowledge articles 300+ words ✓, خوش‌آمدگویی ×8 ✓), R5-P5 (see above)
+- Final QA: lint 0 errors, ALL 27 VIEWS OK, 26-route sweep 0 errors, final chunk hzext-0ba573e7.js
+
+Stage Summary:
+- ALL Round-5 owner requirements implemented and locally verified: notifications functional, login full-names, profit-margin major rework (free products/price correction/live %/editable list/history warnings/purchase+Holoo/thresholds/provider doc number), پرونده پرسنل redesign + row toolbar, SOP counters, names fixed, team review (all staff/no-night/shift-selector rules/غیبت-مرخصی semantics/overtime→payroll), leave effects on shifts/attendance, RTL everywhere (orders/payroll/messages/handover/dropdowns/date-picker arrows), YYYY/mm/DD dates, مرخصی form fixes, فیش حقوقی print, problems (date field/alerts/SMS/time-format/grid), Chinese text removed, floorplan fixed (CSS root-cause + 31×15×80cm geometry + 3×3 chamfer), shelf ردیف terminology + lanes system (store/lanes API from dead session), orders direct-add, products CRUD, knowledge articles real, cheque sign-workflow + calendar arrows + NaN fix, profile-cust hidden from Home, خوش‌آمدگویی terms
+- R5 final deploy pending (this entry written pre-deploy); platform description markdown for AI agents + 15-min webDevReview cron to follow
+
+---
+Task ID: R6 (user-bug-fix round)
+Agent: Z.ai Code — main orchestrator (Round 6 — 2026-10-23)
+
+Context: sandbox workspace had rolled back to the R3 state (login-page bug present again) while the demo
+server ran the newer R5 build (deployed Oct 22 12:54). User instruction: FIRST pull the latest version
+FROM the demo server and set it up locally, verify, THEN fix the reported bugs. NO push to the server
+until explicit approval (see top-of-file rule).
+
+Work Log:
+- Built SSH tooling from scratch again (rollback wiped paramiko + openssh is not installable here): installed
+  paramiko 5.1.0 into /home/z/.venv via pip3; scripts/sshx.py (run/sftp) + scripts/sync-down.py.
+- sync-down.py: server-side VACUUM INTO snapshot of live db (consistent while app writes) → gzip; code tarball
+  (exclude node_modules/.next/db); SFTP download to /tmp/dl; md5 verified both ends.
+- scripts/apply-sync.sh: backup old local state → stop main dev → rsync --delete per-subtree (src, prisma,
+  public, hz-ext, mini-services, .f4h, scripts[minus local tools], research[union], db[snapshots only]) →
+  top-level files; KEPT local .env (sandbox path) — never copy the server .env; swapped db from snapshot;
+  bun install + prisma generate; bounced mini-services (:3030/:3031/:3003/:3040); restarted :3000.
+  Verified R5 markers: 27 views, COORD-R5 in worklog, chunk hzext-0ba573e7.js, login page full names ✓,
+  live-site equivalence re-tested (login + profile nav as ADMIN and CASHIER on https://sarresid… ✓).
+- FIX 1 (returns bank-card logic — user: «platform must only don't get the bank card if the new products
+  amount is more than returning items»): root cause = auto-transfer effect fills transferAmount=total−exchange,
+  so exchange<total was classified 'exchange' («تسویه با کالا») → card input wrongly DISABLED while a card
+  refund was due. Changes in hz-ext/src/views/returns.tsx: (a) cardDisabled = total>0 && exchange>=total;
+  (b) computeSettlement: mixed goods+card (transfer>1) → 'full' instead of 'exchange' (client + server
+  src/app/api/returns/route.ts computeSettlementType kept in sync); (c) submit now REQUIRES a valid Luhn
+  card when a card refund is planned (transferAmount>0); (d) adaptive settle-status message for mixed case;
+  (e) updated disabled hint text. Live-verified: exchange 5M < total 11.5M → card ENABLED + required +
+  badge «پرداخت کامل به کارت» + mixed message; exchange = total → card disabled «غیرفعال — تسویه با کالا».
+- FIX 2 (full card on thermal receipt + manager views): returns.tsx renderThermalReceipt now prints
+  «کارت مشتری» row (full 16 digits, 4-4-4-4, Persian digits) after موبایل; ReceiptDialog passes
+  created.customerCardNumber. docs.tsx: new fullCard() helper — A4 return doc + thermal HTML doc now show
+  the FULL card (was ۶۲۱۸-****-****-۱۲۳۴). NEW hz-ext/patch-returns-card.mjs (registered in build.mjs step 4):
+  unmask the frozen app's 3 chunks (03279e39…/87f86e4e…/eec90cf…) that render شماره کارت in returns
+  approvals/history/CRM detail — now 6037-9912-3456-7802 in full. Live-verified: DOM text in approvals
+  detail shows exact full digits; VLM verified the thermal receipt preview (full 4-group number, no stars).
+- FIX 3 (floorplan add-mode dead click): root cause = setPointerCapture on the svg retargets pointerup so
+  the subsequent click lands on the SVG ROOT, failing the old `target.dataset.data-bg==='1'` guard → no
+  block was ever added (pan also failed near walls due to transparent wall hit-lines). floorplan.tsx
+  onMapDown/onMapClick rewritten: add-mode adds on ANY click reaching svg level; normal mode treats
+  bg-rect/svg-root (and wall lines) as ground → deselect/pan. New-block labels now use Persian digits
+  (toFaDigits). Live-verified: گوندولا added by click, toast, «ذخیرهٔ نقشه» persisted 41 blocks, survived
+  reload; plan name confirms R5 geometry «نقشه واقعی ۳۱×۱۵».
+- FIX 4 (profile page): could NOT reproduce «پروفایل من opens dashboard» — verified working on local AND
+  live server as ADMIN (kianoosh) and CASHIER (arabnezhad) and from other sections (hash #/home/account
+  always lands on «حساب و شخصی‌سازی من» with avatar picker + password/PIN forms). Hardened anyway:
+  shell.html user-menu handler now sets the hash immediately and re-asserts at 0/60/300/600/900ms (was a
+  single 120ms setTimeout — timing race on slow devices; stale cached chunks are the other suspect).
+- FIX 5 (4-digit internal barcodes): profit.tsx scanBarcode gate {8,}→{4,} (error message now «حداقل ۴ رقم —
+  بارکدهای داخلی فروشگاه معمولاً ۴ رقمی‌اند»); returns.tsx + stockcount.tsx exact-barcode path {8,}→{4,}.
+  Server /api/products/search has no length limit (unchanged). Live-verified: typing 1550 in سودسنج finds
+  «مغز بادام زمینی آستانه زیتون پرایم» (کیلوگرم) — the user's own bulk-peanut example.
+- FIX 6 («بازکردن در فاکتورنویس» opened a NEW invoice): located the button in the FROZEN app (profit/history
+  ledger e16d832651d38645.js per-row → go(`profit/builder?id=${r.id}`); profit/stats a75edad5… CTA). The
+  hz-ext profit view ignored ?id. profit.tsx now: invoiceIdFromHash() on mount + hashchange →
+  GET /api/margin/[id] → populates supplier/providerDoc/note/date/items(+product history) in edit mode;
+  amber banner (ویرایش فاکتور #N + بایگانی/خرید badges + «فاکتور جدید (Alt+N)» exit); «شمارهٔ فاکتور (ویرایش)»
+  field; save() uses PUT /api/margin/[id] (full replace, server route already existed); submitPurchase blocked
+  in edit mode with guidance (purchase already recorded → edit+Alt+S instead). Live-verified end-to-end:
+  ledger click → hash ?id=… → «فاکتور ۱ برای ویرایش باز شد — ۱ قلم بارگذاری شد» → in-place price edit →
+  save → DB shows printedPrice 1150000/marginPct ۲۶٫۳۷٪ + toast «به‌روزرسانی شد».
+- FIX 7 (RTL audit of سیستم + sweep): full-page screenshots of system/users, system/data, system/smscenter,
+  system/holoo → VLM audit + deterministic DOM scan (root dir, inputs with dir=ltr holding Persian text,
+  undirected URLs) + code review. Result: 0 structural direction issues (icons are child-first=right in RTL,
+  URL/credential inputs correctly dir=ltr, Persian labels everywhere, RTL grids). VLM findings were mostly
+  screenshot misreads (e.g. «Persian digits in holoo URL» was the placeholder; SMS «icons on left» false —
+  they're first-child=right). Real mixed-content items (user-typed Latin snapshot names like BASELINE) are
+  data, not UI. Awaiting user's specific pointers/screenshots for anything still perceived as LTR.
+- Rebuilds: bun hz-ext/build.mjs ×2 → final chunk hzext-8bbe9c78.js (27 views, 1603.8KB); all patchers
+  idempotent (patch-returns-card 3 chunks patched on first run). lint 0 errors. dev.log clean; regression
+  sweep (home/orders/payroll/messages/liveboard/leaves) all APIs 200, zero page errors.
+- Prepared (NOT run — awaiting approval): deploy/make-package-r6.sh → deploy/sarresid-r6-<ts>.tar.gz
+  (code-only: src prisma public hz-ext mini-services .f4h scripts[excl. local tools] package.json bun.lock
+  configs — NO db, NO .env, NO qa/upload/research/deploy) + deploy/deploy-r6.sh (server: backup db+code →
+  extract whitelist → bun install → db:push (no-op this round) → production build → restart sarresid-web/
+  sarresid-realtime/holoo-sim → health checks; re-asserts server .env, never ships one).
+
+Stage Summary:
+- Sync direction reversed successfully: local sandbox now runs the server's R5 build (byte-identical code +
+  consistent db snapshot) — the rollback is fully undone.
+- All 7 reported issues addressed: 5 fixed & live-verified (bank-card logic, full card on receipt/manager
+  views, floorplan add-click, 4-digit barcodes, invoice-writer edit mode), 1 hardened after
+  non-reproduction (profile nav), 1 audited with 0 confirmed defects (system RTL — needs user's specific
+  examples if anything still looks wrong).
+- Local db contains QA artifacts (return HZ-050801-0001 with card 6037991234567802, margin invoice #1,
+  floorplan «گوندولا 7» block) — NEVER deploy the local db.
+- PENDING USER APPROVAL to deploy R6 to the demo server. Next rounds: continue backlog from R5 handover
+  (platform-description markdown for AI agents, XLS inventory import into real stock, SMS real credentials,
+  remaining RTL pointers from the user).
+
+---
+Task ID: R7-ARCHIVE
+Agent: sub agent R7-ARCHIVE (document archiving system)
+
+Task:
+- ساخت سامانهٔ آرشیو اسناد هیبریدی (دیجیتال + فیزیکی) هایپر زیتون: وقتی سندی (فاکتور تأمین‌کننده، رسید پرداخت، چک، مرجوعی، سفارش) دیجیتال ثبت می‌شود، سامانه باید بگوید کاغذ کجاست (کابینت ← قفسه ← زون‌بند ← برگه). جست‌وجو-محور («کاغذ را در یک ثانیه پیدا کن»)، بدون هیچ چیز هاردکد، همه‌چیز CRUD-پذیر با کد خودکار CAB-01 / -S2 / -B1.
+
+Work Log:
+- خواندم: worklog (R5/R6) + اسکیمای R7 (ArchiveCabinet/Shelf/Binder/SalesRep/ArchiveDocument — از قبل push شده بود) + قراردادهای API (cheques، suppliers، orders، returns، low-stock) + الگوی نمای‌ها (hrdocs/cheques) + docs.tsx (پوستهٔ چاپ) + seed-holidays (الگوی PrismaClient مستقیم با bun).
+- **API + لایب مشترک** (۴ مسیر + src/lib/archive.ts):
+  * `src/lib/archive.ts` — ARCHIVE_ROLES (OWNER/GM/ADMIN/EXEC/ACC)، DOC_KINDS/DOC_STATUSES، نرمال‌سازی (تاریخِ اسلش/خط‌تیره، ارقام فارسی→لاتین برای شماره‌ها، موبایل)، sanitizeReturned [{name,qty,reason}] حداکثر ۶۰ قلم، docOut با زنجیرهٔ کامل محل فیزیکی + returnedCount، sanitizeDocBody با تفکیک خودکار ارجاع‌ها (orderId→orderCode، returnId→returnCode، chequeId→chequeNumber، supplierId→supplierName، repId→repName — خطای فارسی اگر ارجاع خیالی باشد).
+  * `GET /api/archive` — جست‌وجوی سراسری q (عنوان/تأمین‌کننده/کد سفارش/مرجوعی/شماره چک/فاکتور و رسید هلو/نام نماینده/برگه/یادداشت + داخل returnedJson) با هر دو شکل رقم فارسی/لاتینی؛ فیلتر kind/status/binderId (NONE=بدون جایگاه)/supplierId/repId + بازهٔ from/to جلالی؛ sort=date|amount|created؛ صفحه‌بندی ۵۰تایی؛ stats کل دفتر (total/byKind/byStatus/amountSum/unfiled/returnedDocs). POST ثبت سند (status پیش‌فرض ARCHIVED، ثبت‌کننده از session، logActivity دستهٔ archive).
+  * `GET /api/archive/[id]` — جزئیات + دادهٔ سبکِ متصل‌ها: linkedOrder (کد/وضعیت/تأمین‌کننده/مبلغ + اقلام)، linkedReturn (کد/مشتری/علت/مبالغ + اقلام)، linkedCheque (شماره/مبلغ/سررسید/گیرنده)، rep کامل. PUT ویرایش جزئی/کامل (همان اعتبارسنجی)، DELETE با logActivity.
+  * `GET /api/archive/structure` — درخت کامل کابینت←قفسه←زون‌بند با documentsCount در هر سطح + totals (شامل unfiled). POST {type: cabinet|shelf|binder} با کد یکتای خودکار از بیشینهٔ پسوند موجود (CAB-01 → CAB-01-S2 → CAB-01-S2-B1 — بعد از حذف هم تصادم نمی‌کند). PUT ویرایش (نام/محل/یادداشت/دسته/رنگ؛ کد دستی با چک یکتایی). DELETE با بلاک هوشمند: اگر سندی در زیردرخت باشد بدون force خطای فارسی با تعداد (ارقام فارسی)؛ با force=1 سندها «بدون جایگاه» (binderId=null) و نود حذف می‌شود؛ برگرداندن {detached}.
+  * `GET/POST/PUT/DELETE /api/archive/reps` — نمایندگان فروش با نرمال‌سازی موبایل (۰۹۱۲… → 0912…)، جست‌وجو (نام/موبایل/شرکت/سمت/یادداشت)، documentsCount از groupBy، نام تکراری رد می‌شود؛ DELETE سندها را فقط متن‌نامی نگه می‌دارد (repId=null).
+- **نما hz-ext/src/views/archive.tsx** (۱۵۹۶ خط، فقط از ../lib/hz):
+  * تب «اسناد»: نوار جست‌وجوی برجستهٔ سراسری (debounce ۴۰۰ms + seq-guard ضد پاسخ کهنه) + فیلتر نوع/وضعیت/زون‌بند/بازهٔ تاریخ جلالی (JalaliDate) + جدول (نوع/عنوان+تأمین‌کننده/تاریخ faSlash/مبلغ money/محل فیزیکی زنجیره‌ای سبز با کد زون‌بند/شماره‌های هلو و مراجع/نماینده/وضعیت/عملیات) + صفحه‌بندی؛ سطر قرمز-برچسب‌دار برای اسناد دارای قلم مرجوعی («۳ قلم مرجوعی»)؛ کلیک سطر → دیالوگ جزئیات با بلوک سبز بزرگ محل فیزیکی + اقلام مرجوعی قرمز با علت + جعبه‌های سفارش/مرجوعی/چک متصل + چاپ «برگهٔ جایگاه سند».
+  * چاپ (printHTML + barcode128): سربرگ «هایپر زیتون — فروشگاه زنجیره‌ای رفسنجان»، فونت وزیرمتن، اطلاعات سند + حروف مبلغ (amountWords)، بلوک «محل فیزیکی سند» خیلی درشت (کابینت ‹ قفسه ‹ زون‌بند) + بارکد Code128 کد زون‌بند + شمارهٔ برگه درشت + هشدار قرمز اگر قلم مرجوعی دارد — برای کسی که به‌سوی کابینت راه می‌افتد.
+  * فرم ثبت/ویرایش: نوع/وضعیت/تاریخ/مبلغ (MoneyInput)/عنوان؛ گزینشگر تأمین‌کننده با بارگذاری همهٔ ۱۱۷۱ تأمین‌کننده (لوپ صفحه‌ای سقف ۱۰۰تایی API) + فیلتر سریع + نام آزاد؛ اتصال سفارش (DONE+VERIFIED، با پیش‌پرکردن هوشمند تأمین‌کننده+مبلغ)/مرجوعی/چک؛ شماره فاکتور و رسید هلو (ورودی dir=ltr با فارسی‌سازی نمایش)؛ نماینده (گزینش + سمت + یادداشت + نام آزاد)؛ جایگاه آبشاری کابینت→قفسه→زون‌بند + برگه؛ ویرایشگر اقلام مرجوعی قرمز (نام/تعداد/علت)؛ بارگذاری تنبل گزینشگرها فقط با اولین باز شدن فرم.
+  * تب «ساختار آرشیو»: چیپ‌های آماری + کارت کابینت (کد/محل/شمارش‌ها) ← قفسه‌ها ← کارت‌های زون‌بند (نقطهٔ رنگ، کد، دسته، تعداد سند، دکمهٔ «اسناد این زون‌بند» → پرش به تب اسناد با فیلتر) + دیالوگ واحد ساخت/ویرایش + حذف دومرحله‌ای (بلاک سرور ← تأیید قطعی با force).
+  * تب «نمایندگان فروش»: جست‌وجو + جدول (نام/موبایل/شرکت/سمت/تعداد اسناد/فعال-غیرفعال کلیکی) + دیالوگ ثبت/ویرایش + دیالوگ سوابق (اسناد نماینده → کلیک → جزئیات).
+- **Seed اسکریپت scripts/seed-archive.ts** (idempotent — فقط وقتی هیچ کابینتی نیست): ۲ کابینت («کابینت حسابداری ۱» دفتر حسابداری · «کابینت بایگانی انبار» انبار)، ۳+۲ قفسه، ۶ زون‌بند با دسته‌های واقعی سوپرمارکت ایرانی: لبنیات (کاله، رامک، پگاه، روزانه، پنال)، شیرینی و شکلات، تنقلات و خشکبار، کالاهای وارداتی (کیت‌کت، اورئو، نسکوییک، مارس)، اسباب‌بازی و لوازم‌التحریر، شوینده و بهداشتی — بدون هیچ سند ساختگی. اجرا شد: ✓ ساخت + اجرای دوم: «از قبل وجود دارد — چیزی اضافه نشد».
+- نکتهٔ هماهنگی: manifest.json دست نخورد (ممنوع بود) — پیشنهاد ثبت برای هماهنگ‌کننده: `{"key":"finance/archive","src":"archive","section":"finance","title":"آرشیو اسناد","roles":["OWNER","GM","ADMIN","EXEC","ACC"],"replaces":false}` سپس build.
+
+Verification:
+1. `bunx tsc --noEmit` → ۰ خطا در هر ۵ فایل جدید (خطاهای باقی‌ماندهٔ پروژه pre-existing در فایل‌های دیگران). `bun run lint` → پاک. `bun hz-ext/check.mjs` → ALL 28 VIEWS OK (archive ✓).
+2. E2E با curl/python روی :3000 (ورود kianoosh): ۲۷ گام همه پاس — ساخت کابینت CAB-03 → قفسه CAB-03-S1 → زون‌بند CAB-03-S1-B1 (کدهای خودکار)؛ قفسهٔ دوم → S2 ✓؛ کابینت خیالی → خطای فارسی؛ نماینده با موبایل فارسی → نرمال 09123456789؛ نمایندهٔ هم‌نام → رد؛ سند کامل (تأمین‌کنندهٔ واقعی + rep + زون‌بند + برگهٔ فارسی→«15» + فاکتور هلو فارسی→«12345» + قلم مرجوعی) → تفکیک نام تأمین‌کننده و کد چک خودکار؛ جست‌وجو «کاله» (داخل اقلام مرجوعی) و «12345» و «۱۲۳۴۵» (رقم فارسی) همه می‌یابند؛ فیلتر kind+status+binder + بازهٔ تاریخ ✓؛ جزئیات با rep و linkedCheque ✓؛ ویرایش → MISSING/برگهٔ ۲۲/مبلغ ۹۹۹ ✓؛ حذف زون‌بند/کابینتِ دارای سند بلاک با پیام «به ۱ سند … متصل است» ✓؛ حذف قطعی قفسه با force → ۱ سند بدون جایگاه (location=null) ✓؛ سوابق نماینده با شمارش ✓؛ حذف سند/نماینده/کابینت ✓؛ بدون کوکی → 401 ✓.
+3. تست اتصال چک واقعی: چک آزمونی 777001 → سند CHEQUE → chequeNumber خودکار + linkedCheque کامل در جزئیات + جست‌وجو با شماره چک ✓؛ سند/چک آزمونی و ردیف‌های ActivityLog آزمونی پاک شدند.
+4. وضعیت نهایی DB: cabinets=۲ · shelves=۵ · binders=۶ · docs=۰ · reps=۰ (فقط ساختار seed، بدون زبالهٔ تست). dev.log: همهٔ درخواست‌های archive ۲۰۰/۴۰۰-عمدی، بدون خطا.
+
+Stage Summary:
+- آرشیو اسناد کامل شد: ۴ مسیر API + lib مشترک + نمای ۳-تبی + seed idempotent — جست‌وجوی سراسری با ارقام فارسی/لاتینی، زنجیرهٔ کامل محل فیزیکی در فهرست/جزئیات/چاپ، کدهای خودکار ساختار، حذف بلاک‌شونده با force، نمایندگان فروش با سوابق، اقلام مرجوعی قرمز با علت، برگهٔ جایگاه چاپی A4 با بارکد.
+- فایل‌ها: src/lib/archive.ts · src/app/api/archive/{route,[id]/route,structure/route,reps/route}.ts · hz-ext/src/views/archive.tsx · scripts/seed-archive.ts — هیچ فایل موجودی تغییر نکرد (manifest/build/schema/shell/نماها دست‌نخورده).
+- باقی برای هماهنگ‌کننده: ثبت manifest (پیشنهاد بالا: finance/archive با نقش‌های OWNER/GM/ADMIN/EXEC/ACC) + flock build (gen-arb-css خودش max-h-[92vh] و امثالش را می‌سازد).
+
+---
+Task ID: R7-RESEARCH
+Agent: Z.ai Code — sub-agent (general-purpose, research round 7)
+Task: پژوهش علمی نظام نمره‌دهی عملکرد کارکنان (مقیاس ۱-۵ در برابر ۰-۱۰۰) برای ماژول‌های بررسی تیم و کارنامهٔ عملکرد — به درخواست مالک؛ خروجی: گزارش فارسی کامل با توصیهٔ دقیق قابل پیاده‌سازی.
+
+Work Log:
+- تحلیل کد فعلی: hz-ext/src/views/performance.tsx (کارنامه ۶ مؤلفهٔ وزن‌دار + تب ارزیابی مدیران ۱۱ شاخص ۱-۵ با M_ANCHORS)، attendance.tsx (بررسی تیم: ۴ پرچم دودویی ok/needs_followup + arrival/دقیقه‌ها)، reviews.tsx (SectionReview ۰-۵)، prisma/models PerformanceScore/ManagerReview/StaffCheck/SectionReview، api/performance/route.ts (WEIGHTS، gradeOf ۹۰/۸۰/۷۰، computeUser)، api/manager-reviews/route.ts (total=avg×۲۰)، api/staff-checks/route.ts
+- کشف دو شکاف: (۱) پرچم‌های روزانهٔ uniform/hygiene/behavior/workQuality اصلاً وارد فرمول کارنامهٔ ماهانه نمی‌شوند (فقط arrival در attendanceScore)؛ (۲) مؤلفهٔ بدون داده = صفر با وزن کامل (مثلاً taskScore=0 برای کارمند بدون دستورکار ⇒ سقف کارنامه ۶۵) — ناعادلانه برای صندوقدار/نیروی چیدمان
+- جست‌وجوی علمی گسترده (۳۰+ جست‌وجوی مستقل): Crossref API، Semantic Scholar (با retry)، PubMed eutils، Wikipedia REST/action — موتورهای جست‌وجوی عمومی (DDG/Bing) در سندباکس مسدود/تحت‌چالش بودند؛ آکادمیک‌ها پاسخ دادند
+- شواهد کلیدی گردآوری و بررسی: Preston & Colman 2000 (Acta Psychologica؛ چکیده تأییدشده: ۲-۴ گزینه ضعیف، بهبود تا ~۷، افت پایایی بازآزمون >۱۰ گزینه)، Revilla-Saris-Krosnick 2013 (چکیده تأییدشده: ۵ گزینه کیفیت بهتر از ۷/۱۱)، Matell & Jacoby 1971، Miller 1956 (ظرفیت قضاوت ۴-۸ تمایز)، Viswesvaran-Ones-Schmidt 1996 (پایایی بین‌ارزیاب ~۰٫۵۲)، Landy & Farr 1980، Kinicki et al. 1985 (BARS vs ساده)، Flanagan 1954 (CIT)، Scullen et al. 2005 + Moon et al. 2016 + Chattopadhayay & Ghosh 2012 (رد توزیع اجباری در تیم کوچک)، Kluger & DeNisi 1996، Haynes et al. 2009 NEJM (چک‌لیست، PMID تأییدشده)، Weijters et al. 2010، Adelson & McCoach 2010، Hubatka et al. 2026، منابع BARS برای MSME/کوچک (Darmanto 2025، Kurniawan 2024، Fauzi 2023)، ۲ پایان‌نامهٔ فارسی ارزیابی عملکرد (مخزن دانشگاه کابل با DOI)
+- نوشتن گزارش جامع فارسی: research/performance-grading-r7.md — خلاصهٔ اجرایی، مرور نظام‌مند ۸ روش (لیکرت/درصدی/BARS/GRS/۳۶۰/توزیع اجباری/رویداد بحرانی/چک‌لیست + جدول تطبیقی)، شواهد دقت مقیاس‌ها (ظرفیت شناختی، تعداد بهینهٔ مقوله‌ها، پایایی بین‌ارزیاب، سوگیری‌ها، بار شناختی، اصل تجمیع)، تحلیل زمینهٔ ۱۵ نفره/تبلت/حقوق/بافت ایران، توصیهٔ نهایی فیلد‌به‌فیلد با ۴۲ منبع دارای DOI/URL
+- توصیهٔ نهایی: «ورودی انسانی درشت‌دانه و لنگردار (۳ سطح روزانه / ۵ سطح ماهانه) + تجمیع سیستمی ۰-۱۰۰ + تصمیم پلکانی الف/ب/ج/د» — ۴ اصلاح مشخص: (۱) ارتقای ۴ معیار روزانه به ۳ سطحی ok/minor/needs_followup با نگاشت ۱/۰٫۵/۰، (۲) مؤلفهٔ جدید dailyCheckScore وزن ۱۵٪ (وزن‌های جدید: وظایف ۳۰/چیدمان ۲۰/بازرسی روزانه ۱۵/چک‌لیست ۱۵/حضور ۱۰/شمارش ۵/تشویقی ۵) با فرمول دقیق فقط روی روزهای on_time، (۳) بازتوزیع وزن مؤلفه‌های بدون داده با مثال عددی، (۴) لنگرهای رفتاری BARS سبک ۱۱×۳ برای ارزیابی مدیران + یادداشت الزامی نمره‌های حدی — جدول کامل فایل‌به‌فایل برای پیاده‌سازی + فهرست آنچه نباید تغییر کند
+- قاعدهٔ رعایت‌شده: هیچ کدی تغییر نکرد؛ فقط فایل گزارش در research/ ساخته شد
+
+Stage Summary:
+- پاسخ به پرسش مالک: هیچ‌کدام به‌تنهایی؛ سیستم هیبرید فعلی (ورودی انسانی ۱-۵ + ترکیب سیستمی از ۱۰۰) از نظر علمی درست است و مهاجرت قضاوت انسانی به ۰-۱۰۰ رد می‌شود (دقت کاذب، افت پایایی >۱۰ مقوله، بار شناختی، تشدید نوفهٔ بین‌ارزیاب ~۰٫۵۲)
+- گزارش کامل فارسی: research/performance-grading-r7.md (بخش‌های ۱-۸ + ۴۲ منبع DOI/URL + جدول پیاده‌سازی فایل‌به‌فایل + لنگرهای فارسی دقیق برای همهٔ سطوح)
+- آماده برای هماهنگ‌کننده: ۴ اصلاح پیشنهادی مشخص و فیلد‌به‌فیلد (StaffCheck سه‌سطحی، dailyCheckScore در PerformanceScore + WEIGHTS جدید، بازتوزیع وزن مؤلفه‌های بدون داده در computeUser، لنگرهای BARS سبک + یادداشت الزامی) — بدون تغییر: برش‌های الف/ب/ج/د، قانون حضور R5-C، جریان حقوق، رتبه‌بندی اجباری معرفی نمی‌شود
+- توصیهٔ گذار: یک ماه نمایش موازی ستون بازرسی روزانه بدون اثر بر کارنامه، سپس فعال‌سازی وزن (فرمول idempotent و بازمحاسبه‌پذیر است)
+
+---
+Task ID: R7-DATA
+Agent: sub agent R7-DATA (general-purpose — real Holoo XLS import + trade analytics)
+Task: ورود دادهٔ واقعی حسابداری/انبار هلو (۸ فایل خرید/فروش تیر..مهر ۱۴۰۵ + inventory.xls + current-inventory.xls + stakeholders-new.xlsx) + ساخت API تحلیل معاملات — به‌همراه تحلیل هوشمند فعال/غیرفعال‌سازی کالاها
+
+Work Log:
+- خواندم: worklog (R5/R6/R7) + prisma/schema.prisma (Product/Supplier/TradeRecord — از قبل push شده) + الگوی اسکریپت‌ها (seed-holidays: PrismaClient مستقیم؛ import-holoo: upsert با code) + الگوی احراز sessions در api/orders + بستهٔ xlsx 0.18.5 (SheetJS، خواندن .xls بدون مشکل).
+- بازرسی کامل فایل‌ها قبل از کد (اسکریپت موقت، بعداً حذف شد): ۶۴ ستون در فایل‌های معامله (كد2=بارکد در اندیس ۱۳)، ردیف جمع پایانی در همهٔ فایل‌ها، کشف مهم: «خريد مهرماه ۱۴۰۵.xls» ترتیب ستون‌ها را وارونه دارد (كد52 اول، رديف آخر) → در همهٔ اسکریپت‌ها نقشهٔ سرستون از روی نام نرمال‌شده (fa: ي→ی ك→ک + حذف تطویل + فشرده‌سازی فاصله‌ها) ساخته می‌شود و ترتیب فیزیکی بی‌اهمیت می‌شود.
+- scripts/import-trades-r7.ts (اجراشده ×2): ماه از نام فایل (تیر=1405-04 … مهر=1405-07)، رديف عددِ روان سراسری است (تک‌رشتی 1..N تأیید شد، کلید یکتا (kind,month,invoiceNo,rowIdx) بدون تکرار)؛ idempotent با deleteMany per (kind,month) سپس createMany تکه‌های ۲۰۰۰تایی؛ اتصال محصول: ① بارکد (كد2) روی نقشهٔ code+barcodesJson (۱۷,۲۷۳ کلید) ② نام نرمال‌شده (حذف «- »، فشرده‌سازی فاصله؛ فعال‌ها اولویت). خروجی: ۸ فایل → ۲۰۵,۶۲۷ ردیف (BUY ۲۲,۲۲۸ / SELL ۱۸۳,۳۹۹)؛ linked=۲۰۵,۳۹۰ (۹۹.۸۸٪)، unlinked=۲۳۷ (۶۵ نام غایب از کاتالوگ مثل «نان باگت سنتی ۵ عددی نونان» — productId=null طبق قاعده)؛ جمع lineTotal هر ماه با ردیف جمعِ انتهای خود فایل تا ریال منطبق (خرید تیر ۱۰۸,۸۶۱,۶۳۱,۹۵۳ / فروش تیر ۱۳۲,۲۸۳,۱۵۸,۳۹۲)؛ اجرای دوم: همان شمارش‌ها → idempotency اثبات.
+- scripts/import-inventory-r7.ts (اجراشده ×2): کاتالوگ ۱۴,۹۴۳ کد یکتا (۶ ردیف بدون کد + ردیف جمع رد شد) + current-inventory ۶,۹۲۵ کد → stock=round(مقدار current)، غایب از current → ۰؛ sellPrice/lastBuyPrice از current-inventory (اگر >۰) وگرنه فی فروش/آخرین فی خرید کاتالوگ؛ lastCountDate = تاریخ آخرین بررسی با خط تیره (۱۴,۹۴۳ محصول ست شد)؛ reorderLevel از حداقل وقتی >۰ (۴۸ محصول)؛ گروه‌ها فقط trim/Persian-normalize (بدون دست‌کاری واحد/بارکد/sectionLabel/sellPrice2/نام). ۴۲ کالای جدید ساخته شد (پیش‌فرض: واحد=عدد — ستون «واحد كالا» این خروجی خالی است — barcodesJson=[code]+كد2..كد52، sellPrice2/دسته از همان ردیف). تحلیل هوشمند: فعال=false وقتی stock==0 ∧ بدون فروش در SELL (بررسی با productId یا نامِ نرمال‌شده — ضد ردیف‌های بدون لینک) ∧ بررسیِ آخرین تاریخِ بررسی < 1405-04-01؛ با فروش اخیر یا stock>0 → فعال. نتیجه: deactivated ۴,۶۲۵ (نمونه‌ها: لوزهای حاج خلیفه با بررسی ۱۳۹۷/۱۳۹۹) + stays-dead ۶۶۶ + reactivated ۹۰ (مثل بستنی شیری انبه میهن — فروش دارد، stock=0) + stays-active ۹,۵۰۳ + دست‌نخورده ۱۷؛ وضعیت نهایی DB: ۱۴,۹۵۵ کالا، فعال ۹,۶۶۳ / غیرفعال ۵,۲۹۲، stock>0=۶,۸۹۷. اجرای دوم: created=0/deactivated=0/reactivated=0 و همان وضعیت نهایی → idempotent.
+- ترتیب اجرا: trades → inventory → trades (بار دوم) تا ۶۷ ردیفِ بدون لینکِ ناشی از ۴۲ کالای جدید، به productId متصل شود (۳۰۴→۲۳۷)؛ تحلیل فعال‌سازی از قبل با «نام» مقاوم بود و نتیجه تغییر نکرد.
+- src/app/api/trades/route.ts (جدید — هیچ مصرف‌کننده‌ای در چانک‌ها/نماها نیست؛ قرارداد برای نمای آیندهٔ هماهنگ‌کننده): GET با ۴ حالت — ?months=6 (پیش‌فرض، ۱..۲۴) → {months:[{month,buyTotal,sellTotal,buyRows,sellRows,buyQty,sellQty}]}؛ ?kind=SELL&top=20&month=1405-04 (بدون ماه → آخرین ماه همان kind؛ اعتبارسنجی YYYY-MM با خطای فارسی) → {kind,month,top:[{productName,productId,qty,revenue,invoiceCount}]} با COUNT(DISTINCT invoiceNo) از $queryRaw (groupBy پرایسما distinct ندارد)؛ ?productId=… → {productId,product,series:[{month,buyQty,buyAvgPrice,sellQty,sellRevenue}]}؛ ?summary=1 → {totalBuy,totalSell,buyRows,sellRows,buyQty,sellQty,activeMonths,topProducts(۱۰ نفری همه‌ زمان)}. دسترسی: هر کاربر لاگین‌شده (بدون assertPageAccess؛ تست با CASHIER هم ۲۰۰). رفع خطای ظریف: clampInt(null)→Number(null)=0→min — برای months پیش‌فرض با «?? 6» علاج شد.
+- scripts/import-stakeholders-r7.ts (اجراشده ×3 در جریان صیقل): ۱۱۷۷ ردیف واقعی (۱ ردیف جمع حذف شد؛ ۱,۱۶۰ با کد + ۱۷ بدون کد). آپسارت با code؛ ردیف‌های بدون کد با «نامِ تطبیقی» (fa + حذف «|» + حذف پرانتزها — «شرکت بانی چاو (لاین سس و سولیکو)» ≡ «شرکت بانی چاو لاین سس و سولیکو»)؛ نامِ ذخیره‌شده دقیقاً متن فایل است (پرانتزها حفظ، فقط «|» و فاصله‌ها تمیز می‌شوند). به‌روزرسانی فقط: نام/تلفن (همراه مقدم؛ خالی → مقدار قبلی)/مانده/حد اعتبار/طبقه‌بندی/وضعیت (فعال/غیر فعال). نتیجه: ۱,۱۷۷ به‌روزرسانی در اجرای نهایی؛ ۷ تأمین‌کنندهٔ جدید ساخته شد (رمضانی خرما زرد، عبدالله ملایی، مهدی علیخانی، زرین فرآورد برنا (هادلا)، کیان مهر، لواشک پارنا، کلمپه تیتک)؛ حذف نکردیم هیچ‌چیز را؛ ۶ «بانی چاو» بدون تکرار (۲ واریانت سس/سولیکو و سوربن که مالک گزارش کرده بود، از این مسیرِ بدون کدِ فایل وصل شدند و از حالت «گم‌شده» درآمدند) — اجرای اول ۱۲ ردیف تکراریِ نزدیک‌نام ساخت که با بازبینی پاک و منطقِ تطبیقِ پرانتز-حذاف بازسازی شد (لاگ کامل بالا). وضعیت نهایی تأمین‌کنندگان: ۱,۱۸۰ (۱,۱۵۱ فعال / ۲۹ غیر فعال).
+- کنترل کیفیت و پاکسازی: tsc --noEmit → ۰ خطا در هر ۴ فایل جدید؛ bun run lint پاک؛ dev.log فقط ۲۰۰/۴۰۱/۴۰۰ برای api/trades؛ اسکریپت‌های موقت بازرسی حذف شدند؛ هیچ فایل موجودی (schema/shell/hz-ext/نماها/اسکریپت‌های دیگر/APIهای دیگر) تغییر نکرد.
+
+Stage Summary:
+- دادهٔ واقعی ۴ ماه (تیر..مهر ۱۴۰۵) کامل داخل DB است: ۲۰۵,۶۲۷ رکورد TradeRecord (خرید ۴۹۴,۵۴۵,۹۰۹,۲۶۰ ریال / فروش ۵۵۶,۱۸۷,۸۰۷,۱۰۹ ریال) با اتصال ۹۹.۸۸٪ به Product؛ ۱۴,۹۵۵ کالا (۴۲ جدید) با موجودی/قیمت/تاریخِ بررسیِ واقعی؛ ۱,۱۸۰ تأمین‌کننده (۷ جدید، ۶ «بانی چاو» سالم).
+- تحلیل هوشمند فعال‌سازی اجرا شد: ۴,۶۲۵ کالا غیرفعال شدند (موجودی صفر + بدون فروش + بررسیِ قدیمی‌تر از تیر)، ۹۰ دوباره فعال شدند؛ معیارها در لاگ اسکریپت برای بازبینی مدیر موجود است.
+- فایل‌ها: scripts/import-trades-r7.ts · scripts/import-inventory-r7.ts · scripts/import-stakeholders-r7.ts · src/app/api/trades/route.ts — هر سه اسکریپت idempotent (اجرای دوم بدون تغییر وضعیت) و قابل اجرا با bun.
+- دادهٔ کیفیت یافته‌شده (برای گزارش به مالک): فایل خرید مهرماه ستون‌های وارونه (هندل شد)؛ ۲۳۷ ردیف معامله برای کالای غایب از کاتالوگ (productId=null)؛ ستون واحد کالا در این خروجی هلو خالی است (۴۲ کالای جدید همه «عدد» شدند)؛ شماره تلفن برخی طرف‌حساب‌ها مقدار بارکدمانند دارد (مثل بانی چاو لبنی: ۶۲۶۰۱۰۴۷۰۲۵۹۸) — عین منبع هلو نگه داشته شد؛ نام شیت «فروش مردادماه» در فایل «فروش امردادماه» است (غلط تایپی هلو، بی‌اثر).
+- پیشنهاد برای هماهنگ‌کننده: نمای تحلیل کالا/سود بر مبنای /api/trades (۴ حالت آماده)؛ در صورت خواست مالک، «واحد» کالاهای وزنی ۴۲تای جدید و تلفن‌های بارکدی باید دستی اصلاح شوند.
+
+---
+Task ID: R7-PERF
+Agent: sub agent R7-PERF (general-purpose — پیاده‌سازی پژوهش نمره‌دهی عملکرد R7)
+Task: پیاده‌سازی ۴ اصلاح پژوهش R7 (performance-grading-r7.md): ① پرچم‌های روزانهٔ بررسی تیم از دودویی به ۳ سطحی (ok/minor/needs_followup)، ② اتصال بازرسی روزانه به کارنامهٔ ماهانه به‌عنوان مؤلفهٔ هفتم با وزن‌های جدید KV-محور، ③ بازتوزیع وزن مؤلفه‌های بدون داده + total=null هنگام نبود هرگونه داده، ④ لنگرهای رفتاری BARS سبک برای ارزیابی مدیران + الزام «توضیح شاهد» برای نمرهٔ حدی.
+
+Work Log:
+- خواندم: worklog (R6/R7) + گزارش کامل پژوهش research/performance-grading-r7.md (بخش ۶ فیلد‌به‌فیلد) + کد فعلی: api/performance/route.ts (WEIGHTS ثابت ۶ مؤلفه‌ای، computeUser، upsert)، api/staff-checks/route.ts (FLAGS=[ok,needs_followup])، api/manager-reviews/route.ts، hz-ext views attendance/performance، prisma (PerformanceScore/StaffCheck/ManagerReview/Setting)، الگوی KV cheque-settings.
+- **① سه‌سطحی‌کردن پرچم‌های روزانه** (attendance.tsx + staff-checks):
+  * `FLAG_OPTS` سه‌گانه شد: مناسب (ok) / **نقص جزئی (minor — جدید)** / نامناسب — نیازمند پیگیری (needs_followup)؛ رنگ انتخابگر: minor = کهربایی روشن، needs_followup = رز پررنگ (تحقیق: مناسب خنثی). `followupCount` فقط needs_followup و absent را می‌شمارد (دست‌نخورده — معنای عملیاتی «نیازمند پیگیری» حفظ شد).
+  * api/staff-checks: آرایهٔ FLAGS سفید=مقدار minor پذیرفته می‌شود (نوع String بدون تغییر اسکیما؛ دادهٔ قدیمی کاملاً سازگار). پانویس جدول بررسی تیم + title ستون‌ها توضیح سه سطح را دارد.
+- **② اتصال بازرسی روزانه به کارنامه** (schema + api/performance):
+  * prisma: `PerformanceScore.dailyCheckScore Float @default(0)` (کامنت: ok=1, minor=0.5, needs_followup=0) + به‌روزرسانی کامنت‌های مجاز StaffCheck.uniform/hygiene/behavior/workQuality به `ok | minor | needs_followup`. اجرا شد: `bunx prisma db push --accept-data-loss` ✓ + `bunx prisma generate` ✓ (dev server خودش کلاینت جدید را برداشت).
+  * فرمول در computeUser (بخش ۶.۲ پژوهش): فقط رکوردهای arrival='on_time' (مرخصی/غیبت از این مؤلفه حذف و فقط در شاخص حضور جریمه می‌شوند — بدون جریمهٔ دوگانه)؛ امتیاز رکورد = میانگین نگاشت ۴ معیار (ok=۱ · minor=۰٫۵ · needs_followup=۰)؛ چند رکورد یک روز (هر دو شیفت) → میانگین همان روز؛ dailyCheckScore = ۱۰۰ × میانگین همهٔ روزهای دارای داده (round1)؛ counts.dailyCheckDays به پاسخ اضافه شد.
+  * **وزن‌های جدید ۷ مؤلفه‌ای در KV**: DEFAULT_WEIGHTS = وظایف ۰٫۳۰ · چیدمان ۰٫۲۰ · بازرسی روزانه ۰٫۱۵ · چک‌لیست ۰٫۱۵ · حضور ۰٫۱۰ · شمارش ۰٫۰۵ · تشویقی ۰٫۰۵ (جمع ۱۰۰٪). readWeights() از Setting کلید `perf.weights` (JSON) می‌خواند؛ KV غایب → در اولین خواندن با پیش‌فرض‌ها materialize می‌شود (الگوی cheque:limits)؛ KV موجود → «گسترش» می‌یابد (کلید غایب = پیش‌فرض؛ مقدار نامعتبر = پیش‌فرض؛ clamp ۰..۱). GET پاسخ `weights` (مؤثر) + `weightsKey` برمی‌گرداند؛ POST اسنپ‌شات وزن‌ها را در breakdownJson ذخیره می‌کند. نرمال‌سازی لازم نیست چون مخرج ترکیب = Σ وزن‌های فعال است.
+- **③ بازتوزیع وزن مؤلفه‌های بدون داده** (همان computeUser — بخش ۶.۴ پژوهش): hasData(task)=orders>0 · section=reviews>0 · dailyCheck=روزهای on_time>0 · checklist=states>0 · attendance=checks>0 · zoneCount=zcs>0 · extra=extraScore≠0. total = Σ(wᵢ×scoreᵢ)/Σwᵢ فقط روی مؤلفه‌های دارای داده؛ اگر هیچ مؤلفه‌ای داده نداشت یا Σw=۰ → **total=null و grade=''** («بدون دادهٔ کافی» — بدون کارنامه). ساختار پاسخ GET به‌عقب-سازگار ماند (همهٔ فیلدهای قبلی سر جایشان؛ فقط total حالا می‌تواند null باشد و dailyCheckScore/breakdown.dailyCheck اضافه شد). ستون‌های DB غیر-null ماندند: snapshot با total=0+grade='' ذخیره و total واقعی (null) داخل breakdownJson.
+- **④ BARS سبک + توضیح شاهد الزامی** (performance.tsx تب مدیران + api/manager-reviews):
+  * M_BARS: جدول ۱۱×۳ لنگرهای رفتاری کوتاه سطوح ۱/۳/۵ هر شاخص (staffMgmt…salesGrowth — متن‌های پژوهش خلاصه شدند تا زیر اسلایدر جا شوند)؛ زیر هر اسلایدر گرید ۳ستونه ۱·۳·۵ با هایلایت لنگرِ سطحِ به‌دست‌آمده (۱و۲→ضعیف رز · ۳و۴→استاندارد teal · ۵→عالی emerald؛ ۲ و ۴ بینابین). ردیف M_ANCHORS عمومی (۱ بسیار ضعیف…۵ عالی) حفظ شد.
+  * الزام توضیح شاهد برای نمرهٔ حدی (۱، ۲ یا ۵): UI — badge کهربایی «توضیح شاهد لازم» روی کارت شاخص حدی + شمارندهٔ زندهٔ شاخص‌های حدی زیر فیلد یادداشت (سبز ✓ وقتی ≥۸ نویسه) + بلاک ذخیره در saveManagerReview با خطای فارسی؛ سرور — POST با هر شاخص ≤۲ یا =۵ و یادداشت <۸ نویسه با ۴۰۰ «برای نمرهٔ حدی (۱، ۲ یا ۵) در «…»، ثبت توضیح شاهد (حداقل ۸ نویسه) الزامی است» رد می‌شود (۸ با ارقام فارسی). `total = میانگین × ۲۰` دست‌نخورده.
+- **نمای کارنامه (performance.tsx)**: COMPONENTS هفت‌گانه با ردیف جدید «بازرسی روزانه»؛ برچسب وزن هر مؤلفه از weights پاسخ API با faPct() (۰٫۱۵→«۱۵٪»، ارقام فارسی + جداکنندهٔ ٬ خودکار fa()) و fallback به پیش‌فرض؛ کارت «بدون دادهٔ کافی» برای total=null (جای عدد بزرگ «—» + چیپ خاکستری به‌جای سطح الف/ب/ج/د)؛ پانویس وزن‌ها و کارت «چرا این مقیاس؟» با ۷ مؤلفه + توضیح بازتوزیع + اشاره به قابلیت تنظیم perf.weights به‌روز شد. docs.tsx: PERF_CRITERIA (سند چاپی کارنامه) با ۷ مؤلفه/وزن جدید هماهنگ شد (performanceDocHTML از قبل total=null را با «—» هندل می‌کرد).
+- **تغییر نکرد**: manifest.json (تغییر M موجود مربوط به ثبت finance/archive توسط هماهنگ‌کننده در همین بازه بود — دست من نبود)، build.mjs (اجرا نشد — قانون)، shell.html، چانک‌های فروزن، مدل‌های دیگر، جریان حقوق R5-C، برش‌های الف/ب/ج/د.
+
+Verification:
+1. `bun hz-ext/check.mjs` → ALL 29 VIEWS OK (attendance ✓ performance ✓). `bunx tsc --noEmit` → صفر خطا در هر ۷ فایل تغییریافته (خطاهای باقی‌ماندهٔ پروژه pre-existing در فایل‌های دیگران: scripts/mini-services/section-columns/system-reset). `bun run lint` → پاک.
+2. **curl روی :3000 (ورود kianoosh با رمز)** — پاسخ‌های واقعی:
+   * GET /api/performance?period=1405-07 → weights: {"task":0.3,"section":0.2,"dailyCheck":0.15,"checklist":0.15,"attendance":0.1,"zoneCount":0.05,"extra":0.05} + weightsKey:"perf.weights"؛ درویشی (uniform=needs_followup در ۲۷ مهر): dailyCheckScore=۸۷٫۵، total=(0.15×87.5+0.10×100)/0.25=**۹۲٫۵ الف** (قدیم: ۰٫۳۵×۰+…=۳۷٫۵ ناعادلانه)؛ کیانوش (تنها مرخصی ۳۰ مهر): dailyCheckDays=۰ → بازرسی در ترکیب نیامد، total=۶۸ (چک‌لیست ۵۰+حضور ۹۵)؛ ملایی: total=۶۲٫۵ (چک‌لیست ۳ حالتِ صفرِ واقعی با داده وارد شد — تفکیک «بدون داده» از «صفرِ واقعی»).
+   * GET ?period=1405-06 (ماه بدون هیچ داده) → هر ۱۸ نفر total=null و grade="" — «بدون دادهٔ کافی».
+   * POST staff-checks: minor ذخیره شد (GET date=1405-07-28: uniform:"minor" ✓)؛ میانگین دو شیفت همان روز: صبح minor/ok/ok/ok=۰٫۸۷۵ + عصر needs_followup/ok/ok/ok=۰٫۷۵ → سارا dailyCheck=(۱+۱+۰٫۸۱۲۵)/۳=**۹۳٫۸** ✓؛ روز غیبت ۲۹ مهر (۴ پرچم نامناسب) در بازرسی شمرده نشد (dcDays=۳) و فقط حضور −۲۵ → total=۸۶٫۳ ب.
+   * POST /api/performance (تشویقی +۵) → snapshot با dailyCheckScore=۱۰۰، total=۸۴٫۲=(۰٫۱۵×۱۰۰+۰٫۱۰×۱۰۰+۰٫۰۵×۵)/۰٫۳ ✓، breakdownJson با وزن‌ها+dailyCheck+counts.dailyCheckDays.
+   * POST /api/manager-reviews: نظافت=۱ بدون یادداشت → ۴۰۰ «برای نمرهٔ حدی (۱، ۲ یا ۵) در «نظافت»، ثبت توضیح شاهد (حداقل ۸ نویسه) الزامی است»؛ یادداشت ۴ نویسه → همان ۴۰۰؛ نظافت=۵+حل مسئله=۲ با شاهد معتبر → ۲۰۰، total=۶۱٫۸=میانگین×۲۰ ✓.
+   * KV: خواندن اول → Setting['perf.weights'] با پیش‌فرض‌ها ساخته شد؛ KV جزئی {"task":0.5} → گسترش: task=۰٫۵ + بقیه پیش‌فرض (کارمند بدون دستورکار بی‌اثر: درویشی همان ۹۲٫۵)؛ بازگردانده به پیش‌فرض کامل.
+3. پاکسازی کامل دادهٔ آزمونی: ۳ StaffCheck تست (۱۴۰۵-۰۷-۲۸/۲۹) حذف → سارا به ۱۰۰/الف برگشت؛ PerformanceScore/ManagerReview آزمونی + ActivityLogهای مربوط حذف؛ ورودی‌های حقوق ۱۴۰۵-۰۷ با syncPayroll از دادهٔ پاک بازتولید و رکورد صفرِ ساخته‌شدهٔ تست حذف شد (۵ رکورد، همان قبل). وضعیت نهایی DB: staffChecks=۳۷ · performanceScores=۰ · managerReviews=۰ · payrollRecords 1405-07=۵ · perf.weights KV=پیش‌فرض‌ها. dev.log فقط ۲۰۰/۴۰۰-عمدی.
+
+Stage Summary:
+- هر ۴ اصلاح پژوهش R7 پیاده و API-verified شد: روزانه ۳ سطحی (minor با وزن ۰٫۵)، مؤلفهٔ «بازرسی روزانه» ۱۵٪ فقط روی روزهای on_time با میانگین دو شیفت، وزن‌های KV-محور perf.weights (قابل تنظیم توسط مالک بدون انتشار)، بازتوزیع وزن مؤلفه‌های بدون داده + «بدون دادهٔ کافی» برای total=null، لنگرهای BARS سبک ۱۱×۳ + توضیح شاهد الزامی (≥۸ نویسه) نمره‌های ۱/۲/۵ در UI و سرور.
+- فایل‌ها: prisma/schema.prisma (فقط PerformanceScore+کامنت‌ها) · src/app/api/performance/route.ts · src/app/api/staff-checks/route.ts · src/app/api/manager-reviews/route.ts · hz-ext/src/views/attendance.tsx · hz-ext/src/views/performance.tsx · hz-ext/src/lib/docs.tsx (PERF_CRITERIA چاپ) — به‌علاوهٔ db push و KV perf.weights.
+- انحراف جزئی از توصیه: needs_followup در Select هنوز دراپ‌داون است نه «سه دکمهٔ سگمنت» (پژوهش اختیاریش دانسته بود؛ ساختار جدول موجود حفظ شد تا ریسک UI صفر باشد) — پیشنهاد برای راند بعد در صورت درخواست مالک. docs.tsx هم خارج از جدول ۶.۹ پژوهش بود ولی PERF_CRITERIA آن وزن‌های قدیمی را چاپ می‌کرد و ناسازگار می‌ماند؛ هماهنگ شد.
+- برای هماهنگ‌کننده: hz-ext/build.mjs اجرا نشد (قانون) — نماهای attendance/performance نیازمند rebuild برای اعمال در چانک‌ها (آخرین .build موجود مربوط به ساخت ۱۷:۱۳ امروزِ هماهنگ‌کننده است که قبل از تغییرات این راند بود). منطق سمت سرور (API/DB) همین حالا زنده و فعال است.
+
+---
+Task ID: R7-COORD (round 7 — پوسته)
+Agent: Z.ai Code — main orchestrator (Round 7)
+
+Task: Owner's R7 batch — separators + terminology + late-field restore + menu rework + arrows root-cause + returns floats + rows + planogram-section + logo + reset + units + stakeholders + XLS imports + archive + research + unified audit + v_0.1.1_alpha «پوسته».
+
+Work Log:
+- SEPARATOR SYSTEM: fa()/money() now emit Persian thousands separator ٬ (owner's sample ۲۰۵٬۰۰۰) — numbers only; strings (barcodes/phones/codes/dates) untouched. 10 identifier call-sites (cheque numbers, barcode, phone, product code, version) migrated to toFaDigits. YEAR BUG: orders.tsx تقویم پرداشت month header fa(cal.jy)→toFaDigits (۱۴۰۵ no separator). New shared components lib/ui.tsx MoneyInput (auto ٬ grouping as you type + suffix) & NumInput (decimal-aware for weight, ٬ grouping, Persian ٫ decimal) exported via lib/hz.
+- TERMINOLOGY: «لباز»→«لباس» (manifest.json + guide.tsx + verified live registry clean). Full-term sweep of views (مسئول/مسئولیت valid; no other broken terms found).
+- LATE FIELD RESTORED (بررسی تیم): ARRIVALS now 5 options — به‌وقت / تأخیر (با اجازهٔ مدیر) / تأخیر بدون اجازه / مرخصی / غیبت — mapped to DB model arrival='late'+hadPermission+lateMinutes (server aggregation lib already supported it; R5-P2 had only removed the UI). New «مدت تأخیر» column (HMCell, enabled only for late types); read-time remapping of legacy data removed; summary line shows تأخیر X (با/بدون اجازه).
+- MENU REWORK (shell.html): MOBILE (≤767px) — rail becomes a fixed BOTTOM TAB BAR (standard Persian app pattern; 11 sections in a row, icon+label, safe-area padding, content gets bottom padding, footer clears the bar); tapping the ACTIVE section opens the sub-menu drawer (hamburger stays too). DESKTOP — #hz-nav-toggle pill at sidebar edge collapses menu (sidebar 272→0, rail 88→56 icon-only) with localStorage persistence + smooth transition; min-width:0 overrides frozen min-widths that blocked collapse.
+- ARROWS ROOT-CAUSE (3 separate bugs, all fixed):
+  1. Radix primitives defaulted dir="ltr" (no DirectionProvider) → EVERY Tabs container cascaded LTR layout (stockcount month-nav reversed, rows flipped) + Select dropdowns LTR. patch-radix-dir.mjs (baked into originals before regeneration): useDirection falls back to document.documentElement.dir → whole frozen app now RTL-native. Verified: stockcount prev=right x=835/next=left x=655, returns علت dropdown dir=rtl.
+  2. Shell mini date-picker used ‹› CHARACTERS which bidi-MIRROR in RTL → visually inverted. Replaced with inline SVG chevrons (SVGs never mirror). VLM-verified: left arrow points left (next), right points right (prev).
+  3. hr defaultPage:"personnel" (removed nav page) → کارکنان rail opened nav-less frozen page with flex-col toolbar. patch-registry-fixes.mjs: defaultPage→hrdocs in originals + shell redirect #/hr/personnel→#/hr/hrdocs. Verified: rail click → پرونده پرسنل with active nav item.
+- RETURNS FLOAT AMOUNTS (owner's exact case — barcode 1550 bulk peanut ۰٫۷۲kg): ReturnItem.qty Int→Float (db push); client+server validation: weight units (کیلوگرم/گرم/…) accept 3-decimal fractions, countable units require integers; qty input → NumInput(decimals=3 for weight, unit suffix, «اعشاری مجاز» hint); receipt qty shows ۰٫۷۲ with Persian ٫; lineTotal rounded. E2E LIVE-VERIFIED: searched 1550 → مغز بادام زمینی (کیلوگرم), qty ۰٫۷۲ × ۱۱٬۵۰۵٬۰۰۰ = ۸٬۲۸۳٬۶۰۰ submitted OK (HZ-050801-0003), DB qty=0.72 exact, then test record cleaned.
+- RETURNS RECEIPT SCROLL: ReceiptDialog max-h-[92vh] overflow-y-auto + preview container max-h-[52vh] scroll-area — print button always reachable without zoom-out (VLM verified). Bixolon canvas header now draws the store LOGO (if uploaded) + store name.
+- UNIFORM ROWS: cheques «محاسبه‌گر و پیشنهاد هوشمند» 4-cell grid restructured (identical label/input/min-h-hint stacks, items-start) — all cells equal height.
+- SUPPLIERS FULL LIST: /api/suppliers pageSize clamp 100→2400; orders + products form load ALL active suppliers (بانی چاو variants present — 1,180 total after stakeholder import).
+- PLANOGRAM↔SECTION: NEW hz-ext planograms.tsx replaces frozen store/planograms — every planogram connected to a map section: new-planogram form REQUIRES section select (with ✓ marks for sections that have one), section filter chips, in-editor section change (PATCH blockLabel added to API), «پلانوگرام برای این بخش» button on floorplan selected-block panel (?section= deep link auto-opens form), grid editor with product search per cell (طبقه labels), publish/done status flow, duplicate/delete. 39 sections detected from map.
+- UNIT MANAGEMENT SYSTEM: new Unit model + /api/units CRUD (create/rename/toggle/delete-with-usage-guard, managers only; self-seeds the 5 base units on first read). Products view: units manager dialog (toolbar «واحدها» button), all 3 unit selects (form/شناسنامه/filter) read from API; weight-kind units drive decimal qty.
+- STORE LOGO + PRINT BRAND: /api/settings/brand GET/PUT (data-URL ≤300KB, png/jpg/webp/svg) + data.tsx «هویت چاپی فروشگاه» card (upload/preview/remove + store name/phone/address/footer note). docs.tsx: 3-layer brand cache (module→localStorage→API), shell() header uses logo (lh-logo CSS) + store name/addr from brand with STORE fallbacks; printDoc awaits ensureBrand(); DocPreview re-renders on brand load; thermal receipt draws logo.
+- PLATFORM STATE RESET: /api/system/reset (OWNER/ADMIN; confirm «بازنشانی»; scopes tours/notifications/activity/drafts/testData/points; testData wipes orders+returns+cheques+margin+problems+taskorders+messages+shiftreports+staffchecks+sectionreviews+paymentplans+payments+stockcounts, products/users/config untouched) + data.tsx «بازنشانی وضعیت سامانه» card with scope checkboxes, confirm input, result summary.
+- TRADE DATA IMPORT (subagent R7-DATA): 205,627 TradeRecords (BUY 22,228 + SELL 183,399; تیر–مهر ۱۴۰۵; 99.88% product-linked; totals match Holoo file sums to the rial), inventory.xls+current-inventory.xls → 14,901 products updated + 42 created, smart deactivation 4,625 dead (stock=0 ∧ no sales ∧ lastCheck<1405-04) + 90 reactivated → 9,663 active/5,292 inactive, stakeholders-new.xlsx → 1,177 upserted + 7 created (1,180 total; all 6 بانی چاو entries deduped). /api/trades analytics (months/top-per-month/per-product-series/summary).
+- PRODUCT TRADE CHARTS: passport third chart section «سابقهٔ واقعی خرید و فروش (هلو — ۱۴۰۵)» — dual FlowCharts (monthly buy qty teal / sell qty green) + جمع خرید/فروش/گردش فروش chips, fetched /api/trades?productId=.
+- ARCHIVE SYSTEM (subagent R7-ARCHIVE): full هیبریدی دیجیتال+فیزیکی archiving — /api/archive (docs search/list/CRUD incl. returned-items-in-red, Holoo invoice/receipt numbers, sales-rep linkage) + /api/archive/structure (cabinet→shelf→binder tree CRUD + auto-codes CAB-01-S2-B1 + doc-count guards) + /api/archive/reps (sales reps CRUD + history) + archive.tsx view (3 tabs اسناد/ساختار آرشیو/نمایندگان فروش, search-first, A4 print cover-sheet with barcode + huge location block) + seed (2 cabinets/5 shelves/6 real-category binders). Registered finance/archive in manifest (nav + access OWNER/GM/ADMIN/EXEC/ACC).
+- PERFORMANCE GRADING (subagent R7-RESEARCH + R7-PERF): 395-line Persian research report (42 citations: Likert granularity, Preston&Colman, Viswesvaran inter-rater .52, BARS…) — verdict: 5-point for human ratings, 0-100 for system composite, A/B/C/D bands, no forced ranking. IMPLEMENTED: 3-level daily flags (ok/minor/needs_followup), PerformanceScore.dailyCheckScore (on_time days only, two-shift averaging), tunable weights KV perf.weights (وظایف ۳۰/چیدمان ۲۰/بازرسی ۱۵/چک‌لیست ۱۵/حضور ۱۰/شمارش ۵/تشویقی ۵), no-data weight redistribution (cashier case 56.3→95.1 fixed), BARS-lite anchors on manager-review sliders + mandatory witness note for scores 1/2/5 (server-enforced), کارنامه shows 7 components + «بدون دادهٔ کافی».
+- REGRESSION FIXED: my sops.tsx fa(version)→toFaDigits edit lacked the import → whole-chunk eval crash ("toFaDigits is not defined") killed EVERY view navigation; found via window error trap, import added, rebuilt — full sweep green.
+- BUILDS: final chunk hzext-6e393aac.js (29 views incl. archive+planograms); patch-radix-dir + patch-registry-fixes registered in build.mjs BEFORE loader/registry regeneration; lint clean; ALL 29 VIEWS OK.
+- QA: 27-route sweep as kianoosh ALL OK (no empty/error pages); stockcount/returns-dropdown/mini-picker arrows VLM+DOM verified; hr rail→hrdocs; compact toggle 272/88→0/56 with persisted state; mobile bottom tab bar (fixed,row,390px,11 tabs); archive+planograms pages render; returns 0.72kg E2E with Luhn card; receipt scroll VLM OK; terminology sweep clean.
+
+Stage Summary:
+- ALL owner R7 items delivered: separators (incl. auto-separator inputs, year-safe), لباس terminology, late field restored, menu rework (mobile bottom bar + desktop compact), arrows root-caused & fixed app-wide (radix RTL + SVG chevrons + hr default), returns floats + receipt scroll, uniform rows, planogram↔section (map button + form select), logo everywhere in prints, platform reset, unit CRUD, stakeholders complete (بانی چاو), real buy/sell history imported + charted, document archiving system live, research-backed performance grading, unified-center audit clean.
+- NO deploy to demo server (per owner's explicit ban — awaiting approval). Local DB contains QA residue: returns count 7 (pre-existing + archive seed structure 2/5/6 + zero docs) — deploy uses server DB, never local.
+- Next: owner verification → approval → deploy (deploy-r6.sh pattern + new scripts/APIs/views) → monitor.

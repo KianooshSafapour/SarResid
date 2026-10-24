@@ -39,17 +39,20 @@ export { Icon, I } from './icons'
 export {
   JalaliDate, Stepper, TourEngine, mountTour, printHTML, barcode128,
   amountWords, numberToPersianWords, minutesToHM, jsDateToJalali,
+  TimeInput, MoneyInput, NumInput, faSlash,
   type TourStep, type TourHandle,
 } from './ui'
-export { docHTML, printDoc, DocPreview } from './docs'
+export { docHTML, printDoc, DocPreview, ensureBrand, brandNow } from './docs'
 
-/** فارسی‌سازی اعداد + جداکننده هزارگان */
+/** فارسی‌سازی اعداد + جداکننده هزارگان فارسی (٬ U+066C) — مطابق نمونهٔ مالک: ۲۰۵٬۰۰۰
+ *  فقط ورودی «عددی» گروه‌بندی می‌شود؛ رشته‌ها (بارکد، شماره چک، تلفن، کد، تاریخ…) فقط فارسی‌سازی می‌شوند.
+ *  برای سال (۱۴۰۵) و شناسه‌ها از toFaDigits استفاده کنید. */
 export function fa(n: number | string | null | undefined): string {
   if (n === null || n === undefined || n === '') return ''
-  const s = typeof n === 'number' ? n.toLocaleString('en-US') : String(n)
-  return s.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
+  if (typeof n === 'number') return n.toLocaleString('en-US').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]).replace(/,/g, '٬')
+  return String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
 }
-/** پول به ریال با جداکننده */
+/** پول به ریال با جداکنندهٔ فارسی */
 export function money(n: number | null | undefined): string {
   if (n === null || n === undefined) return '۰'
   return fa(Math.round(n).toLocaleString('en-US'))

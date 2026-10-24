@@ -28,10 +28,18 @@ const STALENESS_PROBES = ['zoneColumn', 'smsPanel', 'dataSnapshot']
 const missingModel = (m: string) => !(client as unknown as Record<string, unknown>)[m]
 // R4-coordinator: field-level staleness — adding FIELDS to existing models (not new models)
 // doesn't trip the model probe above; probe a known new field via the internal DMMF.
-const userFields: { name?: string }[] =
-  ((client as unknown as { _dmmf?: { modelMap?: Record<string, { fields?: { name?: string }[] }> } })._dmmf?.modelMap?.User?.fields) || []
-const missingUserField = !userFields.some((f) => f?.name === 'mobile')
-if (STALENESS_PROBES.some(missingModel) || missingUserField) {
+// R5-P4: Product.sectionLabel + Sop.completions added to the probes.
+const FIELD_PROBES: [string, string][] = [
+  ['User', 'mobile'],
+  ['Product', 'sectionLabel'],
+  ['Sop', 'completions'],
+]
+const dmmfModels =
+  ((client as unknown as { _dmmf?: { modelMap?: Record<string, { fields?: { name?: string }[] }> } })._dmmf?.modelMap) || {}
+const missingField = FIELD_PROBES.some(
+  ([m, f]) => !(dmmfModels[m]?.fields || []).some((x) => x?.name === f),
+)
+if (STALENESS_PROBES.some(missingModel) || missingField) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createRequire } = require('module') as typeof import('module')

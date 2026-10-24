@@ -106,7 +106,8 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'store/reviews': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM'],
   'store/stockcount': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK'],
   'hr/performance': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
-  'store/liveboard': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK'],
+  // R5-E: MERCH (نیروی چیدمان) — تابلوی «ردیف‌های نیازمند شارژ» در نقشهٔ زنده
+  'store/liveboard': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'MERCH'],
   'system/activity': ['OWNER', 'GM', 'ADMIN'],
   // ---- R3 hz-ext views (same defaults as the sections they live in) ----
   'home/home': ['*'],

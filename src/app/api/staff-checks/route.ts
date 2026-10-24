@@ -5,13 +5,15 @@ import { getSessionUser, MANAGER_ROLES } from '@/lib/auth'
 import { displayName, notify } from '@/lib/notify'
 import { assertPageAccess } from '@/lib/access'
 import { todayJalaliDash } from '@/lib/jalali'
+import { aggregateMonthAttendance, monthOfDashDate, syncPayrollInputs } from '@/lib/hr-attendance'
 
 export const dynamic = 'force-dynamic'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const SHIFTS = ['MORNING', 'EVENING']
 const ARRIVALS = ['on_time', 'late', 'absent', 'permitted_leave']
-const FLAGS = ['ok', 'needs_followup']
+// R7-PERF: پرچم‌های روزانه سه‌سطحی شدند — مناسب / نقص جزئی / نیازمند پیگیری (پژوهش R7 بخش ۶.۱)
+const FLAGS = ['ok', 'minor', 'needs_followup']
 
 /** The evening manager receiving morning-problem escalations */
 async function eveningManager() {
@@ -52,8 +54,13 @@ function problemOut(p: {
 }
 
 /**
- * GET /api/staff-checks?date=1405-07-27&shift=MORNING|EVENING — managers only.
- * → {checks, staff (active non-manager staff), unresolvedMorning}
+ * GET /api/staff-checks — managers only (tasks/attendance):
+ *  1) ?date=1405-07-27&shift=MORNING|EVENING → {checks, staff, onLeave, unresolvedMorning}
+ *     staff = همهٔ کاربران فعال، از جمله خودِ بررسی‌کننده (R5-P2: «همه از جمله من»)
+ *     هر نفر shift همان روز را از ShiftAssignment می‌آورد (صبح/عصر — برای فیلتر بررسی تیم)
+ *     onLeave = مرخصی‌های تأییدشدهٔ همان روز {userId:{type,hours,days}}
+ *  2) ?staff=<userId> → {items} سوابق کنترل یک پرسنل (پرونده پرسنل — تب سوابق)
+ *  3) ?summary=1405-07 → {summary} جمع‌بندی ماه برای سیستم حقوق
  */
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
@@ -62,37 +69,88 @@ export async function GET(req: NextRequest) {
   if (!gate.ok) return fail(gate.deny, 403)
 
   const sp = req.nextUrl.searchParams
+
+  // ---- branch 3: month summary (برای سیستم حقوق) ----
+  const summaryPeriod = sp.get('summary') || ''
+  if (summaryPeriod) {
+    const pm = monthOfDashDate(`${summaryPeriod}-01`)
+    if (!pm) return fail('دوره را به شکل ۱۴۰۵-۰۷ وارد کنید')
+    return ok(await aggregateMonthAttendance(pm.year, pm.month))
+  }
+
+  // ---- branch 2: one staff member's history (پرونده پرسنل) ----
+  const staffParam = sp.get('staff') || ''
+  if (staffParam) {
+    const rows = await db.staffCheck.findMany({
+      where: { staffId: staffParam },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      take: 40,
+    })
+    return ok({ items: rows })
+  }
+
   const date = sp.get('date') || todayJalaliDash()
   if (!DATE_RE.test(date)) return fail('تاریخ را به شکل ۱۴۰۵-۰۷-۲۷ وارد کنید')
   const shift = sp.get('shift') || ''
   if (shift && !SHIFTS.includes(shift)) return fail('شیفت نامعتبر است')
 
-  const [checks, staff, problems] = await Promise.all([
+  const [checks, staff, problems, dayLeaves, dayAssignments] = await Promise.all([
     db.staffCheck.findMany({
       where: shift ? { date, shift } : { date },
       orderBy: [{ staffName: 'asc' }],
     }),
+    // R5-P2: همهٔ کاربران فعال — خودِ بررسی‌کننده هم بررسی می‌شود (درخواست مالک:
+    // «همهٔ پرسنل از جمله من» + «برخی صبح و برخی عصر کار می‌کنند»)
     db.user.findMany({
-      where: { active: true, role: { notIn: MANAGER_ROLES } },
+      where: { active: true },
       orderBy: { createdAt: 'asc' },
     }),
     db.problem.findMany({
       where: { date, shift: 'MORNING', status: { not: 'RESOLVED' } },
       orderBy: { createdAt: 'desc' },
     }),
+    // مرخصی‌های تأییدشدهٔ پوشش‌دهندهٔ همین روز (R5-C)
+    db.leaveRequest.findMany({
+      where: { status: 'APPROVED', fromDate: { lte: date }, toDate: { gte: date } },
+    }),
+    // شیفت تعیین‌شدهٔ هر نفر در همین روز (برنامهٔ شیفت هفتگی) — صبح/عصر
+    db.shiftAssignment.findMany({ where: { date } }),
   ])
+
+  // پرسنل عادی اول، مدیران آخر — مرور روزانه راحت‌تر
+  const rank = (role: string) => (MANAGER_ROLES.includes(role) ? 1 : 0)
+  const sortedStaff = [...staff].sort((a, b) => rank(a.role) - rank(b.role))
+  // شیفت همان روز: دادهٔ قدیمی NIGHT → EVENING (شیفت شب وجود ندارد)
+  const shiftOfDay = new Map<string, string>()
+  for (const a of dayAssignments) {
+    shiftOfDay.set(a.userId, a.shift === 'NIGHT' ? 'EVENING' : a.shift)
+  }
+
+  const onLeave: Record<string, { type: string; hours: number; days: number }> = {}
+  for (const l of dayLeaves) {
+    if (l.type === 'HOURLY') {
+      // مجموع ساعت‌های مرخصی ساعتی تأییدشدهٔ همان روز
+      if (onLeave[l.userId]) onLeave[l.userId].hours += Math.max(0, l.hours || 0)
+      else onLeave[l.userId] = { type: l.type, hours: Math.max(0, l.hours || 0), days: 0 }
+    } else if (!onLeave[l.userId]) {
+      onLeave[l.userId] = { type: l.type, hours: 0, days: Math.max(1, l.days || 1) }
+    }
+  }
 
   return ok({
     date,
     shift: shift || null,
     checks,
-    staff: staff.map((u) => ({
+    staff: sortedStaff.map((u) => ({
       id: u.id,
       fullName: u.fullName,
       honorific: u.honorific,
       role: u.role,
       title: u.title,
+      // شیفت تعیین‌شدهٔ همین روز از برنامهٔ شیفت هفتگی (صبح/عصر/تعطیل/مرخصی)
+      dayShift: shiftOfDay.get(u.id) || null,
     })),
+    onLeave,
     unresolvedMorning: problems.map(problemOut),
   })
 }
@@ -100,10 +158,14 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/staff-checks
  *  a) bulk upsert: {date, shift, rows:[{staffId, arrival, lateMinutes, hourlyLeaveMinutes,
- *     overtimeMinutes, hadPermission, uniform, hygiene, behavior, workQuality, note?}]} → {saved:n}
+ *     overtimeMinutes, hadPermission, uniform, hygiene, behavior, workQuality, note?}]} → {saved:n, payrollSynced:n}
  *     (present is derived: arrival!=='absent'; minutes clamped 0..600)   (managers only)
+ *     پس از ثبت، ورودی‌های حقوق همان ماه (اضافه‌کار/غیبت) از داده‌های حضور بازتولید می‌شود.
  *  b) escalate: {action:'escalate', date} → one notification per unresolved morning problem
  *     to the evening manager (deduped) → {escalated:n}
+ *  c) syncPayroll: {action:'syncPayroll', date} → بازتولید صریح و idempotent ورودی‌های حقوق
+ *     همان ماه از داده‌های بررسی تیم + مرخصی‌های تأییدشده (R5-P2 «ثبت در حقوق و دستمزد»)
+ *     → {payrollSynced:n, period:'1405-07'}
  */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
@@ -181,6 +243,24 @@ export async function POST(req: NextRequest) {
     return ok({ escalated: created, target: { id: target.id, name: displayName(target) } })
   }
 
+  // ---- explicit payroll sync branch (R5-P2: «ثبت در حقوق و دستمزد») ----
+  if (body.action === 'syncPayroll') {
+    const date = String(body.date || todayJalaliDash())
+    if (!DATE_RE.test(date)) return fail('تاریخ را به شکل ۱۴۰۵-۰۷-۲۷ وارد کنید')
+    const pm = monthOfDashDate(date)
+    if (!pm) return fail('دوره حقوق از این تاریخ قابل استخراج نیست')
+    const sync = await syncPayrollInputs(pm.year, pm.month)
+    await logActivity({
+      userId: me.id,
+      userName: displayName(me),
+      action: 'staffcheck.syncPayroll',
+      actionLabel: 'ارسال به حقوق',
+      category: 'hr',
+      detail: `بررسی تیم ${date} → ورودی‌های حقوق ${pm.year}-${String(pm.month).padStart(2, '0')} برای ${sync.users} نفر بازتولید شد`,
+    })
+    return ok({ payrollSynced: sync.users, period: `${pm.year}-${String(pm.month).padStart(2, '0')}` })
+  }
+
   if (body.action) return fail('عملیات نامعتبر است')
 
   // ---- bulk upsert branch ----
@@ -233,6 +313,18 @@ export async function POST(req: NextRequest) {
 
   if (!saved) return fail('هیچ عضو معتبری برای ثبت یافت نشد')
 
+  // R5-C: جریان به سیستم حقوق — ورودی‌های ماه بازتولید می‌شود (idempotent)
+  let payrollSynced = 0
+  const pm = monthOfDashDate(date)
+  if (pm) {
+    try {
+      const sync = await syncPayrollInputs(pm.year, pm.month)
+      payrollSynced = sync.users
+    } catch {
+      // همگام‌سازی حقوق هرگز جریان اصلی را نمی‌شکند
+    }
+  }
+
   await logActivity({
     userId: me.id,
     userName: displayName(me),
@@ -242,5 +334,5 @@ export async function POST(req: NextRequest) {
     detail: `${date} — ${shift === 'MORNING' ? 'شیفت صبح' : 'شیفت عصر'} — ${saved} نفر`,
   })
 
-  return ok({ saved })
+  return ok({ saved, payrollSynced })
 }

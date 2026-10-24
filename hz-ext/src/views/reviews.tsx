@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo, api, qs, useShell, toast, cn, Button, Inp
    ───────────────────────────────────────────────────────────── */
 
 const PARAMS = [
-  { key: 'dateScore', label: 'تاریخ تولید/انقضا — 临期 در جلو (FEFO)', hint: 'کالاهای نزدیک‌تر به انقضا جلوی کالاهای جدیدتر قرار گیرند' },
+  { key: 'dateScore', label: 'تاریخ تولید/انقضا — نزدیک‌انقضا در جلو (FEFO)', hint: 'کالاهای نزدیک‌تر به انقضا جلوی کالاهای جدیدتر قرار گیرند' },
   { key: 'layoutScore', label: 'نظم و ترتیب چیدمان', hint: 'ردیف‌ها مرتب، هم‌جهت و بدون جاافتادگی' },
   { key: 'cleanScore', label: 'نظافت', hint: 'بدون گرد روی کالا، خط و کف پاکیزه' },
   { key: 'labelScore', label: 'برچسب و قیمت', hint: 'جلوی هر ردیف محصول، برچسب قیمت موجود' },

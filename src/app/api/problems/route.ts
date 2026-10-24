@@ -1,11 +1,16 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { ok, fail, logActivity } from '@/lib/api'
+import { ok, fail, safeJson, logActivity } from '@/lib/api'
 import { getSessionUser, isManager } from '@/lib/auth'
 import { displayName, notify } from '@/lib/notify'
 import { todayJalaliDash } from '@/lib/jalali'
+import { runDueAlerts } from './_due'
 
 export const dynamic = 'force-dynamic'
+
+/** KV keys — Problem has no smsAlert column (no schema change needed) */
+export const problemSmsKey = (id: string) => `problem:smsalert:${id}`
+export const problemAlertKey = (id: string, phase: string) => `problem:alert:${id}:${phase}`
 
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED']
 const SHIFTS = ['MORNING', 'EVENING']
@@ -57,6 +62,7 @@ type ProblemRow = {
 function problemOut(
   p: ProblemRow,
   users: Map<string, { fullName: string; honorific: string; role: string }>,
+  smsAlert = false,
 ) {
   const r = p.reporterId ? users.get(p.reporterId) : undefined
   const a = p.assigneeId ? users.get(p.assigneeId) : undefined
@@ -81,9 +87,17 @@ function problemOut(
     assigneeId: p.assigneeId,
     assignee: a ? { id: p.assigneeId, fullName: a.fullName, honorific: a.honorific, role: a.role } : null,
     dueDate: p.dueDate,
+    smsAlert,
     resolvedAt: p.resolvedAt ? p.resolvedAt.toISOString() : null,
     createdAt: p.createdAt.toISOString(),
   }
+}
+
+/** Batch-read the per-problem SMS-alert flags (Setting KV). */
+async function smsAlertsFor(ids: string[]): Promise<Map<string, boolean>> {
+  if (!ids.length) return new Map()
+  const rows = await db.setting.findMany({ where: { key: { in: ids.map(problemSmsKey) } } })
+  return new Map(rows.map((r) => [r.key.slice('problem:smsalert:'.length), safeJson<boolean>(r.value, false)]))
 }
 
 /** GET /api/problems?status=&category=&severity=&shift=&assignee=&from=&to=
@@ -125,6 +139,7 @@ export async function GET(req: NextRequest) {
       })
     : []
   const userMap = new Map(users.map((u) => [u.id, u]))
+  const smsMap = await smsAlertsFor(problems.map((p) => p.id))
 
   const stats = {
     open: all.filter((p) => p.status === 'OPEN').length,
@@ -141,18 +156,28 @@ export async function GET(req: NextRequest) {
     ? [...new Set(plan.blocks.map((b) => b.label).filter((l): l is string => !!l))]
     : []
 
+  // ارزیابی تنبل هشدارهای مهلت (idempotent — نشانه‌های KV از تکرار جلوگیری
+  // می‌کنند): با باز شدن فهرست توسط هر کاربری، اعلان/پیامکی که هنوز ارسال
+  // نشده شلیک می‌شود. هرگز پاسخ فهرست را متوقف نمی‌کند.
+  let alerts: { checked: number; created: number; smsSent: number } | null = null
+  try { alerts = await runDueAlerts() } catch { /* بی‌صدا */ }
+
   return ok({
-    items: problems.map((p) => problemOut(p as unknown as ProblemRow, userMap)),
+    items: problems.map((p) =>
+      problemOut(p as unknown as ProblemRow, userMap, smsMap.get(p.id) === true),
+    ),
     stats,
     blocks,
     categories: CATEGORIES.map((c) => ({ key: c, label: CATEGORY_LABELS[c] })),
     severities: SEVERITIES.map((s) => ({ key: s, label: SEVERITY_LABELS[s] })),
+    ...(alerts ? { alerts } : {}),
   })
 }
 
 /**
  * POST /api/problems — ثبت مشکل (هر کاربر)
- * { problem, category?, severity?, location?, assigneeId?, dueDate?, time?, shift?, action?, date? }
+ * { problem, category?, severity?, location?, assigneeId?, dueDate?, time?, shift?, action?, date?,
+ *   smsAlert? } — smsAlert (مدیران): هشدار پیامکی به مسئول نزدیک/بعد از مهلت
  */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
@@ -174,15 +199,22 @@ export async function POST(req: NextRequest) {
   const dueDate = String(body.dueDate || '').trim() || null
   if (dueDate && !DATE_RE.test(dueDate)) return fail('مهلت رسیدگی را به شکل ۱۴۰۵-۰۷-۲۷ وارد کنید')
 
+  const incidentDate = String(body.date || '').trim() || todayJalaliDash()
+  if (!DATE_RE.test(incidentDate)) return fail('تاریخ وقوع مشکل را به شکل ۱۴۰۵-۰۷-۲۷ وارد کنید')
+
   const assigneeId = String(body.assigneeId || '').trim() || null
   if (assigneeId) {
     const assignee = await db.user.findUnique({ where: { id: assigneeId } })
     if (!assignee) return fail('مسئول پیگیری انتخاب‌شده یافت نشد', 404)
   }
 
+  const smsAlert = body.smsAlert === true
+  if (smsAlert && !isManager(me)) return fail('تنها مدیران می‌توانند اطلاع‌رسانی پیامکی را فعال کنند', 403)
+  if (smsAlert && !assigneeId) return fail('برای اطلاع‌رسانی پیامکی باید مسئول پیگیری مشخص باشد')
+
   const created = await db.problem.create({
     data: {
-      date: body.date ? String(body.date).trim() : todayJalaliDash(),
+      date: incidentDate,
       problem,
       responsible: body.responsible ? String(body.responsible).trim() : null,
       action: body.action ? String(body.action).trim() : null,
@@ -198,6 +230,14 @@ export async function POST(req: NextRequest) {
       dueDate,
     },
   })
+
+  if (smsAlert && created.id) {
+    await db.setting.upsert({
+      where: { key: problemSmsKey(created.id) },
+      create: { key: problemSmsKey(created.id), value: 'true' },
+      update: { value: 'true' },
+    })
+  }
 
   const myName = displayName(me)
   const severityForNotify = severity === 'urgent' ? 'critical' : severity === 'high' ? 'warning' : 'important'
@@ -290,6 +330,10 @@ export async function DELETE(req: NextRequest) {
   if (!problem) return fail('مشکل یافت نشد', 404)
 
   await db.problem.delete({ where: { id } })
+  // KV cleanup: alert markers + sms flag (startsWith keeps other problems' keys safe)
+  await db.setting.deleteMany({
+    where: { OR: [{ key: problemSmsKey(id) }, { key: { startsWith: `problem:alert:${id}:` } }] },
+  })
   await logActivity({
     userId: me.id,
     userName: displayName(me),

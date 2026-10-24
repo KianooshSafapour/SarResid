@@ -261,7 +261,7 @@ export default function FloorplanView() {
     if (!addKind || !plan) return
     const bw = Math.round(plan.width * 0.08), bh = Math.round(plan.height * 0.045)
     const n = blocks.filter((b) => b.kind === addKind).length
-    const label = `${kindOf(addKind).label} ${n + 1}`
+    const label = `${kindOf(addKind).label} ${toFaDigits(n + 1)}`
     const nb = {
       kind: addKind, label, zoneName: '',
       x: Math.max(0, Math.min(plan.width - bw, snap10(x - bw / 2))),
@@ -345,7 +345,16 @@ export default function FloorplanView() {
   }
 
   function onMapDown(e: any) {
-    if ((e.target as Element)?.getAttribute?.('data-bg') !== '1') return
+    /* پن فقط از زمینهٔ نقشه — بلوک‌ها/رأس‌ها خودشان stopPropagation می‌کنند؛
+       دیوارهای شفاف (نمایش طول) هم مثل زمینه عمل می‌کنند تا درگ از کنار دیوارها کار کند */
+    const t = e.target as Element
+    const isBg = t?.getAttribute?.('data-bg') === '1'
+    const isSvgRoot = t === e.currentTarget
+    if (!isBg && !isSvgRoot) {
+      /* روی عنصر تعاملی دیگری (بلوک، رأس و …) هستیم که خودش رویداد را مدیریت می‌کند */
+      const tag = String((t && (t as any).tagName) || '').toLowerCase()
+      if (tag !== 'line' && tag !== 'svg') return
+    }
     ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
     dragRef.current = { mode: 'pan', sx: e.clientX, sy: e.clientY, tx: view.tx, ty: view.ty }
     movedRef.current = false
@@ -371,9 +380,21 @@ export default function FloorplanView() {
   }
   function onMapUp() { dragRef.current = null }
   function onMapClick(e: any) {
-    if ((e.target as Element)?.getAttribute?.('data-bg') !== '1') return
+    /* حالت افزودن: هر کلیکی که به سطح svg می‌رسد (و توسط بلوک مدیریت نشده)
+       یعنی کلیک روی زمینهٔ نقشه — بلوک همان‌جا ساخته می‌شود.
+       توجه: setPointerCapture باعث می‌شود click روی خودِ svg بیفتد نه روی rect زمینه؛
+       پس svg-root و rect زمینه هر دو «کلیک زمینه» حساب می‌شوند. */
+    if (addKind) {
+      if (movedRef.current) { movedRef.current = false; return }
+      const [x, y] = toPlan(e)
+      addBlockAt(x, y)
+      return
+    }
+    const t = e.target as Element
+    const isBg = t?.getAttribute?.('data-bg') === '1'
+    const isSvgRoot = t === e.currentTarget
+    if (!isBg && !isSvgRoot) return // کلیک روی بلوک/رأس — خودش مدیریت شده
     if (movedRef.current) { movedRef.current = false; return }
-    if (addKind) { const [x, y] = toPlan(e); addBlockAt(x, y); return }
     setSelIdx(null)
   }
 
@@ -784,9 +805,14 @@ export default function FloorplanView() {
                 {(() => {
                   const pg = sel.label ? pgByLabel.get(sel.label) : null
                   if (!pg) return (
-                    <div className="flex items-center justify-between rounded-lg border border-stone-200 px-2.5 py-2 text-[11px] text-stone-400">
-                      پلانوگرامی برای این بلوک ثبت نشده
-                      <Button variant="outline" size="sm" className="h-7 gap-1" onClick={() => go('store/planograms')}><I.package size={13} /> پلانوگرام‌ها</Button>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between rounded-lg border border-stone-200 px-2.5 py-2 text-[11px] text-stone-400">
+                        پلانوگرامی برای این بخش ثبت نشده
+                      </div>
+                      {/* R7: ساخت پلانوگرام برای همین بخش — مستقیم از نقشه */}
+                      <Button size="sm" className="w-full gap-1.5 bg-teal-600 hover:bg-teal-700" onClick={() => go(`store/planograms?section=${encodeURIComponent(sel.label)}`)}>
+                        <I.package size={14} /> پلانوگرام برای این بخش
+                      </Button>
                     </div>
                   )
                   return (
@@ -794,7 +820,7 @@ export default function FloorplanView() {
                       <I.package size={13} /> پلانوگرام: {pg.name}
                       <Badge variant="secondary" className="text-[10px]">{pg.status === 'PUBLISHED' ? 'منتشرشده' : 'پیش‌نویس'}</Badge>
                       <span className="text-teal-600">پرشدگی {fa(pg.fillHealth ?? 0)}٪</span>
-                      <Button variant="outline" size="sm" className="mr-auto h-7 gap-1" onClick={() => go('store/planograms')}>مدیریت</Button>
+                      <Button variant="outline" size="sm" className="mr-auto h-7 gap-1" onClick={() => go(`store/planograms?section=${encodeURIComponent(sel.label)}`)}>مدیریت پلانوگرام این بخش</Button>
                     </div>
                   )
                 })()}

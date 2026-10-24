@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser, isManager } from '@/lib/auth'
 import { displayName, notify } from '@/lib/notify'
+import { problemSmsKey } from '../route'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,7 @@ const STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED']
  *  {status:'OPEN'|'IN_PROGRESS'|'RESOLVED'}                    — تغییر وضعیت
  *  {action:'resolve', actionTaken}                              — ثبت اقدام + حل نهایی (resolvedAt)
  *  {action:'assign', assigneeId}                                — واگذاری به مسئول (فقط مدیران)
+ *  {action:'smsAlert', enabled:bool}                            — کلید اطلاع‌رسانی پیامکی (فقط مدیران)
  * مدیران همیشه مجازند؛ مسئول پیگیری (assignee) نیز می‌تواند وضعیت را پیش ببرد.
  */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
@@ -30,6 +32,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     action?: string
     actionTaken?: string
     assigneeId?: string
+    enabled?: boolean
   }
 
   const manager = isManager(me)
@@ -67,6 +70,34 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       entityId: id,
     })
     return ok({ id, assigneeId })
+  }
+
+  // ---- sms alert toggle (managers) ----
+  if (action === 'smsAlert') {
+    if (!manager) return fail('تنها مدیران می‌توانند اطلاع‌رسانی پیامکی را تنظیم کنند', 403)
+    const enabled = body.enabled === true
+    if (enabled && !problem.assigneeId) {
+      return fail('برای اطلاع‌رسانی پیامکی ابتدا مسئول پیگیری را مشخص کنید')
+    }
+    if (enabled) {
+      await db.setting.upsert({
+        where: { key: problemSmsKey(id) },
+        create: { key: problemSmsKey(id), value: 'true' },
+        update: { value: 'true' },
+      })
+    } else {
+      await db.setting.deleteMany({ where: { key: problemSmsKey(id) } })
+    }
+    await logActivity({
+      userId: me.id,
+      userName: displayName(me),
+      action: 'problem_smsalert',
+      actionLabel: enabled ? 'فعال‌سازی هشدار پیامکی' : 'خاموش‌کردن هشدار پیامکی',
+      category: 'problems',
+      detail: problem.problem.slice(0, 60),
+      entityId: id,
+    })
+    return ok({ id, smsAlert: enabled })
   }
 
   // ---- resolve ----

@@ -1,30 +1,50 @@
-import { JALALI_MONTHS, useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Checkbox, fa, addJalaliDays, formatJalaliLong, minutesToHM, parseJalali, toEnDigits, toFaDigits, todayJalali, Icon, I } from '../lib/hz'
+import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, fa, formatJalaliLong, JalaliDate, minutesToHM, parseJalali, toFaDigits, todayJalali, Icon, I } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
-   tasks/attendance — کنترل شیفت پرسنل
-   شیفت صبح: خانم لطفی · شیفت عصر: آقای ملايی
-   ۱) حضور و وضعیت پرسنل هر شیفت — حضور از «ورود» استنتاج می‌شود؛
-      تأخیر / مرخصی ساعتی / اضافه‌کاری به‌صورت ساعت+دقیق ثبت می‌شوند
-   ۲) ارجاع مشکلات حل‌نشده صبح
-   ۳) ثبت مشکل و پیگیری اقدام‌ها
+   tasks/attendance — بررسی تیم (کنترل شیفت پرسنل)
+   فقط دو شیفت: صبح ۷:۳۰ تا ۱۵:۳۰ (خانم لطفی) · عصر ۱۵:۳۰ تا ۲۳:۰۰ (آقای ملایی)
+   ۱) حضور و وضعیت پرسنل — همهٔ کاربران فعال، از جمله خودِ مدیر (R5-P2)
+      نوع ورود، اجازهٔ مدیر را در خودش دارد (درخواست مالک):
+      «مرخصی» = با اجازهٔ مدیر · «غیبت» = بدون اجازه — چک‌باکس مجزا حذف شد.
+      مرخصی تأییدشدهٔ همان روز ← ردیف «در مرخصی» (غیرقابل ویرایش)
+   ۲) اضافه‌کار / مرخصی ساعتی از همین صفحه به سیستم حقوق جریان می‌یابد
+      (ثبت کنترل شیفت + دکمهٔ صریح «ثبت در حقوق و دستمزد» — idempotent)
+   ۳) ارجاع مشکلات حل‌نشده صبح  ۴) ثبت مشکل و پیگیری اقدام‌ها
    ───────────────────────────────────────────────────────────── */
 
+/* R7: تأخیر بازگردانده شد — با اجازه و بدون اجازهٔ مدیر، هرکدام با دقیقهٔ تأخیر (مدل DB: arrival='late' + hadPermission + lateMinutes) */
 const ARRIVALS = [
   { key: 'on_time', label: 'به‌وقت' },
-  { key: 'late', label: 'تأخیر' },
-  { key: 'absent', label: 'غیبت' },
-  { key: 'permitted_leave', label: 'مرخصی' },
+  { key: 'late_p', label: 'تأخیر (با اجازهٔ مدیر)' },
+  { key: 'late_np', label: 'تأخیر بدون اجازه' },
+  { key: 'permitted_leave', label: 'مرخصی (با اجازهٔ مدیر)' },
+  { key: 'absent', label: 'غیبت (بدون اجازه)' },
 ]
+const ARRIVAL_CLS: Record<string, string> = {
+  on_time: '',
+  late_p: 'border-amber-300 bg-amber-50 text-amber-800',
+  late_np: 'border-orange-400 bg-orange-50 text-orange-800',
+  permitted_leave: 'border-teal-300 text-teal-700',
+  absent: 'border-rose-300 text-rose-700',
+}
 const FOLLOWUPS = [
   { key: 'uniform', label: 'لباس فرم و ظاهر' },
   { key: 'hygiene', label: 'بهداشت فردی' },
   { key: 'behavior', label: 'برخورد با مشتری' },
   { key: 'workQuality', label: 'کیفیت کار' },
 ]
+/* R7-PERF: پرچم‌های روزانه سه‌سطحی شدند (پژوهش R7 بخش ۶.۱) — مناسب / نقص جزئی / نیازمند پیگیری.
+   نگاشت عددی در کارنامه ماهانه: ok=۱ · minor=۰٫۵ · needs_followup=۰ */
 const FLAG_OPTS = [
   { key: 'ok', label: 'مناسب' },
-  { key: 'needs_followup', label: 'نیازمند پیگیری' },
+  { key: 'minor', label: 'نقص جزئی' },
+  { key: 'needs_followup', label: 'نامناسب — نیازمند پیگیری' },
 ]
+/* رنگ انتخابگر: مناسب = خنثی · نقص جزئی = کهربایی روشن · نیازمند پیگیری = رز پررنگ */
+const FLAG_CLS: Record<string, string> = {
+  minor: 'border-amber-300 bg-amber-50 text-amber-800',
+  needs_followup: 'border-rose-400 bg-rose-50 text-rose-700',
+}
 const PSTATUS: Record<string, { label: string; cls: string }> = {
   OPEN: { label: 'باز', cls: 'border-amber-400 bg-amber-50 text-amber-800' },
   IN_PROGRESS: { label: 'در حال انجام', cls: 'border-teal-400 bg-teal-50 text-teal-800' },
@@ -43,7 +63,20 @@ const SEVERITIES = [
   { key: 'critical', label: 'بحرانی' },
 ]
 
-const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n))
+const MANAGER_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC']
+const ROLE_FA: Record<string, string> = {
+  OWNER: 'مالک', GM: 'مدیر کل', ADMIN: 'مدیر', EXEC: 'مدیر اجرایی', ACC: 'حسابدار', PM: 'مدیر محصولات',
+  HC: 'صندوقدار ارشد', SK: 'انباردار', SALES: 'فروشنده', CASHIER: 'صندوقدار', MERCH: 'نیروی چیدمان',
+}
+
+const LEAVE_TYPE_FA: Record<string, string> = { DAILY: 'روزانه', SICK: 'استعلاجی', UNPAID: 'بدون حقوق', HOURLY: 'ساعتی' }
+
+/** فقط دو شیفت — بدون شیفت شب */
+const SHIFTS = [
+  { key: 'MORNING' as const, label: 'شیفت صبح', time: '۷:۳۰ تا ۱۵:۳۰', manager: 'خانم لطفی' },
+  { key: 'EVENING' as const, label: 'شیفت عصر', time: '۱۵:۳۰ تا ۲۳:۰۰', manager: 'آقای ملایی' },
+]
+const shiftMeta = (k: string) => SHIFTS.find((s) => s.key === k) || SHIFTS[0]
 
 /** تفکیک دقیقِ کل به جفت ساعت/دقیقه (مقدار صفر → خالی) */
 const splitHm = (total: any): { h: string; m: string } => {
@@ -56,44 +89,6 @@ const joinHm = (h: any, m: any): number => (Number(h) || 0) * 60 + (Number(m) ||
 function longFa(dash: string): string {
   const d = parseJalali(dash)
   return d ? toFaDigits(formatJalaliLong(d)) : toFaDigits(dash || '')
-}
-
-/* ───────── ورودی تاریخ شمسی ───────── */
-function JInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [draft, setDraft] = useState(value)
-  const [err, setErr] = useState('')
-  useEffect(() => { setDraft(value) }, [value])
-  function commit(raw: string) {
-    const t = toEnDigits(raw).replace(/\//g, '-').trim()
-    if (!t) { setErr(''); return }
-    const m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
-    if (!m) { setErr('قالب تاریخ: ۱۴۰۵-۰۷-۱۵'); return }
-    const norm = `${m[1]}-${pad2(Number(m[2]))}-${pad2(Number(m[3]))}`
-    if (parseJalali(norm)) { setErr(''); onChange(norm) } else setErr('تاریخ نامعتبر است')
-  }
-  return (
-    <div>
-      <Input
-        dir="ltr" value={draft} placeholder="1405-07-15"
-        className="text-center font-mono"
-        onChange={(e: any) => setDraft(e.target.value)}
-        onBlur={(e: any) => commit(e.target.value)}
-        onKeyDown={(e: any) => { if (e.key === 'Enter') commit(e.target.value) }}
-      />
-      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        {([['امروز', 0], ['دیروز', -1]] as const).map(([label, n]) => (
-          <button
-            key={label} type="button"
-            className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-600 transition-colors hover:bg-stone-100"
-            onClick={() => { const d = addJalaliDays(todayJalali(), Number(n)); setDraft(d); onChange(d); setErr('') }}
-          >
-            {label}
-          </button>
-        ))}
-        {err && <span className="text-[11px] text-rose-600">{err}</span>}
-      </div>
-    </div>
-  )
 }
 
 /* ───────── ورودی عددی کوچک (ارقام فارسی) ───────── */
@@ -109,10 +104,13 @@ function MiniNum({ value, onChange, disabled, label }: {
       dir="ltr" inputMode="numeric" disabled={disabled} placeholder="۰"
       className="num h-8 w-14 px-1 text-center"
       value={v === '' ? '' : toFaDigits(v)}
-      onChange={(e: any) => onChange(toEnDigits(e.target.value).replace(/[^\d]/g, '').slice(0, 2))}
+      onChange={(e: any) => onChange(toEnDigitsSafe(e.target.value))}
       aria-label={label}
     />
   )
+}
+function toEnDigitsSafe(s: string): string {
+  return s.replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[^\d]/g, '').slice(0, 2)
 }
 
 /* ───────── جفت ورودی ساعت:دقیقه — همان چیدمان «۱:۳۵» ───────── */
@@ -136,16 +134,23 @@ function HMCell({ name, h, m, onH, onM, disabled }: {
 /* ═════════════════════════ نمای اصلی ═════════════════════════ */
 
 export default function AttendanceView() {
-  const { user, go } = useShell()
-  const isEveningManager = user?.role === 'EXEC' || user?.username === 'mollaie'
+  const { user, go } = useShell() as any
+  /* انتخاب شیفت فقط برای نوروزی (مالک)، لطفی (مدیر کل) و کیانوش (مدیر) —
+     مدیر شیفت عصر (ملایی) همیشه روی شیفت عصر ثابت است */
+  const canSwitchShift = !!user && ['OWNER', 'GM', 'ADMIN'].includes(user.role)
 
-  const [shift, setShift] = useState<'MORNING' | 'EVENING'>(isEveningManager ? 'EVENING' : 'MORNING')
+  const [shift, setShift] = useState<'MORNING' | 'EVENING'>(canSwitchShift ? 'MORNING' : 'EVENING')
   const [date, setDate] = useState(todayJalali())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [staff, setStaff] = useState<any[]>([])
   const [rows, setRows] = useState<Record<string, any>>({})
+  const [onLeave, setOnLeave] = useState<Record<string, { type: string; hours: number; days: number }>>({})
   const [unresolved, setUnresolved] = useState<any[]>([])
+  /* فیلتر شیفت روز (برنامهٔ شیفت هفتگی) + جمع‌بندی ماه برای سیستم حقوق */
+  const [dayShiftF, setDayShiftF] = useState<'ALL' | 'MORNING' | 'EVENING'>('ALL')
+  const [monthSum, setMonthSum] = useState<any>(null)
+  const [payBusy, setPayBusy] = useState(false)
 
   /* مشکلات */
   const [problems, setProblems] = useState<any[]>([])
@@ -162,6 +167,7 @@ export default function AttendanceView() {
   }, [])
 
   useEffect(() => { void loadProblems() }, [date])
+  useEffect(() => { void loadMonthSummary() }, [date])
 
   /* ───────── بارگذاری کنترل شیفت (+ ارجاع مشکلات صبح در شیفت عصر) ───────── */
 
@@ -180,25 +186,34 @@ export default function AttendanceView() {
     setLoading(false)
     if (!r.ok) {
       toast.error(r.error || 'خطا در دریافت اطلاعات شیفت')
-      setStaff([]); setRows({}); setUnresolved([]); return
+      setStaff([]); setRows({}); setOnLeave({}); setUnresolved([]); return
     }
     const st = r.data?.staff || []
     const checks = r.data?.checks || []
+    const leaves: Record<string, { type: string; hours: number; days: number }> = r.data?.onLeave || {}
     setStaff(st)
+    setOnLeave(leaves)
     setUnresolved(r.data?.unresolvedMorning || [])
     const map: Record<string, any> = {}
     for (const member of st) {
       const c = checks.find((x: any) => x.staffId === member.id)
-      const late = splitHm(c?.lateMinutes)
-      const hleave = splitHm(c?.hourlyLeaveMinutes)
+      const lv = leaves[member.id]
+      /* R7: تأخیر با/بدون اجازه به مدل اصلی خودش برمی‌گردد — arrival='late' + hadPermission.
+         دادهٔ قدیمی R5-P2 (تأخیرِ فروریخته به مرخصی/غیبت) دست‌نخورده می‌ماند. */
+      const rawArrival = c ? c.arrival : (lv && lv.type !== 'HOURLY' ? 'permitted_leave' : 'on_time')
+      const hadPermission = c ? !!c.hadPermission : false
+      const arrKey = rawArrival === 'late'
+        ? (hadPermission ? 'late_p' : 'late_np')
+        : (['on_time', 'permitted_leave', 'absent'].includes(rawArrival) ? rawArrival : 'on_time')
+      const lateMin = c ? Math.max(0, c.lateMinutes || 0) : 0
+      let hlMin = c ? Math.max(0, c.hourlyLeaveMinutes || 0) : (lv?.type === 'HOURLY' ? (lv.hours || 0) * 60 : 0)
       const overtime = splitHm(c?.overtimeMinutes)
       map[member.id] = {
         staffId: member.id,
-        arrival: c ? c.arrival : 'on_time', // حضور از «ورود» استنتاج می‌شود (غایب ← غایب)
-        lateH: late.h, lateM: late.m,
-        hlH: hleave.h, hlM: hleave.m,
+        arrival: arrKey,
+        ltH: splitHm(lateMin).h, ltM: splitHm(lateMin).m,
+        hlH: splitHm(hlMin).h, hlM: splitHm(hlMin).m,
         otH: overtime.h, otM: overtime.m,
-        hadPermission: c ? !!c.hadPermission : false,
         uniform: c ? c.uniform : 'ok',
         hygiene: c ? c.hygiene : 'ok',
         behavior: c ? c.behavior : 'ok',
@@ -207,6 +222,25 @@ export default function AttendanceView() {
       }
     }
     setRows(map)
+  }
+
+  /* جمع‌بندی ماه برای سیستم حقوق (?summary=1405-07) — پاسخ خودِ جمع‌بندی است */
+  async function loadMonthSummary() {
+    const pm = /^\d{4}-\d{2}/.exec(date)
+    if (!pm) { setMonthSum(null); return }
+    const r = await api(`/api/staff-checks${qs({ summary: pm[0] })}`)
+    setMonthSum(r.ok ? (r.data || null) : null)
+  }
+
+  /* ثبت صریح در حقوق و دستمزد (idempotent) */
+  async function syncPayroll() {
+    if (payBusy) return
+    setPayBusy(true)
+    const r = await api('/api/staff-checks', { method: 'POST', body: { action: 'syncPayroll', date } })
+    setPayBusy(false)
+    if (!r.ok) return toast.error(r.error || 'ارسال به حقوق ناموفق بود')
+    toast.success(`ورودی‌های حقوق دورهٔ ${toFaDigits(String(r.data?.period || '').replace('-', '/'))} برای ${fa(r.data?.payrollSynced || 0)} نفر به‌روزرسانی شد ✓`)
+    void loadMonthSummary()
   }
 
   function switchShift(s: 'MORNING' | 'EVENING') {
@@ -232,13 +266,22 @@ export default function AttendanceView() {
     setSaving(true)
     const payload = staff.map((s: any) => {
       const r = rows[s.id] || {}
+      const lv = onLeave[s.id]
+      const forcedLeave = !!lv && lv.type !== 'HOURLY'
+      /* R7: تأخیر با/بدون اجازه — کلید مرکب UI به مدل DB برمی‌گردد:
+         late_p/late_np → arrival='late' + hadPermission + lateMinutes */
+      const arrKey = forcedLeave
+        ? 'permitted_leave'
+        : (['on_time', 'late_p', 'late_np', 'permitted_leave', 'absent'].includes(r.arrival) ? r.arrival : 'on_time')
+      const arrival = (arrKey === 'late_p' || arrKey === 'late_np') ? 'late' : arrKey
+      const hadPermission = arrKey === 'late_p' || arrKey === 'permitted_leave'
       const o: any = {
         staffId: s.id,
-        arrival: r.arrival || 'on_time',
-        lateMinutes: joinHm(r.lateH, r.lateM),
-        hourlyLeaveMinutes: joinHm(r.hlH, r.hlM),
+        arrival,
+        lateMinutes: arrival === 'late' ? joinHm(r.ltH, r.ltM) : 0,
+        hourlyLeaveMinutes: arrival === 'absent' ? 0 : joinHm(r.hlH, r.hlM),
         overtimeMinutes: joinHm(r.otH, r.otM),
-        hadPermission: !!r.hadPermission,
+        hadPermission,
         uniform: r.uniform || 'ok',
         hygiene: r.hygiene || 'ok',
         behavior: r.behavior || 'ok',
@@ -251,8 +294,12 @@ export default function AttendanceView() {
     const r = await api('/api/staff-checks', { method: 'POST', body: { date, shift, rows: payload } })
     setSaving(false)
     if (!r.ok) return toast.error(r.error || 'ثبت نشد')
-    toast.success('ثبت شد')
+    const synced = Number(r.data?.payrollSynced || 0)
+    toast.success(synced > 0
+      ? `ثبت شد — اضافه‌کار و غیبت این ماه برای ${fa(synced)} نفر به سیستم حقوق منتقل شد`
+      : 'ثبت شد')
     void load(date, shift)
+    void loadMonthSummary()
   }
 
   /* ───────── مشکلات ───────── */
@@ -304,10 +351,46 @@ export default function AttendanceView() {
   )
   const followupCount = useMemo(
     () => Object.values(rows).filter((r: any) =>
-      [r.uniform, r.hygiene, r.behavior, r.workQuality].includes('needs_followup') || r.arrival === 'late' || r.arrival === 'absent',
+      [r.uniform, r.hygiene, r.behavior, r.workQuality].includes('needs_followup') || r.arrival === 'absent',
     ).length,
     [rows],
   )
+  /* گروه‌بندی شیفت روز (برنامهٔ شیفت هفتگی) — نیروهای همان شیفت اول */
+  const dayShiftCounts = useMemo(() => {
+    const c = { MORNING: 0, EVENING: 0 }
+    for (const s of staff) {
+      if (s.dayShift === 'MORNING') c.MORNING++
+      else if (s.dayShift === 'EVENING') c.EVENING++
+    }
+    return c
+  }, [staff])
+  const visibleStaff = useMemo(() => {
+    if (dayShiftF === 'ALL') {
+      // نیروهای شیفتِ در حال بررسی اول، بعد بقیه — گروه‌بندی مرئی
+      return [...staff].sort((a: any, b: any) => {
+        const ra = a.dayShift === shift ? 0 : 1
+        const rb = b.dayShift === shift ? 0 : 1
+        return ra - rb
+      })
+    }
+    return staff.filter((s: any) => s.dayShift === dayShiftF)
+  }, [staff, dayShiftF, shift])
+  /* جمع‌بندی ماه برای سیستم حقوق */
+  const monthTotals = useMemo(() => {
+    const users = (monthSum?.users || {}) as Record<string, any>
+    let ot = 0, abs = 0, hl = 0, lvDays = 0, hlHours = 0, n = 0
+    for (const u of Object.values(users)) {
+      if ((u.overtimeMinutes || 0) > 0 || (u.absenceDays || 0) > 0 || (u.hourlyLeaveMinutes || 0) > 0
+        || (u.approvedHourlyHours || 0) > 0) n++
+      ot += u.overtimeMinutes || 0
+      abs += u.absenceDays || 0
+      hl += u.hourlyLeaveMinutes || 0
+      hlHours += u.approvedHourlyHours || 0
+      lvDays += (u.approvedLeaveDays?.DAILY || 0) + (u.approvedLeaveDays?.SICK || 0) + (u.approvedLeaveDays?.UNPAID || 0)
+    }
+    return { ot, abs, hl, hlHours, lvDays, n }
+  }, [monthSum])
+  const sm = shiftMeta(shift)
 
   /* ═════════════════════════ رندر ═════════════════════════ */
 
@@ -316,38 +399,39 @@ export default function AttendanceView() {
       {/* سربرگ: شیفت + تاریخ + میان‌برها */}
       <Card>
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
-          <div>
-            <label className="mb-1 block text-xs text-stone-500">شیفت</label>
-            <div className="flex overflow-hidden rounded-lg border border-stone-300">
-              <button
-                type="button"
-                onClick={() => switchShift('MORNING')}
-                className={cn(
-                  'px-3 py-2 text-xs font-medium transition-colors sm:text-sm',
-                  shift === 'MORNING' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50',
-                )}
-              >
-                شیفت صبح (خانم لطفی)
-              </button>
-              <button
-                type="button"
-                onClick={() => switchShift('EVENING')}
-                className={cn(
-                  'border-r border-stone-300 px-3 py-2 text-xs font-medium transition-colors sm:text-sm',
-                  shift === 'EVENING' ? 'bg-emerald-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50',
-                )}
-              >
-                شیفت عصر (آقای ملايی)
-              </button>
+          {canSwitchShift ? (
+            <div>
+              <label className="mb-1 block text-xs text-stone-500">شیفت</label>
+              <div className="flex overflow-hidden rounded-lg border border-stone-300">
+                {SHIFTS.map((s, idx) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => switchShift(s.key)}
+                    className={cn(
+                      'px-3 py-2 text-xs font-medium transition-colors sm:text-sm',
+                      idx > 0 && 'border-r border-stone-300',
+                      shift === s.key ? 'bg-emerald-600 text-white' : 'bg-white text-stone-600 hover:bg-stone-50',
+                    )}
+                  >
+                    {s.label} {s.time}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+              <div className="text-xs font-bold text-teal-800">شیفت عصر {sm.time} (ثابت)</div>
+              <div className="text-[11px] text-teal-600">مدیر شیفت عصر — {sm.manager}</div>
+            </div>
+          )}
           <div className="min-w-40">
             <label className="mb-1 block text-xs text-stone-500">تاریخ (شمسی)</label>
-            <JInput value={date} onChange={changeDate} />
+            <div className="w-44"><JalaliDate value={date} onChange={changeDate} /></div>
           </div>
           <div className="text-xs text-stone-500">
             <p className="font-medium text-stone-700">{longFa(date)}</p>
-            <p className="mt-0.5">{shift === 'MORNING' ? 'کنترل شیفت صبح' : 'کنترل شیفت عصر'} · {fa(staff.length)} نفر پرسنل</p>
+            <p className="mt-0.5">{sm.label} {sm.time} · {fa(staff.length)} نفر قابل بررسی</p>
           </div>
           <div className="flex-1" />
           <div className="flex flex-wrap gap-2">
@@ -387,14 +471,64 @@ export default function AttendanceView() {
         </Card>
       )}
 
+      {/* جریان به سیستم حقوق: جمع‌بندی ماه + ثبت صریح (R5-P2) */}
+      <Card className="border-teal-200 bg-teal-50/40">
+        <CardContent className="flex flex-wrap items-center gap-2 p-3">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-teal-800">
+            <I.banknote size={15} /> جریان به سیستم حقوق — دورهٔ {toFaDigits(String(date).slice(0, 7).replace('-', '/'))}
+          </span>
+          <span className="hidden h-6 w-px bg-teal-200 sm:block" />
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+            <span className="rounded-full border border-teal-200 bg-white px-2.5 py-1 text-teal-800">اضافه‌کار ماه: <span className="num">{minutesToHM(monthTotals.ot)}</span></span>
+            <span className="rounded-full border border-rose-200 bg-white px-2.5 py-1 text-rose-700">غیبت ماه: <span className="num">{fa(monthTotals.abs)}</span> روز</span>
+            <span className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-amber-700">مرخصی ساعتی: <span className="num">{minutesToHM(monthTotals.hl)}</span></span>
+            <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-emerald-700">مرخصی تأییدشده: <span className="num">{fa(monthTotals.lvDays)}</span> روز{monthTotals.hlHours > 0 && <> + <span className="num">{fa(monthTotals.hlHours)}</span> ساعت</>}</span>
+            <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-stone-500">{fa(monthTotals.n)} نفر دارای مقدار</span>
+          </div>
+          <div className="mr-auto flex items-center gap-2">
+            {canSwitchShift && (
+              <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => go('hr/payroll')}>
+                <I.wallet size={13} /> نمایش حقوق و دستمزد
+              </Button>
+            )}
+            <Button size="sm" className="h-8 gap-1.5 bg-teal-700 hover:bg-teal-800" disabled={payBusy} onClick={() => void syncPayroll()}>
+              {payBusy ? <I.loader size={13} className="animate-spin" /> : <I.send size={13} />} ثبت در حقوق و دستمزد
+            </Button>
+          </div>
+          <p className="w-full text-[10px] leading-4 text-teal-700/80">
+            اضافه‌کار، غیبت و مرخصی‌های همین ماه از داده‌های بررسی تیم و مرخصی‌های تأییدشده بازتولید می‌شود (ارسال مکرر فقط مقادیر را به‌روز می‌کند — بدون ثبت تکراری) و در فیش حقوقی همان دوره محاسبه می‌گردد.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* جدول کنترل پرسنل */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <I.users size={18} /> حضور و وضعیت پرسنل — {shift === 'MORNING' ? 'شیفت صبح' : 'شیفت عصر'}
+              <I.users size={18} /> حضور و وضعیت پرسنل — {sm.label} {sm.time}
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* فیلتر شیفت روز — از برنامهٔ شیفت هفتگی */}
+              <div className="flex overflow-hidden rounded-lg border border-stone-300">
+                {([
+                  ['ALL', `همهٔ پرسنل (${fa(staff.length)})`],
+                  ['MORNING', `شیفت صبح (${fa(dayShiftCounts.MORNING)})`],
+                  ['EVENING', `شیفت عصر (${fa(dayShiftCounts.EVENING)})`],
+                ] as const).map(([key, label], idx) => (
+                  <button
+                    key={key} type="button"
+                    onClick={() => setDayShiftF(key as any)}
+                    className={cn(
+                      'px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+                      idx > 0 && 'border-r border-stone-300',
+                      dayShiftF === key ? 'bg-teal-700 text-white' : 'bg-white text-stone-600 hover:bg-stone-50',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               {followupCount > 0 && (
                 <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-800">
                   {fa(followupCount)} مورد نیازمند پیگیری
@@ -405,6 +539,10 @@ export default function AttendanceView() {
               </Button>
             </div>
           </div>
+          <p className="pt-1.5 text-[11px] leading-5 text-stone-400">
+            نوع ورود، اجازهٔ مدیر را در خود دارد: «مرخصی» یعنی با اجازهٔ مدیر و «غیبت» یعنی بدون اجازه. اضافه‌کار و غیبت به‌طور خودکار در ورودی‌های حقوق همان ماه اعمال می‌گردد؛ همهٔ پرسنل فعال — از جمله خودتان — بررسی می‌شوند.
+            معیارهای چهارگانه سه سطح دارند: «مناسب» = مطابق استاندارد · «نقص جزئی» = انحراف کوچک قابل‌جبران در همان شیفت (تذکر شفاهی) · «نامناسب» = نیازمند پیگیری همان روز. نقص جزئی فقط در آمار ماهانه دیده می‌شود و در «موارد نیازمند پیگیری» شمرده نمی‌شود.
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -416,71 +554,96 @@ export default function AttendanceView() {
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100">
                 <I.users size={26} className="text-stone-400" />
               </div>
-              <p className="text-sm font-bold text-stone-700">پرسنلی برای این شیفت ثبت نشده است</p>
-              <p className="mt-1 text-xs text-stone-500">فهرست پرسنل فعال از مدیریت کاربران تکمیل می‌شود.</p>
+              <p className="text-sm font-bold text-stone-700">پرسنلی برای بررسی ثبت نشده است</p>
+              <p className="mt-1 text-xs text-stone-500">فهرست کاربران از مدیریت کاربران تکمیل می‌شود.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table className="min-w-[1200px]">
+              <Table className="min-w-[1180px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-right">پرسنل</TableHead>
-                    <TableHead className="text-center">ورود</TableHead>
-                    <TableHead className="text-center">تأخیر (ساعت:دقیقه)</TableHead>
-                    <TableHead className="text-center">مرخصی ساعتی</TableHead>
+                    <TableHead className="text-center">ورود (تأخیر با/بدون اجازه)</TableHead>
+                    <TableHead className="text-center">مدت تأخیر</TableHead>
+                    <TableHead className="text-center">مرخصی ساعتی (ساعت:دقیق)</TableHead>
                     <TableHead className="text-center">اضافه‌کاری</TableHead>
-                    <TableHead className="text-center">اجازه مدیر</TableHead>
-                    <TableHead className="text-center">لباس فرم و ظاهر</TableHead>
-                    <TableHead className="text-center">بهداشت فردی</TableHead>
-                    <TableHead className="text-center">برخورد با مشتری</TableHead>
-                    <TableHead className="text-center">کیفیت کار</TableHead>
+                    <TableHead className="text-center" title="سه سطح: مناسب / نقص جزئی / نامناسب — نیازمند پیگیری">لباس فرم و ظاهر</TableHead>
+                    <TableHead className="text-center" title="سه سطح: مناسب / نقص جزئی / نامناسب — نیازمند پیگیری">بهداشت فردی</TableHead>
+                    <TableHead className="text-center" title="سه سطح: مناسب / نقص جزئی / نامناسب — نیازمند پیگیری">برخورد با مشتری</TableHead>
+                    <TableHead className="text-center" title="سه سطح: مناسب / نقص جزئی / نامناسب — نیازمند پیگیری">کیفیت کار</TableHead>
                     <TableHead className="text-right">یادداشت</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {staff.map((s: any) => {
+                  {visibleStaff.map((s: any) => {
                     const r = rows[s.id] || {}
-                    const flagCls = (v: string) => cn(
-                      'h-8 text-[11px]',
-                      v === 'needs_followup' && 'border-amber-400 text-amber-800',
-                    )
-                    const lateMin = joinHm(r.lateH, r.lateM)
+                    const lv = onLeave[s.id]
+                    const onDayLeave = !!lv && lv.type !== 'HOURLY'
+                    const hasHourlyLeave = !!lv && lv.type === 'HOURLY'
+                    const isMgr = MANAGER_ROLES.includes(s.role)
+                    const isMe = user?.id === s.id
+                    const flagCls = (v: string) => cn('h-8 text-[11px]', FLAG_CLS[v] || '')
                     const hlMin = joinHm(r.hlH, r.hlM)
                     const otMin = joinHm(r.otH, r.otM)
+                    const ltMin = joinHm(r.ltH, r.ltM)
                     const timeParts = [
-                      lateMin > 0 ? `تأخیر ${minutesToHM(lateMin)}` : '',
-                      hlMin > 0 ? `مرخصی ${minutesToHM(hlMin)}` : '',
+                      ltMin > 0 ? `تأخیر ${minutesToHM(ltMin)}${r.arrival === 'late_p' ? ' (با اجازه)' : ' (بدون اجازه)'}` : '',
+                      hlMin > 0 ? `مرخصی ساعتی ${minutesToHM(hlMin)}` : '',
                       otMin > 0 ? `اضافه‌کاری ${minutesToHM(otMin)}` : '',
                     ].filter(Boolean)
                     return (
-                      <TableRow key={s.id} className={cn(r.arrival === 'absent' && 'opacity-60')}>
+                      <TableRow key={s.id} className={cn((r.arrival === 'absent' || onDayLeave) && 'opacity-70')}>
                         <TableCell>
-                          <div className="whitespace-nowrap text-sm font-medium">{s.honorific ? `${s.honorific} ` : ''}{s.fullName}</div>
+                          <div className="whitespace-nowrap text-sm font-medium">
+                            {s.honorific ? `${s.honorific} ` : ''}{s.fullName}
+                            {isMe && <Badge variant="secondary" className="mr-1.5 bg-emerald-50 text-emerald-700">خودم</Badge>}
+                            {isMgr && <Badge variant="secondary" className="mr-1.5 bg-amber-50 text-amber-700">{ROLE_FA[s.role] || s.role}</Badge>}
+                            {s.dayShift === 'MORNING' && <Badge variant="outline" className="mr-1.5 border-teal-200 bg-teal-50 text-teal-700">صبح</Badge>}
+                            {s.dayShift === 'EVENING' && <Badge variant="outline" className="mr-1.5 border-amber-200 bg-amber-50 text-amber-700">عصر</Badge>}
+                          </div>
                           <div className="whitespace-nowrap text-[11px] text-stone-500">{s.title || ''}</div>
+                          {onDayLeave && (
+                            <Badge variant="outline" className="mt-1 border-teal-300 bg-teal-50 text-teal-700">
+                              در مرخصی {LEAVE_TYPE_FA[lv.type] || ''} {lv.days ? `(${fa(lv.days)} روزه)` : ''}
+                            </Badge>
+                          )}
+                          {hasHourlyLeave && (
+                            <Badge variant="outline" className="mt-1 border-teal-300 bg-teal-50 text-teal-700">
+                              مرخصی ساعتی تأییدشده: {fa(lv.hours)} ساعت
+                            </Badge>
+                          )}
                           {timeParts.length > 0 && (
                             <div className="whitespace-nowrap text-[10px] text-stone-400">{timeParts.join(' · ')}</div>
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <Select
-                            value={r.arrival || 'on_time'}
-                            onValueChange={(v: string) => upd(s.id, { arrival: v })}
-                          >
-                            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {ARRIVALS.map((a) => (
-                                <SelectItem key={a.key} value={a.key}>{a.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {onDayLeave ? (
+                            <Badge variant="outline" className="border-teal-300 bg-teal-50 text-teal-700">در مرخصی</Badge>
+                          ) : (
+                            <Select
+                              dir="rtl"
+                              value={r.arrival || 'on_time'}
+                              onValueChange={(v: string) => upd(s.id, { arrival: v })}
+                            >
+                              <SelectTrigger className={cn('w-44 text-[11px]', ARRIVAL_CLS[r.arrival || 'on_time'])}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ARRIVALS.map((a) => (
+                                  <SelectItem key={a.key} value={a.key}>{a.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
+                        {/* R7: مدت تأخیر — فقط با نوع ورود «تأخیر» فعال */}
                         <TableCell className="text-center">
                           <HMCell
-                            name={`تأخیر ${s.fullName}`}
-                            h={r.lateH ?? ''} m={r.lateM ?? ''}
-                            onH={(v) => upd(s.id, { lateH: v })}
-                            onM={(v) => upd(s.id, { lateM: v })}
-                            disabled={r.arrival !== 'late'}
+                            name={`مدت تأخیر ${s.fullName}`}
+                            h={r.ltH ?? ''} m={r.ltM ?? ''}
+                            onH={(v) => upd(s.id, { ltH: v })}
+                            onM={(v) => upd(s.id, { ltM: v })}
+                            disabled={onDayLeave || (r.arrival !== 'late_p' && r.arrival !== 'late_np')}
                           />
                         </TableCell>
                         <TableCell className="text-center">
@@ -489,7 +652,7 @@ export default function AttendanceView() {
                             h={r.hlH ?? ''} m={r.hlM ?? ''}
                             onH={(v) => upd(s.id, { hlH: v })}
                             onM={(v) => upd(s.id, { hlM: v })}
-                            disabled={r.arrival !== 'permitted_leave' && hlMin === 0}
+                            disabled={onDayLeave || r.arrival === 'absent'}
                           />
                         </TableCell>
                         <TableCell className="text-center">
@@ -498,20 +661,16 @@ export default function AttendanceView() {
                             h={r.otH ?? ''} m={r.otM ?? ''}
                             onH={(v) => upd(s.id, { otH: v })}
                             onM={(v) => upd(s.id, { otM: v })}
-                          />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Checkbox
-                            checked={!!r.hadPermission}
-                            onCheckedChange={(v: any) => upd(s.id, { hadPermission: !!v })}
-                            aria-label={`اجازه تأخیر ${s.fullName}`}
+                            disabled={onDayLeave}
                           />
                         </TableCell>
                         {FOLLOWUPS.map((f) => (
                           <TableCell key={f.key} className="text-center">
                             <Select
+                              dir="rtl"
                               value={r[f.key] || 'ok'}
                               onValueChange={(v: string) => upd(s.id, { [f.key]: v })}
+                              disabled={onDayLeave}
                             >
                               <SelectTrigger className={flagCls(r[f.key])}><SelectValue /></SelectTrigger>
                               <SelectContent>
@@ -528,6 +687,7 @@ export default function AttendanceView() {
                             value={r.note || ''}
                             onChange={(e: any) => upd(s.id, { note: e.target.value })}
                             placeholder="یادداشت…"
+                            disabled={onDayLeave}
                           />
                         </TableCell>
                       </TableRow>
@@ -557,7 +717,7 @@ export default function AttendanceView() {
             </div>
             <div>
               <label className="mb-1 block text-xs text-stone-500">شدت</label>
-              <Select value={probForm.severity} onValueChange={(v: string) => setProbForm((f) => ({ ...f, severity: v }))}>
+              <Select dir="rtl" value={probForm.severity} onValueChange={(v: string) => setProbForm((f) => ({ ...f, severity: v }))}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SEVERITIES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}

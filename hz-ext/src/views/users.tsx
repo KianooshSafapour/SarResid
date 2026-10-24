@@ -644,14 +644,14 @@ export default function UsersView() {
               <Input value={search} onChange={(e: any) => setSearch(e.target.value)}
                 placeholder="جستجوی نام یا نام کاربری…" className="w-56 pr-3 pl-8" aria-label="جستجوی کاربر" />
             </div>
-            <Select value={roleF} onValueChange={setRoleF}>
+            <Select dir="rtl" value={roleF} onValueChange={setRoleF}>
               <SelectTrigger className="w-40" aria-label="فیلتر نقش"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">همه نقش‌ها</SelectItem>
                 {ROLES.map((r) => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={activeF} onValueChange={setActiveF}>
+            <Select dir="rtl" value={activeF} onValueChange={setActiveF}>
               <SelectTrigger className="w-28" aria-label="فیلتر وضعیت"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">همه</SelectItem>
@@ -758,7 +758,7 @@ export default function UsersView() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-stone-600">عنوان احترامی</label>
-              <Select value={nf.honorific || 'none'} onValueChange={(v: string) => setNf({ ...nf, honorific: v === 'none' ? '' : v })}>
+              <Select dir="rtl" value={nf.honorific || 'none'} onValueChange={(v: string) => setNf({ ...nf, honorific: v === 'none' ? '' : v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {HONORIFICS.map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
@@ -768,7 +768,7 @@ export default function UsersView() {
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-stone-600">نقش</label>
-              <Select value={nf.role} onValueChange={(v: string) => setNf({ ...nf, role: v })}>
+              <Select dir="rtl" value={nf.role} onValueChange={(v: string) => setNf({ ...nf, role: v })}>
                 <SelectTrigger><SelectValue placeholder="انتخاب نقش…" /></SelectTrigger>
                 <SelectContent>
                   {ROLES.map((r) => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}
@@ -831,7 +831,7 @@ export default function UsersView() {
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-stone-600">عنوان احترامی</label>
-                <Select value={ef.honorific || 'none'} onValueChange={(v: string) => setEf({ ...ef, honorific: v === 'none' ? '' : v })}>
+                <Select dir="rtl" value={ef.honorific || 'none'} onValueChange={(v: string) => setEf({ ...ef, honorific: v === 'none' ? '' : v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {HONORIFICS.map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
@@ -841,7 +841,7 @@ export default function UsersView() {
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-stone-600">نقش</label>
-                <Select value={ef.role} onValueChange={(v: string) => setEf({ ...ef, role: v })}
+                <Select dir="rtl" value={ef.role} onValueChange={(v: string) => setEf({ ...ef, role: v })}
                   disabled={me?.id === edit.id}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>

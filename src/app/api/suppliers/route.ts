@@ -61,7 +61,8 @@ export async function GET(req: NextRequest) {
   const classification = sp.get('classification') ?? ''
   const sort = (sp.get('sort') ?? 'name').trim()
   const page = Math.max(1, clampInt(sp.get('page'), 1, 100000, 1))
-  const pageSize = Math.max(1, clampInt(sp.get('pageSize'), 1, 100, 24))
+  // R7: اجازهٔ صفحهٔ بزرگ برای بارگیری یکجای همهٔ تأمین‌کنندگان فعال (سفارش‌گذاری — ۱۱۰۰+ طرف حساب)
+  const pageSize = Math.max(1, clampInt(sp.get('pageSize'), 1, 2400, 24))
 
   const and: Record<string, unknown>[] = []
   if (q) {

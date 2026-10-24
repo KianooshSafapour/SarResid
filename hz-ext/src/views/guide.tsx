@@ -306,7 +306,7 @@ export const SECTION_TOURS: TourDef[] = [
       },
       {
         title: 'بررسی تیم',
-        body: 'حضور، لباس و بهداشت پرسنل در صفحهٔ «بررسی تیم (حضور، لباز و بهداشت)» ثبت می‌شود؛ تأخیر، مرخصی ساعتی و اضافه‌کاری هم همان‌جا درج می‌شود. 💡 نکته: این نمره‌ها مستقیم در کارنامهٔ عملکرد هر فرد اثر می‌گذارد.',
+        body: 'حضور، لباس و بهداشت پرسنل در صفحهٔ «بررسی تیم (حضور، لباس و بهداشت)» ثبت می‌شود؛ تأخیر، مرخصی ساعتی و اضافه‌کاری هم همان‌جا درج می‌شود. 💡 نکته: این نمره‌ها مستقیم در کارنامهٔ عملکرد هر فرد اثر می‌گذارد.',
       },
     ],
   },
@@ -952,9 +952,7 @@ export default function GuideView() {
                   onError={() => setBadViewImg(true)}
                 />
               )}
-              <div className="whitespace-pre-wrap break-words py-1 text-sm leading-7 text-stone-600">
-                {viewArt.body || '—'}
-              </div>
+              <ArticleBody body={viewArt.body || ''} />
               {canManage && (
                 <DialogFooter className="gap-2">
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openForm(viewArt)}>
@@ -1066,6 +1064,43 @@ export default function GuideView() {
       />
     </div>
   )
+}
+
+/* ═════════ بدنهٔ ساخت‌یافتهٔ مقاله (R5-P4) ═════════
+   «## » سرتیتر بند، «- » فهرست‌وار، خط خالی = فاصلهٔ بند — همان قالبی که
+   فیلد متن مقاله در فرم مدیران توضیح می‌دهد. */
+function ArticleBody({ body }: { body: string }) {
+  const lines = String(body || '').split('\n')
+  const out: any[] = []
+  let bullets: string[] = []
+  let key = 0
+  const flush = () => {
+    if (bullets.length) {
+      out.push(
+        <ul key={`ul-${key++}`} className="my-2 list-disc space-y-1.5 pr-5 text-sm leading-7 text-stone-600">
+          {bullets.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>,
+      )
+      bullets = []
+    }
+  }
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '')
+    if (line.startsWith('## ')) {
+      flush()
+      out.push(<h4 key={`h-${key++}`} className="mb-1 mt-4 text-sm font-extrabold text-stone-800">{line.slice(3)}</h4>)
+    } else if (line.startsWith('- ')) {
+      bullets.push(line.slice(2))
+    } else if (line.trim() === '') {
+      flush()
+    } else {
+      flush()
+      out.push(<p key={`p-${key++}`} className="text-sm leading-7 text-stone-600">{line}</p>)
+    }
+  }
+  flush()
+  if (out.length === 0) return <p className="py-1 text-sm text-stone-400">—</p>
+  return <div className="space-y-0.5 py-1">{out}</div>
 }
 
 /* ═════════ کارت مقاله ═════════ */

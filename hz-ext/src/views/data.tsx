@@ -1,5 +1,5 @@
 import {
-  useState, useEffect,
+  useState, useEffect, useRef,
   api, toast, cn,
   Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle,
   Badge, Checkbox,
@@ -73,6 +73,18 @@ export default function DataSnapshotView() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [summary, setSummary] = useState<any>(null)
 
+  /* ─── R7: هویت چاپی (لوگو و مشخصات) ─── */
+  const [brand, setBrand] = useState({ logoUrl: '', storeName: '', storePhone: '', storeAddress: '', footerNote: '' })
+  const [brandLoading, setBrandLoading] = useState(true)
+  const [brandSaving, setBrandSaving] = useState(false)
+  const logoInputRef = useRef<HTMLInputElement | null>(null)
+
+  /* ─── R7: بازنشانی وضعیت سامانه ─── */
+  const [resetScopes, setResetScopes] = useState<string[]>(['tours', 'notifications'])
+  const [resetConfirm, setResetConfirm] = useState('')
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetResult, setResetResult] = useState<Record<string, number> | null>(null)
+
   /* فرم ساخت نسخه */
   const [name, setName] = useState('')
   const [note, setNote] = useState('')
@@ -87,7 +99,46 @@ export default function DataSnapshotView() {
   /* حذف */
   const [deletingId, setDeletingId] = useState('')
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void load(); void loadBrand() }, [])
+
+  async function loadBrand() {
+    setBrandLoading(true)
+    const r = await api('/api/settings/brand')
+    setBrandLoading(false)
+    if (r.ok && r.data) setBrand(r.data)
+  }
+
+  function onLogoPick(e: any) {
+    const f = e.target?.files?.[0]
+    if (!f) return
+    if (!/^image\/(png|jpe?g|webp|svg\+xml)$/.test(f.type)) return toast.error('فقط تصویر PNG/JPG/WebP/SVG')
+    if (f.size > 300 * 1024) return toast.error('حجم لوگو باید کمتر از ۳۰۰ کیلوبایت باشد')
+    const rd = new FileReader()
+    rd.onload = () => setBrand((b) => ({ ...b, logoUrl: String(rd.result || '') }))
+    rd.readAsDataURL(f)
+    e.target.value = ''
+  }
+
+  async function saveBrand() {
+    setBrandSaving(true)
+    const r = await api('/api/settings/brand', { method: 'PUT', body: brand })
+    setBrandSaving(false)
+    if (!r.ok) return toast.error(r.error || 'ذخیره ناموفق بود')
+    toast.success('هویت چاپی ذخیره شد — از این پس در همهٔ اسناد و رسیدها اعمال می‌شود')
+  }
+
+  async function submitReset() {
+    if (resetConfirm.trim() !== 'بازنشانی') return toast.error('برای تأیید، عبارت «بازنشانی» را دقیق وارد کنید')
+    if (!window.confirm('مطمئن هستید؟ وضعیت‌های انتخاب‌شده پاک می‌شوند و قابل بازگشت نیستند.')) return
+    setResetBusy(true)
+    const r = await api('/api/system/reset', { method: 'POST', body: { confirm: 'بازنشانی', scopes: resetScopes } })
+    setResetBusy(false)
+    if (!r.ok) return toast.error(r.error || 'بازنشانی ناموفق بود')
+    setResetResult(r.data?.done || {})
+    setResetConfirm('')
+    toast.success('وضعیت سامانه بازنشانی شد')
+    void load()
+  }
 
   async function load() {
     setLoading(true)
@@ -156,6 +207,114 @@ export default function DataSnapshotView() {
           </div>
         </div>
       </div>
+
+      {/* ─── R7: هویت چاپی فروشگاه (لوگو + مشخصات) ─── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base"><I.shieldCheck size={17} /> هویت چاپی فروشگاه</CardTitle>
+          <p className="text-[11px] text-stone-500">لوگو و مشخصاتی که در همهٔ اسناد چاپی، فاکتورها و رسیدهای حرارتی درج می‌شود</p>
+        </CardHeader>
+        <CardContent>
+          {brandLoading ? (
+            <p className="py-4 text-center text-sm text-stone-400"><I.loader size={16} className="mx-auto mb-1 animate-spin" /> در حال دریافت…</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+              {/* پیش‌نمایش لوگو */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex h-32 w-full items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 p-3">
+                  {brand.logoUrl ? (
+                    <img src={brand.logoUrl} alt="لوگوی فروشگاه" className="max-h-full max-w-full object-contain" />
+                  ) : (
+                    <span className="text-center text-[11px] text-stone-400">لوگو بارگذاری نشده<br />(سربرگ اسناد فقط متنی می‌ماند)</span>
+                  )}
+                </div>
+                <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e: any) => onLogoPick(e)} />
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => logoInputRef.current?.click()}><I.pencil size={13} /> انتخاب لوگو</Button>
+                  {brand.logoUrl && (
+                    <Button size="sm" variant="outline" className="gap-1.5 text-rose-700 hover:bg-rose-50" onClick={() => setBrand((b) => ({ ...b, logoUrl: '' }))}><I.trash size={13} /> حذف</Button>
+                  )}
+                </div>
+              </div>
+              {/* مشخصات */}
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-stone-500">نام فروشگاه (سربرگ اسناد)</label>
+                    <Input value={brand.storeName} onChange={(e: any) => setBrand({ ...brand, storeName: e.target.value })} placeholder="هایپر زیتون" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-stone-500">تلفن</label>
+                    <Input dir="ltr" className="num text-end" value={brand.storePhone} onChange={(e: any) => setBrand({ ...brand, storePhone: e.target.value })} placeholder="034-XXXXXXX" />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-stone-500">نشانی (پاصفحهٔ اسناد)</label>
+                  <Input value={brand.storeAddress} onChange={(e: any) => setBrand({ ...brand, storeAddress: e.target.value })} placeholder=" Rafsanjan…" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-stone-500">یادداشت پاصفحه (اختیاری)</label>
+                  <Input value={brand.footerNote} onChange={(e: any) => setBrand({ ...brand, footerNote: e.target.value })} placeholder="مثلاً: از خرید شما سپاسگزاریم" />
+                </div>
+                <div className="flex justify-end">
+                  <Button disabled={brandSaving} className="gap-1.5" onClick={() => void saveBrand()}>
+                    {brandSaving ? <I.loader size={14} className="animate-spin" /> : <I.save size={14} />} ذخیرهٔ هویت چاپی
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ─── R7: بازنشانی وضعیت سامانه (تست → بهره‌برداری) ─── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base"><I.refresh size={17} /> بازنشانی وضعیت سامانه</CardTitle>
+          <p className="text-[11px] text-stone-500">برای آماده‌سازی پیش از شروع کار واقعی تیم — وضعیت‌های آزمایشی پاک می‌شوند (کالاها، تأمین‌کنندگان، کاربران و پیکربندی دست‌نخورده می‌مانند)</p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {([
+              ['tours', 'تورهای راهنما', 'همهٔ تورها برای همهٔ کاربران دوباره از ابتدا نمایش داده می‌شوند'],
+              ['notifications', 'اعلان‌ها', 'حذف همهٔ اعلان‌های ثبت‌شده'],
+              ['activity', 'رویدادها (Activity)', 'پاک‌کردن تاریخچهٔ فعالیت‌ها'],
+              ['testData', 'داده‌های آزمایشی', 'سفارش‌ها، مرجوعی‌ها، چک‌ها، فاکتور سودسنج، مشکلات، وظایف، پیام‌ها، شمارش‌ها'],
+              ['points', 'امتیاز کاربران', 'صفر کردن امتیازهای انگیزشی'],
+              ['drafts', 'پیش‌نویس‌های سرور', 'حذف کلیدهای پیش‌نویس ذخیره‌شده'],
+            ] as const).map(([key, label, hint]) => (
+              <label key={key} className={cn('flex cursor-pointer flex-col gap-1 rounded-xl border p-2.5 transition-colors',
+                resetScopes.includes(key) ? 'border-rose-300 bg-rose-50' : 'border-stone-200 bg-white hover:bg-stone-50')}>
+                <span className="flex items-center gap-2 text-xs font-bold text-stone-700">
+                  <input
+                    type="checkbox" className="h-4 w-4 accent-rose-600"
+                    checked={resetScopes.includes(key)}
+                    onChange={(e) => setResetScopes((prev) => e.target.checked ? [...prev, key] : prev.filter((x) => x !== key))}
+                  />
+                  {label}
+                </span>
+                <span className="text-[10px] leading-4 text-stone-400">{hint}</span>
+              </label>
+            ))}
+          </div>
+          {resetResult && (
+            <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-[11px] text-emerald-800">
+              <b>نتیجهٔ بازنشانی:</b> {Object.entries(resetResult).map(([k, v]) => `${k}: ${fa(v)}`).join(' · ')}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/60 p-2.5">
+            <I.alertTriangle size={16} className="shrink-0 text-rose-600" />
+            <Input
+              className="h-9 w-44" placeholder='عبارت «بازنشانی» را بنویسید'
+              value={resetConfirm} onChange={(e: any) => setResetConfirm(e.target.value)}
+            />
+            <Button variant="destructive" size="sm" disabled={resetBusy || resetScopes.length === 0} className="gap-1.5" onClick={() => void submitReset()}>
+              {resetBusy ? <I.loader size={14} className="animate-spin" /> : <I.refresh size={14} />} بازنشانی کن
+            </Button>
+            <span className="text-[10px] text-rose-700">غیرقابل بازگشت — قبل از ادامه حتماً یک نسخهٔ پشتیبان بسازید</span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ─── خلاصه وضعیت فعلی + فرم ساخت ─── */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">

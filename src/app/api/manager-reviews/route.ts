@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, isManager } from '@/lib/auth'
 import { displayName } from '@/lib/notify'
+import { toFaDigits } from '@/lib/jalali'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +23,10 @@ export const INDICATORS: { key: string; label: string }[] = [
 ]
 
 const PERIOD_RE = /^\d{4}-(\d{2}|W\d{1,2})$/
+
+/* R7-PERF (پژوهش R7 بخش ۶.۶): نمرهٔ حدی = ۱، ۲ یا ۵ — برای مقاوم‌سازی نمره‌ها در برابر
+ * تساهل/سخت‌گیری، ثبت «توضیح شاهد» (رویداد بحرانی) با حداقل ۸ نویسه الزامی است. */
+const EXTREME_MIN = 8
 
 function reviewOut(r: {
   id: string
@@ -78,8 +83,10 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/manager-reviews — GM/OWNER/ADMIN only (Lotfi reviews Mollaie).
- * {periodKey, managerId, scores:{11 indicators 1-5}, note?} → upsert (unique managerId+periodKey)
+ * {periodKey, managerId, scores:{11 indicators 1-5}, note} → upsert (unique managerId+periodKey)
  * total = avg × 20 (0-100).
+ * R7-PERF: اگر هر شاخصی نمرهٔ ۱، ۲ یا ۵ داشته باشد، «note» به‌عنوان توضیح شاهد الزامی است
+ * (حداقل ۸ نویسه) — در غیر این صورت درخواست با خطای فارسی رد می‌شود.
  */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
@@ -112,6 +119,15 @@ export async function POST(req: NextRequest) {
       return fail(`نمره شاخص «${ind.label}» الزامی است`)
     }
     scores[ind.key] = Math.max(1, Math.min(5, Math.round(Number(v))))
+  }
+
+  // R7-PERF: نمرهٔ حدی (≤۲ یا =۵) بدون توضیح شاهد رد می‌شود
+  const witnessNote = String(body.note || '').trim()
+  const extremes = INDICATORS.filter((i) => scores[i.key] <= 2 || scores[i.key] === 5)
+  if (extremes.length && witnessNote.length < EXTREME_MIN) {
+    return fail(
+      `برای نمرهٔ حدی (۱، ۲ یا ۵) در «${extremes[0].label}»، ثبت توضیح شاهد (حداقل ${toFaDigits(EXTREME_MIN)} نویسه) الزامی است`,
+    )
   }
 
   const values = INDICATORS.map((i) => scores[i.key])

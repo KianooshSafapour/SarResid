@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo, api, useShell, toast, cn, Button, Input, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, fa, toFaDigits, JalaliDate, Stepper, todayJalali, Icon, I } from '../lib/hz'
+import { useState, useEffect, useMemo, api, useShell, toast, cn, Button, Input, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, fa, toFaDigits, JalaliDate, TimeInput, Stepper, todayJalali, Icon, I } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
    hr/leaves — مرخصی‌ها (نسخهٔ فشردهٔ همه‌کاره در یک صفحه)
    بالای صفحه: چیپ‌های خلاصه (کل/در انتظار/تأیید/رد/تفکیک نوع)
    میانه: نوار فیلتر + جدول یک‌نگاهی با اقدام خطی مدیر (تأیید/رد)
-   درخواست جدید: دیالوگ کوچک (نوع، بازهٔ جلالی، ساعت/روز، دلیل)
+   درخواست جدید: دیالوگ — ساعتی: تاریخ + از ساعت + تا ساعت (یک ردیف هم‌تراز)
    ───────────────────────────────────────────────────────────── */
 
 const TYPES: { key: string; label: string; cls: string }[] = [
@@ -28,6 +28,13 @@ const MANAGER_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC']
 function faDate(v?: string | null): string {
   if (!v) return '—'
   return toFaDigits(String(v).replace(/-/g, '/'))
+}
+
+/** '08:30' → دقیقه از نیمه‌شب */
+function timeToMin(t: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t || '')
+  if (!m) return NaN
+  return Number(m[1]) * 60 + Number(m[2])
 }
 
 interface LeaveItem {
@@ -73,7 +80,8 @@ export default function LeavesView() {
   const [nFrom, setNFrom] = useState(todayJalali())
   const [nTo, setNTo] = useState(todayJalali())
   const [nDays, setNDays] = useState(1)
-  const [nHours, setNHours] = useState(2)
+  const [nFromTime, setNFromTime] = useState('')
+  const [nToTime, setNToTime] = useState('')
   const [nReason, setNReason] = useState('')
   const [nBusy, setNBusy] = useState(false)
 
@@ -94,9 +102,24 @@ export default function LeavesView() {
     setManager(!!r.data.manager)
   }
 
+  /* مدت ساعتی محاسبه‌شده از «از ساعت / تا ساعت» */
+  const hourlyMinutes = useMemo(() => {
+    const a = timeToMin(nFromTime)
+    const b = timeToMin(nToTime)
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0
+    return b - a
+  }, [nFromTime, nToTime])
+
   async function submitNew() {
-    if (!nFrom) return toast.error('تاریخ شروع را انتخاب کنید')
+    if (!nFrom) return toast.error('تاریخ را انتخاب کنید')
     if (nType !== 'HOURLY' && !nTo) return toast.error('تاریخ پایان را انتخاب کنید')
+    let hours: number | undefined
+    if (nType === 'HOURLY') {
+      if (hourlyMinutes <= 0) return toast.error('ساعت شروع و پایان را وارد کنید (پایان بعد از شروع)')
+      if (hourlyMinutes > 8 * 60) return toast.error('مرخصی ساعتی حداکثر ۸ ساعت است')
+      // رُند به چهارم ساعت — هماهنگ با اعتبارسنجی سرور
+      hours = Math.max(0.25, Math.round((hourlyMinutes / 60) * 4) / 4)
+    }
     setNBusy(true)
     const r = await api('/api/hr/leaves', {
       method: 'POST',
@@ -105,7 +128,7 @@ export default function LeavesView() {
         fromDate: nFrom,
         toDate: nType === 'HOURLY' ? undefined : nTo,
         days: nType === 'HOURLY' ? undefined : nDays,
-        hours: nType === 'HOURLY' ? nHours : undefined,
+        hours,
         reason: nReason.trim() || undefined,
       },
     })
@@ -114,6 +137,7 @@ export default function LeavesView() {
     toast.success('درخواست مرخصی ثبت شد و به اطلاع مدیران رسید ✓')
     setNewOpen(false)
     setNReason('')
+    setNFromTime(''); setNToTime('')
     void load()
   }
 
@@ -180,7 +204,7 @@ export default function LeavesView() {
 
           {/* ═══ نوار فیلتر ═══ */}
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={fStatus} onValueChange={setFStatus}>
+            <Select dir="rtl" value={fStatus} onValueChange={setFStatus}>
               <SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">همهٔ وضعیت‌ها</SelectItem>
@@ -189,7 +213,7 @@ export default function LeavesView() {
                 <SelectItem value="REJECTED">ردشده</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={fType} onValueChange={setFType}>
+            <Select dir="rtl" value={fType} onValueChange={setFType}>
               <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">همهٔ انواع</SelectItem>
@@ -208,7 +232,10 @@ export default function LeavesView() {
           {loading ? (
             <div className="py-10 text-center text-stone-500"><I.loader className="mx-auto mb-3 animate-spin" size={22} /> در حال بارگذاری…</div>
           ) : filtered.length === 0 ? (
-            <p className="py-10 text-center text-sm text-stone-400">مرخصی‌ای با این فیلترها یافت نشد</p>
+            <div className="py-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-100"><I.calendarDays size={22} className="text-stone-400" /></div>
+              <p className="text-sm font-bold text-stone-600">مرخصی‌ای با این فیلترها یافت نشد</p>
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-stone-200">
               <Table>
@@ -240,7 +267,7 @@ export default function LeavesView() {
                           <span className={cn('inline-block rounded-full border px-2 py-0.5 text-[10.5px] font-bold', tm.cls)}>{tm.label}</span>
                         </TableCell>
                         <TableCell className="num whitespace-nowrap text-center text-[11px] text-stone-600">
-                          {faDate(it.fromDate)}{it.type !== 'HOURLY' && it.toDate !== it.fromDate ? ` ← ${faDate(it.toDate)}` : ''}
+                          {faDate(it.fromDate)}{it.type !== 'HOURLY' && it.toDate !== it.fromDate ? ` تا ${faDate(it.toDate)}` : ''}
                         </TableCell>
                         <TableCell className="num text-center text-xs font-bold text-stone-700">
                           {it.type === 'HOURLY' ? `${fa(it.hours || 0)} ساعت` : `${fa(it.days)} روز`}
@@ -295,8 +322,8 @@ export default function LeavesView() {
           <div className="space-y-3">
             <div>
               <label className="mb-1 block text-xs text-stone-500">نوع مرخصی</label>
-              <Select value={nType} onValueChange={setNType}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <Select dir="rtl" value={nType} onValueChange={setNType}>
+                <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {TYPES.map((t) => <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>)}
                 </SelectContent>
@@ -304,13 +331,31 @@ export default function LeavesView() {
             </div>
             {nType === 'HOURLY' ? (
               <div>
-                <label className="mb-1 block text-xs text-stone-500">تاریخ و مدت ساعتی</label>
-                <div className="flex items-end gap-3">
-                  <div className="grow"><JalaliDate value={nFrom} onChange={setNFrom} /></div>
+                <label className="mb-1 block text-xs text-stone-500">تاریخ و بازهٔ ساعتی</label>
+                {/* یک ردیف هم‌تراز — هر سه ورودی h-9 */}
+                <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <Stepper value={nHours} onChange={setNHours} min={1} max={8} hint="ساعت" />
+                    <span className="mb-1 block text-[10px] text-stone-400">تاریخ</span>
+                    <JalaliDate value={nFrom} onChange={setNFrom} />
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-[10px] text-stone-400">از ساعت</span>
+                    <TimeInput value={nFromTime} onChange={setNFromTime} placeholder="۰۸:۳۰" />
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-[10px] text-stone-400">تا ساعت</span>
+                    <TimeInput value={nToTime} onChange={setNToTime} placeholder="۱۲:۳۰" />
                   </div>
                 </div>
+                {nFromTime && nToTime && (
+                  hourlyMinutes > 0 ? (
+                    <p className="mt-1.5 text-[11px] font-bold text-teal-700">
+                      مدت مرخصی: {hourlyMinutes >= 60 ? `${fa(Math.floor(hourlyMinutes / 60))} ساعت` : ''}{hourlyMinutes % 60 ? ` و ${fa(hourlyMinutes % 60)} دقیقه` : ''}
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-rose-600">ساعت پایان باید بعد از ساعت شروع باشد</p>
+                  )
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
@@ -335,7 +380,7 @@ export default function LeavesView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewOpen(false)}>انصراف</Button>
-            <Button disabled={nBusy} onClick={() => void submitNew()} className="gap-1.5">
+            <Button disabled={nBusy || (nType === 'HOURLY' && hourlyMinutes <= 0)} onClick={() => void submitNew()} className="gap-1.5">
               {nBusy ? <I.loader size={15} className="animate-spin" /> : <I.send size={15} />} ثبت درخواست
             </Button>
           </DialogFooter>

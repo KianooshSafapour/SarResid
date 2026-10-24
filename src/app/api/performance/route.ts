@@ -16,8 +16,45 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-/** scientific weights — ترکیب وزن‌دار چندشاخصه */
-export const WEIGHTS = { task: 0.35, section: 0.25, checklist: 0.15, attendance: 0.1, zoneCount: 0.1, extra: 0.05 }
+/* ═════════ وزن‌های ترکیب کارنامه — R7-PERF (پژوهش R7 بخش ۶.۳) ═════════
+ * ۷ مؤلفه: وظایف ۳۰٪ · چیدمان ۲۰٪ · بازرسی روزانه ۱۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۵٪ · تشویقی ۵٪
+ * وزن‌ها در KV (Setting با کلید 'perf.weights' به شکل JSON) ذخیره می‌شوند تا مالک بدون انتشار نسخهٔ جدید
+ * بتواند آن‌ها را تنظیم کند؛ این مقادیر، پیش‌فرض‌ها هستند. کلیدهای غایب از KV با پیش‌فرض پر می‌شوند
+ * («گسترش» KV موجود) و مقدار هر مؤلفه به بازهٔ ۰ تا ۱ محدود می‌شود. */
+export const DEFAULT_WEIGHTS = {
+  task: 0.3,
+  section: 0.2,
+  dailyCheck: 0.15,
+  checklist: 0.15,
+  attendance: 0.1,
+  zoneCount: 0.05,
+  extra: 0.05,
+}
+export type PerfWeights = typeof DEFAULT_WEIGHTS
+
+const WEIGHTS_KEY = 'perf.weights'
+
+/** خواندن وزن‌های مؤثر از KV — ادغام با پیش‌فرض‌ها (کلید غایب → پیش‌فرض؛ مقدار نامعتبر → پیش‌فرض).
+ *  اگر KV هنوز وجود نداشته باشد، در اولین خواندن با پیش‌فرض‌ها ساخته می‌شود تا مالک
+ *  بتواند بعداً بدون انتشار نسخهٔ جدید آن را تنظیم کند (الگوی cheque:limits). */
+async function readWeights(): Promise<PerfWeights> {
+  const row = await db.setting.findUnique({ where: { key: WEIGHTS_KEY } })
+  if (!row) {
+    await db.setting.upsert({
+      where: { key: WEIGHTS_KEY },
+      create: { key: WEIGHTS_KEY, value: JSON.stringify(DEFAULT_WEIGHTS) },
+      update: {},
+    })
+    return { ...DEFAULT_WEIGHTS }
+  }
+  const parsed = safeJson<Record<string, unknown>>(row.value, {})
+  const w: PerfWeights = { ...DEFAULT_WEIGHTS }
+  for (const k of Object.keys(DEFAULT_WEIGHTS) as (keyof PerfWeights)[]) {
+    const n = Number(parsed?.[k])
+    if (Number.isFinite(n) && n >= 0 && n <= 1) w[k] = Math.round(n * 1000) / 1000
+  }
+  return w
+}
 
 const round1 = (x: number) => Math.round(x * 10) / 10
 const clamp100 = (x: number) => Math.max(0, Math.min(100, x))
@@ -68,12 +105,13 @@ interface StoredExtra {
 interface Component {
   taskScore: number
   sectionScore: number
+  dailyCheckScore: number
   checklistScore: number
   attendanceScore: number
   zoneCountScore: number
   extraScore: number
-  total: number
-  grade: 'A' | 'B' | 'C' | 'D'
+  total: number | null // null = هیچ مؤلفه‌ای داده ندارد («بدون دادهٔ کافی»)
+  grade: 'A' | 'B' | 'C' | 'D' | ''
   counts: {
     orders: number
     ordersDone: number
@@ -81,6 +119,7 @@ interface Component {
     checklists: number
     checklistsDone: number
     checks: number
+    dailyCheckDays: number
     zoneCounts: number
     zoneMismatches: number
   }
@@ -91,6 +130,7 @@ async function computeUser(
   userId: string,
   range: { start: string; end: string },
   stored: StoredExtra | null,
+  weights: PerfWeights,
 ): Promise<Component> {
   const { start, end } = range
   const s = parseJalaliDash(start)
@@ -129,17 +169,43 @@ async function computeUser(
   const doneStates = states.filter((s) => s.completedAt !== null)
   const checklistScore = states.length ? round1((doneStates.length / states.length) * 100) : 0
 
-  // ---- attendanceScore: 100 − 25×absent − 10×late(no permission) − 5×permitted ----
+  // ---- attendanceScore (R5-C — قانون مالک):
+  //   غیبت −۲۵ · تأخیر بدون اجازهٔ مدیر = غیبت (−۲۵) ·
+  //   تأخیر با اجازهٔ مدیر = مرخصی ساعتی (−۵) · مرخصی (−۵) ----
   const checks = await db.staffCheck.findMany({
     where: { staffId: userId, date: { gte: start, lte: end } },
   })
   let penalty = 0
   for (const c of checks) {
     if (c.arrival === 'absent') penalty += 25
-    else if (c.arrival === 'late') penalty += c.hadPermission ? 5 : 10
+    else if (c.arrival === 'late') penalty += c.hadPermission ? 5 : 25
     else if (c.arrival === 'permitted_leave') penalty += 5
   }
   const attendanceScore = checks.length ? clamp100(round1(100 - penalty)) : 0
+
+  // ---- dailyCheckScore (R7-PERF — پژوهش R7 بخش ۶.۲):
+  //   فقط رکوردهایی که arrival='on_time' هستند (مرخصی/غیبت از این مؤلفه حذف و در شاخص حضور
+  //   جریمه می‌شوند — جلوگیری از جریمهٔ دوگانه). امتیاز هر رکورد = میانگین نگاشت ۴ معیار
+  //   (ok=۱ · minor=۰٫۵ · needs_followup=۰)؛ چند رکورد در یک روز (هر دو شیفت) → میانگین همان روز؛
+  //   dailyCheckScore = ۱۰۰ × میانگین امتیاز همهٔ روزهای دارای داده ----
+  const FLAG_SCORE: Record<string, number> = { ok: 1, minor: 0.5, needs_followup: 0 }
+  const onTimeChecks = checks.filter((c) => c.arrival === 'on_time')
+  const byDay = new Map<string, number[]>()
+  for (const c of onTimeChecks) {
+    const flagSum =
+      (FLAG_SCORE[c.uniform] ?? 1) +
+      (FLAG_SCORE[c.hygiene] ?? 1) +
+      (FLAG_SCORE[c.behavior] ?? 1) +
+      (FLAG_SCORE[c.workQuality] ?? 1)
+    const dayScores = byDay.get(c.date) || []
+    dayScores.push(flagSum / 4)
+    byDay.set(c.date, dayScores)
+  }
+  const dayMeans = [...byDay.values()].map((xs) => xs.reduce((a, b) => a + b, 0) / xs.length)
+  const dailyCheckDays = dayMeans.length
+  const dailyCheckScore = dailyCheckDays
+    ? round1((100 * dayMeans.reduce((a, b) => a + b, 0)) / dailyCheckDays)
+    : 0
 
   // ---- zoneCountScore: 100 − 10×mismatches ----
   const zcs = await db.zoneCount.findMany({
@@ -151,26 +217,32 @@ async function computeUser(
   // ---- extraScore: stored (default 0) ----
   const extraScore = stored ? stored.extraScore : 0
 
-  const total = clamp100(
-    round1(
-      WEIGHTS.task * taskScore +
-        WEIGHTS.section * sectionScore +
-        WEIGHTS.checklist * checklistScore +
-        WEIGHTS.attendance * attendanceScore +
-        WEIGHTS.zoneCount * zoneCountScore +
-        WEIGHTS.extra * extraScore,
-    ),
-  )
+  // ---- ترکیب وزن‌دار با بازتوزیع وزن مؤلفه‌های بدون داده (R7-PERF — پژوهش R7 بخش ۶.۴) ----
+  //   مؤلفه‌ای که در این دوره داده ندارد (نه «صفرِ عملکرد ضعیف» بلکه «نبود داده»)، از مخرج وزن
+  //   حذف و وزنش به‌نسبت بین مؤلفه‌های دارای داده بازتوزیع می‌شود؛ اگر هیچ مؤلفه‌ای داده نداشت → total=null.
+  const parts: { w: number; score: number }[] = []
+  if (relevant.length) parts.push({ w: weights.task, score: taskScore })
+  if (reviews.length) parts.push({ w: weights.section, score: sectionScore })
+  if (dailyCheckDays) parts.push({ w: weights.dailyCheck, score: dailyCheckScore })
+  if (states.length) parts.push({ w: weights.checklist, score: checklistScore })
+  if (checks.length) parts.push({ w: weights.attendance, score: attendanceScore })
+  if (zcs.length) parts.push({ w: weights.zoneCount, score: zoneCountScore })
+  if (extraScore !== 0) parts.push({ w: weights.extra, score: extraScore })
+  const weightSum = parts.reduce((a, p) => a + p.w, 0)
+  const total = weightSum > 0
+    ? clamp100(round1(parts.reduce((a, p) => a + p.w * p.score, 0) / weightSum))
+    : null
 
   return {
     taskScore,
     sectionScore,
+    dailyCheckScore,
     checklistScore,
     attendanceScore,
     zoneCountScore,
     extraScore,
     total,
-    grade: gradeOf(total),
+    grade: total === null ? '' : gradeOf(total),
     counts: {
       orders: relevant.length,
       ordersDone: doneOnTime.length,
@@ -178,6 +250,7 @@ async function computeUser(
       checklists: states.length,
       checklistsDone: doneStates.length,
       checks: checks.length,
+      dailyCheckDays,
       zoneCounts: zcs.length,
       zoneMismatches,
     },
@@ -186,7 +259,9 @@ async function computeUser(
 
 /**
  * GET /api/performance?staff=&period=1405-07&periodType=MONTHLY — managers only.
- * Live computation (nothing stored): {scores:[...]} for ALL active staff (0 where no data).
+ * Live computation (nothing stored): {scores:[...]} for ALL active staff.
+ * R7-PERF: ۷ مؤلفه (بازرسی روزانه جدید) + وزن‌ها از KV 'perf.weights' +
+ * بازتوزیع وزن مؤلفه‌های بدون داده؛ total=null یعنی «بدون دادهٔ کافی».
  */
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
@@ -213,6 +288,7 @@ export async function GET(req: NextRequest) {
 
   const storedRows = await db.performanceScore.findMany({ where: { periodType, periodKey: period } })
   const storedMap = new Map(storedRows.map((r) => [r.userId, r]))
+  const weights = await readWeights()
 
   const scores = await Promise.all(
     users.map(async (u) => {
@@ -220,7 +296,7 @@ export async function GET(req: NextRequest) {
       const storedInfo: StoredExtra | null = stored
         ? { extraScore: stored.extraScore, note: stored.note, total: stored.total, grade: stored.grade, updatedAt: stored.updatedAt }
         : null
-      const c = await computeUser(u.id, range, storedInfo)
+      const c = await computeUser(u.id, range, storedInfo, weights)
       return {
         userId: u.id,
         userName: displayName(u),
@@ -229,6 +305,7 @@ export async function GET(req: NextRequest) {
         title: u.title,
         taskScore: c.taskScore,
         sectionScore: c.sectionScore,
+        dailyCheckScore: c.dailyCheckScore,
         checklistScore: c.checklistScore,
         attendanceScore: c.attendanceScore,
         zoneCountScore: c.zoneCountScore,
@@ -238,6 +315,7 @@ export async function GET(req: NextRequest) {
         breakdown: {
           task: c.taskScore,
           section: c.sectionScore,
+          dailyCheck: c.dailyCheckScore,
           checklist: c.checklistScore,
           attendance: c.attendanceScore,
           zoneCount: c.zoneCountScore,
@@ -256,7 +334,8 @@ export async function GET(req: NextRequest) {
     periodType,
     startDate: range.start,
     endDate: range.end,
-    weights: WEIGHTS,
+    weights,
+    weightsKey: WEIGHTS_KEY,
     scores,
   })
 }
@@ -264,7 +343,8 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/performance — managers only.
  * {userId, periodType, periodKey, extraScore, note} → upsert PerformanceScore
- * (stores extraScore+note; the weighted total stays live-computed on GET).
+ * (stores extraScore+note + snapshot of all live components incl. dailyCheckScore;
+ *  the weighted total stays live-computed on GET — weights snapshot in breakdownJson).
  */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
@@ -308,7 +388,25 @@ export async function POST(req: NextRequest) {
         : null
 
   const stored: StoredExtra = { extraScore, note, total: existing?.total ?? 0, grade: existing?.grade ?? '', updatedAt: existing?.updatedAt ?? new Date() }
-  const c = await computeUser(user.id, range, stored)
+  const weights = await readWeights()
+  const c = await computeUser(user.id, range, stored, weights)
+
+  // ستون‌های total/grade ستون‌های non-null هستند؛ «بدون دادهٔ کافی» با total=0 + grade='' + total:null داخل breakdownJson ذخیره می‌شود
+  const breakdownJson = JSON.stringify({
+    weights,
+    breakdown: {
+      task: c.taskScore,
+      section: c.sectionScore,
+      dailyCheck: c.dailyCheckScore,
+      checklist: c.checklistScore,
+      attendance: c.attendanceScore,
+      zoneCount: c.zoneCountScore,
+      extra: c.extraScore,
+    },
+    counts: c.counts,
+    total: c.total,
+    liveAt: new Date().toISOString(),
+  })
 
   const score = await db.performanceScore.upsert({
     where: { userId_periodType_periodKey: { userId: user.id, periodType, periodKey } },
@@ -321,25 +419,14 @@ export async function POST(req: NextRequest) {
       endDate: range.end,
       taskScore: c.taskScore,
       sectionScore: c.sectionScore,
+      dailyCheckScore: c.dailyCheckScore,
       checklistScore: c.checklistScore,
       attendanceScore: c.attendanceScore,
       zoneCountScore: c.zoneCountScore,
       extraScore,
-      total: c.total,
-      grade: c.grade,
-      breakdownJson: JSON.stringify({
-        weights: WEIGHTS,
-        breakdown: {
-          task: c.taskScore,
-          section: c.sectionScore,
-          checklist: c.checklistScore,
-          attendance: c.attendanceScore,
-          zoneCount: c.zoneCountScore,
-          extra: c.extraScore,
-        },
-        counts: c.counts,
-        liveAt: new Date().toISOString(),
-      }),
+      total: c.total ?? 0,
+      grade: c.grade || '',
+      breakdownJson,
       note,
     },
     update: {
@@ -348,25 +435,14 @@ export async function POST(req: NextRequest) {
       endDate: range.end,
       taskScore: c.taskScore,
       sectionScore: c.sectionScore,
+      dailyCheckScore: c.dailyCheckScore,
       checklistScore: c.checklistScore,
       attendanceScore: c.attendanceScore,
       zoneCountScore: c.zoneCountScore,
       extraScore,
-      total: c.total,
-      grade: c.grade,
-      breakdownJson: JSON.stringify({
-        weights: WEIGHTS,
-        breakdown: {
-          task: c.taskScore,
-          section: c.sectionScore,
-          checklist: c.checklistScore,
-          attendance: c.attendanceScore,
-          zoneCount: c.zoneCountScore,
-          extra: c.extraScore,
-        },
-        counts: c.counts,
-        liveAt: new Date().toISOString(),
-      }),
+      total: c.total ?? 0,
+      grade: c.grade || '',
+      breakdownJson,
       note,
     },
   })

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { toFaDigits } from '@/lib/jalali'
-import { deriveItem, invoiceListOut, MARGIN_ROLES, type MarginItemInput } from '../route'
+import { deriveItem, invoiceListOut, MARGIN_ROLES, getMarginThresholds, type MarginItemInput } from '../route'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,6 +77,10 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       totalCost: it.totalCost,
       unitCost: it.unitCost,
       printedPrice: it.printedPrice,
+      salePrice: it.salePrice,
+      marginPct: it.marginPct,
+      free100: it.free100,
+      baseCost: it.baseCost,
       margin: it.margin,
       profitPerUnit: it.profitPerUnit,
       note: it.note,
@@ -99,6 +103,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : null,
       createdAt: inv.createdAt.toISOString(),
       dateJalali: inv.dateJalali,
+      providerDocNumber: inv.providerDocNumber,
+      purchaseOrderId: inv.purchaseOrderId,
       items,
     },
   })
@@ -122,6 +128,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   if (!supplierName) return fail('تأمین‌کننده را انتخاب یا نامش را وارد کنید')
   const supplierId = String(body.supplierId ?? '').trim() || null
   const note = String(body.note ?? '').trim() || null
+  const thresholds = await getMarginThresholds()
 
   const rawItems = Array.isArray(body.items) ? body.items : []
   if (rawItems.length === 0) return fail('فاکتور باید حداقل یک قلم داشته باشد')
@@ -130,19 +137,26 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   for (const raw of rawItems) {
     const name = String(raw?.productName ?? '').trim()
     if (!name) return fail('نام کالا را وارد کنید')
-    const quantity = Math.trunc(Number(raw?.quantity) || 0)
+    const quantity = Math.round((Number(raw?.quantity) || 0) * 1000) / 1000
     if (quantity < 1) return fail('تعداد باید بزرگ‌تر از صفر باشد')
     items.push(
-      deriveItem({
-        productId: raw?.productId ? String(raw.productId) : null,
-        barcode: raw?.barcode ? String(raw.barcode).trim() : null,
-        productName: name,
-        unit: String(raw?.unit ?? 'عدد').trim() || 'عدد',
-        quantity,
-        totalCost: Number(raw?.totalCost) || 0,
-        printedPrice: Number(raw?.printedPrice) || 0,
-        note: raw?.note ? String(raw.note).trim() : null,
-      }) as MarginItemInput & { alertsJson: string },
+      deriveItem(
+        {
+          productId: raw?.productId ? String(raw.productId) : null,
+          barcode: raw?.barcode ? String(raw.barcode).trim() : null,
+          productName: name,
+          unit: String(raw?.unit ?? 'عدد').trim() || 'عدد',
+          quantity,
+          totalCost: Number(raw?.totalCost) || 0,
+          printedPrice: Number(raw?.printedPrice) || 0,
+          note: raw?.note ? String(raw.note).trim() : null,
+          salePrice: Number(raw?.salePrice) || 0,
+          marginPct: Number(raw?.marginPct) || 0,
+          free100: raw?.free100 === true,
+          baseCost: Number(raw?.baseCost) || 0,
+        },
+        thresholds,
+      ) as MarginItemInput & { alertsJson: string },
     )
   }
 
@@ -153,6 +167,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       supplierId,
       supplierName,
       note,
+      ...(body?.providerDocNumber !== undefined ? { providerDocNumber: String(body.providerDocNumber ?? '').trim() || null } : {}),
       items: { create: items },
     },
   })
@@ -199,26 +214,35 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
   // plain field update (note / items) — archived stays locked
   if (inv.archived) return fail('فاکتور بایگانی‌شده قابل ویرایش نیست؛ ابتدا بایگانی را باز کنید')
+  const thresholds = await getMarginThresholds()
   const data: Record<string, unknown> = {}
   if (body?.note !== undefined) data.note = String(body.note ?? '').trim() || null
+  if (body?.providerDocNumber !== undefined) data.providerDocNumber = String(body.providerDocNumber ?? '').trim() || null
   if (Array.isArray(body?.items) && body.items.length) {
     await db.marginItem.deleteMany({ where: { invoiceId: id } })
     const items = body.items.map((raw: Record<string, unknown>) =>
-      deriveItem({
-        productId: raw?.productId ? String(raw.productId) : null,
-        barcode: raw?.barcode ? String(raw.barcode).trim() : null,
-        productName: String(raw?.productName ?? '').trim() || '—',
-        unit: String(raw?.unit ?? 'عدد').trim() || 'عدد',
-        quantity: Math.trunc(Number(raw?.quantity) || 1),
-        totalCost: Number(raw?.totalCost) || 0,
-        printedPrice: Number(raw?.printedPrice) || 0,
-        note: raw?.note ? String(raw.note).trim() : null,
-      }) as MarginItemInput & { alertsJson: string },
+      deriveItem(
+        {
+          productId: raw?.productId ? String(raw.productId) : null,
+          barcode: raw?.barcode ? String(raw.barcode).trim() : null,
+          productName: String(raw?.productName ?? '').trim() || '—',
+          unit: String(raw?.unit ?? 'عدد').trim() || 'عدد',
+          quantity: Math.round((Number(raw?.quantity) || 1) * 1000) / 1000,
+          totalCost: Number(raw?.totalCost) || 0,
+          printedPrice: Number(raw?.printedPrice) || 0,
+          note: raw?.note ? String(raw.note).trim() : null,
+          salePrice: Number(raw?.salePrice) || 0,
+          marginPct: Number(raw?.marginPct) || 0,
+          free100: raw?.free100 === true,
+          baseCost: Number(raw?.baseCost) || 0,
+        },
+        thresholds,
+      ) as MarginItemInput & { alertsJson: string },
     )
     data.items = { create: items }
   }
   await db.marginInvoice.update({ where: { id }, data })
-  const refreshed = await db.marginInvoice.findUnique({ where: { id }, include: { items: { select: { quantity: true, totalCost: true, printedPrice: true } } } })
+  const refreshed = await db.marginInvoice.findUnique({ where: { id }, include: { items: { select: { quantity: true, totalCost: true, printedPrice: true, salePrice: true } } } })
   return ok(refreshed ? invoiceListOut(refreshed) : { id })
 }
 

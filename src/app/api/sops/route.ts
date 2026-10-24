@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const sop = await db.sop.findUnique({ where: { id } })
     if (!sop) return fail('روال یافت نشد', 404)
 
-    const [roleKeys] = await Promise.all([
+    const [roleKeys, updated] = await Promise.all([
       getRoleKeys(sop.id),
       db.sop.update({ where: { id: sop.id }, data: { views: { increment: 1 } } }),
     ])
@@ -49,9 +49,13 @@ export async function GET(req: NextRequest) {
         title: sop.title,
         description: sop.description,
         steps: safeJson<SopStep[]>(sop.stepsJson, []),
-        views: sop.views,
+        // مقدار پس از افزایش — شمارندهٔ بازدید باید همان لحظهٔ مشاهده به‌روز باشد
+        views: updated.views,
+        completions: updated.completions, // R5-P4: دفعات اجرای کامل
         version: sop.version,
         roleKeys,
+        createdAt: sop.createdAt,
+        updatedAt: sop.updatedAt,
       },
     })
   }
@@ -61,6 +65,11 @@ export async function GET(req: NextRequest) {
     take: 100,
   })
 
+  // roleKeys همهٔ روال‌ها با یک پرس‌وجو (KV در Setting)
+  const keyRows = await db.setting.findMany({ where: { key: { startsWith: 'sop:rolekeys:' } } })
+  const rkMap = new Map<string, string[]>()
+  for (const row of keyRows) rkMap.set(row.key.slice('sop:rolekeys:'.length), safeJson<string[]>(row.value, []))
+
   return ok({
     sops: sops.map((s) => ({
       id: s.id,
@@ -68,7 +77,11 @@ export async function GET(req: NextRequest) {
       description: s.description,
       stepsCount: safeJson<unknown[]>(s.stepsJson, []).length,
       views: s.views,
+      completions: s.completions, // R5-P4
       version: s.version,
+      roleKeys: rkMap.get(s.id) || [],
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
     })),
   })
 }
@@ -190,4 +203,9 @@ export async function DELETE(req: NextRequest) {
   })
 
   return ok({ deleted: id })
+}
+
+/** PATCH /api/sops — همان PUT (نام مستعار؛ سازگاری با فراخوانی‌های جدید) */
+export async function PATCH(req: NextRequest) {
+  return PUT(req)
 }

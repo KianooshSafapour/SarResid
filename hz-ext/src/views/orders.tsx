@@ -15,7 +15,8 @@ import { toFaDigits,
    supply/orders — «سفارش‌گذاری هوشمند» (نسخهٔ جدولی R3)
    جریان اصلی: انتخاب طرف حساب (نخستین کارت) → جست‌وجوی فازی کالا
    (مثل «بیژن») → جدول RTL نتایج (نام، موجودی، آخرین سفارش، قیمت،
-   استپر «عدد»، استپر «کارتن») → افزودن به سبد → ثبت با تاریخ‌گیر
+   استپر «عدد»، استپر «کارتن») — هر +/− یا چیپ +N همان لحظه
+   مستقیم در سبد می‌نشیند (بدون دکمهٔ «افزودن») → ثبت با تاریخ‌گیر
    جلالی و برآورد هزینه. سبد: استپر عدد/کارتن + قیمت قابل اصلاح.
    Tabs: سفارش جدید | سفارش‌ها | تقویم پرداخت
    ───────────────────────────────────────────────────────────── */
@@ -27,9 +28,9 @@ const PAY_CLS: Record<string, string> = {
   POS: 'bg-teal-50 text-teal-800 border-teal-200',
 }
 const ORDER_STATUS_FA: Record<string, string> = {
-  DRAFT: 'پیش‌نویس', SUBMITTED: 'در انتظار تأیید', APPROVED: 'تأییدشده (آماده دریافت)',
+  DRAFT: 'پیش‌نویس', SUBMITTED: 'در انتظار تأیید', APPROVED: 'تأیید‌شده (آماده دریافت)',
   RECEIVING: 'در حال دریافت', RECEIVED: 'دریافت‌شده', VERIFIED: 'راستی‌آزمایی‌شده',
-  ACCOUNTED: 'ثبت‌شده در حسابداری', DONE: 'تکمیل‌شده', CANCELLED: 'لغوشده',
+  ACCOUNTED: 'ثبت‌شده در حسابداری', DONE: 'تکمیل‌شده', CANCELLED: 'لغو‌شده',
 }
 const ORDER_STATUS_CLS: Record<string, string> = {
   DRAFT: 'bg-stone-100 text-stone-600 border-stone-200',
@@ -43,10 +44,10 @@ const ORDER_STATUS_CLS: Record<string, string> = {
   CANCELLED: 'bg-rose-100 text-rose-700 border-rose-200',
 }
 const CHEQUE_STATUS_FA: Record<string, string> = {
-  PENDING_OWNER: 'در انتظار امضا', SIGNED: 'امضا شده', DELIVERED: 'تحویل شده',
-  CLEARED: 'پرداخت شده', REJECTED: 'رد شده', RETURNED: 'برگشتی', BOUNCED: 'برگشت خورد',
+  PENDING_OWNER: 'در انتظار امضا', SIGNED: 'امضا‌شده', DELIVERED: 'تحویل‌شده',
+  CLEARED: 'پرداخت‌شده', REJECTED: 'ردشده', RETURNED: 'برگشتی', BOUNCED: 'برگشت خورد',
 }
-const PLAN_STATUS_FA: Record<string, string> = { PLANNED: 'برنامه‌ریزی‌شده', CONFIRMED: 'تأییدشده', DONE: 'انجام‌شده' }
+const PLAN_STATUS_FA: Record<string, string> = { PLANNED: 'برنامه‌ریزی‌شده', CONFIRMED: 'تأیید‌شده', DONE: 'انجام‌شده' }
 
 /* ── helpers ─────────────────────────────────────────────── */
 function pad2(n: number) { return String(n).padStart(2, '0') }
@@ -460,23 +461,14 @@ export default function OrdersView() {
   const [results, setResults] = useState<any[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [circOf, setCircOf] = useState<string | null>(null)
-  const [cartonAsk, setCartonAsk] = useState<any | null>(null) // {product, size, units, cartons} — درخواست اندازهٔ کارتن
+  const [cartonAsk, setCartonAsk] = useState<any | null>(null) // {product, size, cartons} — درخواست اندازهٔ کارتن
   const searchTimer = useRef<any>(null)
 
-  /* مقادیر هر ردیف جدول نتایج: {units, cartons} — با هر جست‌وجوی تازه ریست می‌شود */
-  const [rowAmts, setRowAmts] = useState<Record<string, { units: number; cartons: number }>>({})
+  /* R5-F: حذف rowAmts — سطر جست‌وجو مستقیم به سبد می‌نویسد؛ سبد تنها منبع حقیقت است */
   /* اندازهٔ کارتن آموخته‌شده در همین نشست (پس از دیالوگ «اندازهٔ کارتن») */
   const [upcKnown, setUpcKnown] = useState<Record<string, number>>({})
-  /* پالس بصری «افزودن سریع» (+N عدد / +۱ کارتن / +N تایی) — کلید → شمارنده */
+  /* پالس بصری «افزودن سریع» (+N عدد / +۱ کارتن / +N تایی سبد) — کلید → شمارنده */
   const [bump, setBump] = useState<Record<string, number>>({})
-
-  /* ریست مقادیر ردیف‌ها با تغییر نتایج جست‌وجو */
-  useEffect(() => {
-    const m: Record<string, { units: number; cartons: number }> = {}
-    for (const p of results ?? []) m[p.id] = defAmt(p)
-    setRowAmts(m)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [results])
 
   /* سبد خرید */
   const [cart, setCart] = useState<any[]>([])
@@ -522,7 +514,8 @@ export default function OrdersView() {
 
   /* ── بارگذاری‌ها ── */
   async function loadSuppliers(tq: string) {
-    const r = await api('/api/suppliers' + qs({ pageSize: 100, sort: 'name', q: tq || undefined }))
+    // R7: همهٔ تأمین‌کنندگان فعال یکجا (نه فقط ۱۰۰تای اول) — طرف‌حساب‌هایی مثل «بانی چاو» دیگر گم نمی‌شوند
+    const r = await api('/api/suppliers' + qs({ pageSize: 2400, sort: 'name', status: 'فعال', q: tq || undefined }))
     if (!r.ok) { toast.error(r.error || 'خطا در دریافت تأمین‌کنندگان'); return }
     setSuppliers((r.data?.items ?? []).filter((s: any) => s.status === 'فعال'))
   }
@@ -576,7 +569,7 @@ export default function OrdersView() {
     setResults(r.data?.products ?? [])
   }
 
-  /* ── قیمت/کارتن بهینه + مقدار پیش‌فرض هر ردیف ── */
+  /* ── قیمت/کارتن بهینه + اندازهٔ کارتن مؤثر ── */
   function bestPrice(p: any): number {
     const prim = (p.suppliers ?? []).find((s: any) => s.isPrimary && s.status === 'فعال')
     const cheap = (p.suppliers ?? []).filter((s: any) => s.status === 'فعال').sort((a: any, b: any) => (a.unitPrice ?? 0) - (b.unitPrice ?? 0))[0]
@@ -588,75 +581,84 @@ export default function OrdersView() {
     return Number(withC?.perCarton ?? p.unitsPerCarton ?? 0) || 0
   }
 
-  /** مقدار پیش‌فرض هر ردیف: از خود کالا، وگرنه از تنظیمات سراسری (۶ عدد / ۱ کارتن) */
-  function defAmt(p: any): { units: number; cartons: number } {
-    return {
-      units: Number(p.defaultOrderQty) || defQty,
-      cartons: Number(p.defaultCartonQty) || defCarton,
-    }
-  }
-
   /** اندازهٔ کارتن مؤثر: اندازهٔ آموخته‌شدهٔ همین نشست ← بهترین مقدار کالا */
   function rowUpc(p: any): number {
     return Number(upcKnown[p.id] ?? bestCarton(p)) || 0
   }
 
-  function onRowUnits(p: any, v: number) {
-    setRowAmts((m) => {
-      const cur = m[p.id] ?? defAmt(p)
-      return { ...m, [p.id]: { ...cur, units: v } }
+  /* ═══ R5-F: افزودن مستقیم — سطر جست‌وجو همان کنترل سبد است ═══
+     هر تغییر استپر/چیپ بلافاصله در سطر سبد می‌نشیند؛ سطر ۰-صفر خودکار حذف می‌شود. */
+  function applyRow(p: any, next: { units?: number; cartons?: number; upc?: number }) {
+    setCart((c) => {
+      const idx = c.findIndex((l) => l.productId === p.id)
+      const units = Math.max(0, Math.round(Number(next.units ?? 0) || 0))
+      const cartons = Math.max(0, Math.round(Number(next.cartons ?? 0) || 0))
+      if (idx === -1) {
+        if (units < 1 && cartons < 1) return c // هیچ سطری برای ساخت نیست
+        const unitPrice = bestPrice(p)
+        const upc = Number(next.upc ?? rowUpc(p)) || 0
+        return [...c, {
+          productId: p.id,
+          name: p.name,
+          barcode: p.barcode ?? null,
+          unit: p.unit ?? 'عدد',
+          unitPrice,
+          upc,
+          sellPrice: Number(p.sellPrice ?? 0) || 0,
+          stock: Number(p.stock ?? 0),
+          lowThreshold: p.lowStockThreshold ?? null,
+          qty: units,
+          cartonQty: cartons,
+        }]
+      }
+      const line = c[idx]
+      const nq = next.units !== undefined ? units : Number(line.qty ?? 0)
+      const nc = next.cartons !== undefined ? cartons : Number(line.cartonQty ?? 0)
+      if (nq < 1 && nc < 1) return c.filter((_, i) => i !== idx) // سطر صفر-صفر = حذف از سبد
+      const patch: any = {}
+      if (next.units !== undefined) patch.qty = nq
+      if (next.cartons !== undefined) patch.cartonQty = nc
+      if (next.upc !== undefined) patch.upc = next.upc
+      return c.map((l, i) => (i === idx ? { ...l, ...patch } : l))
     })
   }
 
-  function onRowCarton(p: any, v: number) {
-    const curAmt = rowAmts[p.id] ?? defAmt(p)
-    if (v > curAmt.cartons && rowUpc(p) <= 0) {
-      /* اندازهٔ کارتن نامشخص — بپرس و بعد همین‌جا به سبد اضافه کن */
-      setCartonAsk({ product: p, size: '12', units: curAmt.units, cartons: Math.max(v, 1) })
+  /** استپر «عدد» سطر — مقدار فعلی را از سبد می‌خواند و تغییر را همان‌جا می‌نویسد */
+  function rowUnitsChange(p: any, v: number) {
+    applyRow(p, { units: Math.max(0, Math.round(v || 0)) })
+  }
+
+  /** استپر «کارتن» سطر — افزایش با اندازهٔ ناشناس ⇒ دیالوگ اندازهٔ کارتن */
+  function rowCartonChange(p: any, v: number) {
+    const line = cart.find((l) => l.productId === p.id)
+    const cur = Number(line?.cartonQty ?? 0)
+    const n = Math.max(0, Math.round(v || 0))
+    if (n > cur && rowUpc(p) <= 0) {
+      setCartonAsk({ product: p, size: '12', cartons: Math.max(n, 1) })
       return
     }
-    setRowAmts((m) => {
-      const cur = m[p.id] ?? defAmt(p)
-      return { ...m, [p.id]: { ...cur, cartons: v } }
-    })
+    applyRow(p, { cartons: n, upc: rowUpc(p) || undefined })
   }
 
   /* ── افزودن سریع (چیپ‌های +N) — با پالس بصری، بدون توست ── */
   function quickAddUnits(p: any, n: number) {
-    const cur = rowAmts[p.id] ?? defAmt(p)
-    onRowUnits(p, Math.max(0, (cur.units || 0) + Math.max(1, Math.round(n))))
+    const line = cart.find((l) => l.productId === p.id)
+    const cur = Number(line?.qty ?? 0)
+    applyRow(p, { units: cur + Math.max(1, Math.round(n)) })
     setBump((m) => ({ ...m, [`u:${p.id}`]: (m[`u:${p.id}`] || 0) + 1 }))
   }
 
   function quickAddCarton(p: any) {
-    const cur = rowAmts[p.id] ?? defAmt(p)
-    onRowCarton(p, (cur.cartons || 0) + 1)
-    setBump((m) => ({ ...m, [`b:${p.id}`]: (m[`b:${p.id}`] || 0) + 1 }))
-  }
-
-  /** افزودن به سبد به شکل «یک سطر» با تعداد صریح (عدد، کارتن) */
-  function addToCart(p: any, units: number, cartons: number, cartonSize?: number) {
-    if (cart.some((l) => l.productId === p.id)) { toast.info('این کالا در سبد هست — تعدادها را در سبد ویرایش کنید'); return }
-    const unitPrice = bestPrice(p)
-    const upc = Number(cartonSize ?? rowUpc(p)) || 0
-    const qty = Math.max(0, Math.round(Number(units) || 0))
-    const cqty = Math.max(0, Math.round(Number(cartons) || 0))
-    if (qty < 1 && cqty < 1) { toast.error(`تعداد «عدد» یا «کارتن» را برای «${p.name}» مشخص کنید`); return }
-    const row: any = {
-      productId: p.id,
-      name: p.name,
-      barcode: p.barcode ?? null,
-      unit: p.unit ?? 'عدد',
-      unitPrice,
-      upc,
-      sellPrice: Number(p.sellPrice ?? 0) || 0,
-      stock: Number(p.stock ?? 0),
-      lowThreshold: p.lowStockThreshold ?? null,
-      qty,
-      cartonQty: cqty,
+    const line = cart.find((l) => l.productId === p.id)
+    const cur = Number(line?.cartonQty ?? 0)
+    const add = Math.max(1, Math.round(defCarton || 1)) // پیش‌فرض کارتن از تنظیمات (order.carton)
+    const next = cur + add
+    if (rowUpc(p) <= 0) {
+      setCartonAsk({ product: p, size: '12', cartons: next })
+      return
     }
-    setCart((c) => [...c, row])
-    toast.success(`«${p.name}» به سبد اضافه شد — ${fa(qty)} عدد${cqty ? ` + ${fa(cqty)} کارتن${upc ? ` ×${fa(upc)}` : ''}` : ''}`)
+    applyRow(p, { cartons: next, upc: rowUpc(p) })
+    setBump((m) => ({ ...m, [`b:${p.id}`]: (m[`b:${p.id}`] || 0) + 1 }))
   }
 
   function confirmCartonAsk() {
@@ -664,11 +666,10 @@ export default function OrdersView() {
     const size = numify(cartonAsk.size)
     if (size < 1) { toast.error('تعداد در هر کارتن را وارد کنید'); return }
     const p = cartonAsk.product
-    const units = Number(cartonAsk.units ?? 0) || 0
-    const cartons = Number(cartonAsk.cartons ?? 1) || 1
+    const cartons = Math.max(1, Math.round(Number(cartonAsk.cartons ?? 1) || 1))
     setUpcKnown((m) => ({ ...m, [p.id]: size }))
-    setRowAmts((m) => ({ ...m, [p.id]: { units, cartons } }))
-    addToCart(p, units, cartons, size)
+    applyRow(p, { cartons, upc: size })
+    setBump((m) => ({ ...m, [`b:${p.id}`]: (m[`b:${p.id}`] || 0) + 1 }))
     setCartonAsk(null)
   }
 
@@ -835,7 +836,7 @@ export default function OrdersView() {
 
   return (
     <div className="space-y-4">
-      <Tabs value={tab} onValueChange={(v: string) => setTab(v)}>
+      <Tabs value={tab} onValueChange={(v: string) => setTab(v)} dir="rtl">
         <TabsList>
           <TabsTrigger value="new">سفارش جدید</TabsTrigger>
           <TabsTrigger value="list">سفارش‌ها</TabsTrigger>
@@ -865,7 +866,7 @@ export default function OrdersView() {
                     (supSelected.balance ?? 0) < 0 ? 'bg-rose-100 text-rose-700' : (supSelected.balance ?? 0) > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-100 text-stone-600')}>
                     {(supSelected.balance ?? 0) < 0 ? `بدهی: ${money(Math.abs(supSelected.balance))} ریال` : (supSelected.balance ?? 0) > 0 ? `اعتبار: ${money(supSelected.balance)} ریال` : 'بدون بدهی'}
                   </span>
-                  {supSelected.phone && <span dir="ltr" className="text-stone-500">{fa(supSelected.phone)}</span>}
+                  {supSelected.phone && <span dir="ltr" className="text-stone-500">{toFaDigits(supSelected.phone)}</span>}
                   <span className="text-[11px] text-stone-500">تمام اقلام این سبد روی همین طرف حساب ثبت می‌شود</span>
                 </div>
               </CardContent>
@@ -885,7 +886,7 @@ export default function OrdersView() {
                 <I.search size={18} /> جست‌وجوی سریع کالا
               </CardTitle>
               <p className="text-xs leading-5 text-stone-500">
-                اسم کالا را بنویسید (مثلاً «بیژن») — موجودی، آخرین سفارش و قیمت خرید در جدول زیر نمایش داده می‌شود؛ تعداد «عدد» و «کارتن» را با دکمه‌های +/− تنظیم و به سبد اضافه کنید.
+                اسم کالا را بنویسید (مثلاً «بیژن») — موجودی، آخرین سفارش و قیمت خرید در جدول زیر نمایش داده می‌شود؛ با +/− یا چیپ‌های +N، همان ردیف مستقیم در سبد می‌نشیند (دکمهٔ جداگانه‌ای لازم نیست).
               </p>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -920,43 +921,62 @@ export default function OrdersView() {
               ) : (
                 <>
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-400">
-                    <span>{fa(results.length)} کالا — با دکمه‌های +/− تعداد «عدد» و «کارتن» را تنظیم و سپس «افزودن به سبد» بزنید</span>
+                    <span>{fa(results.length)} کالا — هر +/− یا چیپ +N همان لحظه در سبد اعمال می‌شود</span>
                     <span>کلیک روی نام کالا = گردش کالا</span>
                   </div>
                   <div className="max-h-[420px] overflow-y-auto overflow-x-auto rounded-xl border border-stone-200 bg-white">
-                    <table className="w-full min-w-[980px] text-sm">
+<table dir="rtl" className="w-full min-w-[920px] text-sm">
                       <thead>
                         <tr>
                           <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-right align-middle text-[11px] font-bold text-stone-500">نام کالا</th>
+                          <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">کد / بارکد</th>
+                          <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">واحد</th>
                           <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">موجودی</th>
-                          <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">آخرین سفارش</th>
                           <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">قیمت واحد</th>
                           <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">تعداد (عدد)</th>
                           <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">کارتن</th>
-                          <th className="sticky top-0 z-10 h-10 whitespace-nowrap border-b bg-white px-2 text-center align-middle text-[11px] font-bold text-stone-500">افزودن</th>
                         </tr>
                       </thead>
                       <tbody>
                         {results.map((p: any) => {
-                          const inCart = cart.some((l) => l.productId === p.id)
+                          /* R5-F: سبد تنها منبع حقیقت — مقدارهای این سطر از سطر سبد خوانده می‌شود */
+                          const line = cart.find((l) => l.productId === p.id) ?? null
+                          const inCart = !!line
+                          const amtUnits = Number(line?.qty ?? 0)
+                          const amtCartons = Number(line?.cartonQty ?? 0)
                           const price = bestPrice(p)
-                          const upc = rowUpc(p)
+                          const upc = rowUpc(p) || Number(line?.upc ?? 0) || 0
                           const last = p.lastOrder
                           const hasSup = (p.suppliers ?? []).some((s: any) => s.status === 'فعال' && s.unitPrice != null)
-                          const amt = rowAmts[p.id] ?? defAmt(p)
                           return (
-                            <tr key={p.id} className="border-b transition-colors even:bg-[#FBF9F3] last:border-b-0 hover:bg-emerald-50">
-                              {/* ۱. نام کالا — کلیک = گردش کالا */}
+                            <tr key={p.id} className={cn('border-b transition-colors even:bg-[#FBF9F3] last:border-b-0', inCart ? 'bg-emerald-50/60 hover:bg-emerald-50' : 'hover:bg-emerald-50/50')}>
+                              {/* ۱. نام کالا — نخستین ستون (در RTL = راست‌ترین) — کلیک = گردش کالا */}
                               <td className="p-2 align-middle">
-                                <button type="button" className="flex items-start gap-1 text-right text-sm font-bold text-stone-700 transition-colors hover:text-emerald-800" onClick={() => setCircOf(p.id)} title="نمایش گردش کالا">
-                                  <span>{p.name}</span>
-                                  <I.barChart size={12} className="mt-1 shrink-0 text-stone-400" />
-                                </button>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <button type="button" className="flex items-start gap-1 text-right text-sm font-bold text-stone-700 transition-colors hover:text-emerald-800" onClick={() => setCircOf(p.id)} title="نمایش گردش کالا">
+                                    <span>{p.name}</span>
+                                    <I.barChart size={12} className="mt-1 shrink-0 text-stone-400" />
+                                  </button>
+                                  {inCart && (
+                                    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                      <I.check size={11} /> در سبد
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-stone-400">
-                                  <span>{p.unit ?? 'عدد'}</span>
-                                  {p.mainGroup && <span>· {p.mainGroup}</span>}
+                                  {p.mainGroup && <span>{p.mainGroup}</span>}
                                   {(p.monthlySold ?? 0) > 0 && <span>· فروش ماه: {fa(p.monthlySold)}</span>}
                                 </div>
+                                {last ? (
+                                  <div className="mt-0.5 whitespace-nowrap text-[11px] leading-4 text-stone-500">
+                                    آخرین سفارش: <span dir="ltr">{jShort(last.orderedAt)}</span> · {fa(last.qty)} عدد{last.cartonQty ? ` + ${fa(last.cartonQty)} کارتن` : ''}
+                                    <span className={last.receivedAt ? 'text-emerald-700' : 'text-amber-700'}>
+                                      {' '}— {last.receivedAt ? `دریافت: ${jShort(last.receivedAt)}` : last.deliveryDate ? `تحویل: ${faDate(last.deliveryDate)}` : 'در انتظار دریافت'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="mt-0.5 text-[11px] text-stone-400">سفارش قبلی ندارد</div>
+                                )}
                                 {(p.suppliers ?? []).length > 1 && (
                                   <div className="mt-1.5 flex flex-wrap items-center gap-1">
                                     <span className="text-[10px] text-stone-400">تأمین‌کنندگان:</span>
@@ -972,26 +992,28 @@ export default function OrdersView() {
                                   </div>
                                 )}
                               </td>
-                              {/* ۲. موجودی */}
+                              {/* ۲. کد / بارکد — ارقام با dir=ltr */}
+                              <td className="p-2 text-center align-middle">
+                                <div dir="ltr" className="whitespace-nowrap font-mono text-[12px] font-bold text-stone-700">
+                                  {p.barcode || p.code ? toFaDigits(p.barcode ?? p.code) : '—'}
+                                </div>
+                                {p.bankBarcode ? (
+                                  <div dir="ltr" className="whitespace-nowrap font-mono text-[10px] text-stone-400" title="بارکد بانک بارکد">
+                                    {fa(p.bankBarcode)}
+                                  </div>
+                                ) : null}
+                              </td>
+                              {/* ۳. واحد */}
+                              <td className="p-2 text-center align-middle">
+                                <span className="inline-flex shrink-0 items-center rounded-md border border-stone-200 bg-stone-100 px-2 py-0.5 text-[11px] font-bold text-stone-600">
+                                  {p.unit ?? 'عدد'}
+                                </span>
+                              </td>
+                              {/* ۴. موجودی */}
                               <td className="p-2 text-center align-middle">
                                 <StockView stock={p.stock ?? 0} threshold={p.lowStockThreshold ?? null} />
                               </td>
-                              {/* ۳. آخرین سفارش */}
-                              <td className="p-2 align-middle">
-                                <div className="whitespace-nowrap text-[11px] leading-4 text-stone-500">
-                                  {last ? (
-                                    <>
-                                      <div><span dir="ltr">{jShort(last.orderedAt)}</span> · {fa(last.qty)} عدد{last.cartonQty ? ` + ${fa(last.cartonQty)} کارتن` : ''}</div>
-                                      <div className={last.receivedAt ? 'text-emerald-700' : 'text-amber-700'}>
-                                        {last.receivedAt ? `دریافت: ${jShort(last.receivedAt)}` : last.deliveryDate ? `تحویل: ${faDate(last.deliveryDate)}` : 'در انتظار دریافت'}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <span className="text-stone-400">سفارش قبلی ندارد</span>
-                                  )}
-                                </div>
-                              </td>
-                              {/* ۴. قیمت واحد */}
+                              {/* ۵. قیمت واحد */}
                               <td className="p-2 text-center align-middle">
                                 <div className="whitespace-nowrap">
                                   <span className="text-sm font-bold text-stone-700"><span dir="ltr">{money(price)}</span></span>
@@ -999,11 +1021,11 @@ export default function OrdersView() {
                                 </div>
                                 <div className="text-[10px] text-stone-400">{hasSup ? 'نماینده' : 'آخرین خرید'}</div>
                               </td>
-                              {/* ۵. تعداد (عدد) — استپر تایپی + افزودن سریع */}
+                              {/* ۶. تعداد (عدد) — استپر + چیپ‌ها؛ نوشتن مستقیم در سبد */}
                               <td className="p-2 text-center align-middle">
-                                <NumStepper min={0} step={1} value={amt.units}
+                                <NumStepper min={0} step={1} value={amtUnits}
                                   bumpKey={bump[`u:${p.id}`] || 0}
-                                  onChange={(v: number) => onRowUnits(p, v)} />
+                                  onChange={(v: number) => rowUnitsChange(p, v)} />
                                 <div className="mt-1 flex items-center justify-center gap-1">
                                   <button type="button" title={`افزودن ${fa(defQty)} عدد به همین ردیف`}
                                     onClick={() => quickAddUnits(p, defQty)}
@@ -1017,29 +1039,19 @@ export default function OrdersView() {
                                   </button>
                                 </div>
                               </td>
-                              {/* ۶. کارتن — استپر تایپی + افزودن سریع */}
+                              {/* ۷. کارتن — استپر + چیپ؛ نوشتن مستقیم در سبد */}
                               <td className="p-2 text-center align-middle">
-                                <NumStepper min={0} step={1} value={amt.cartons}
+                                <NumStepper min={0} step={1} value={amtCartons}
                                   hint={upc > 0 ? `× ${fa(upc)}` : 'اندازهٔ کارتن؟'}
                                   bumpKey={bump[`b:${p.id}`] || 0}
-                                  onChange={(v: number) => onRowCarton(p, v)} />
+                                  onChange={(v: number) => rowCartonChange(p, v)} />
                                 <div className="mt-1 flex items-center justify-center">
-                                  <button type="button" title="افزودن یک کارتن به همین ردیف"
+                                  <button type="button" title={`افزودن ${fa(Math.max(1, defCarton || 1))} کارتن به همین ردیف`}
                                     onClick={() => quickAddCarton(p)}
                                     className="h-9 rounded-full border border-amber-200 bg-amber-50 px-3 text-[11px] font-bold text-amber-800 transition-colors hover:bg-amber-100 active:scale-95">
-                                    +{fa(1)} کارتن
+                                    +{fa(Math.max(1, defCarton || 1))} کارتن
                                   </button>
                                 </div>
-                              </td>
-                              {/* ۷. افزودن — یک سطر (عدد + کارتن) */}
-                              <td className="p-2 text-center align-middle">
-                                {inCart ? (
-                                  <Button size="sm" variant="outline" disabled className="gap-1 text-emerald-700"><I.check size={14} /> در سبد</Button>
-                                ) : (
-                                  <Button size="sm" className="gap-1" disabled={amt.units < 1 && amt.cartons < 1} onClick={() => addToCart(p, amt.units, amt.cartons)}>
-                                    <I.plus size={14} /> افزودن به سبد
-                                  </Button>
-                                )}
                               </td>
                             </tr>
                           )
@@ -1068,7 +1080,7 @@ export default function OrdersView() {
             <CardContent className="space-y-4">
               {cart.length === 0 ? (
                 <p className="py-6 text-center text-sm text-stone-400">
-                  سبد خالی است — از جست‌وجوی بالا کالاها را با «عدد» یا «کارتن» اضافه کنید
+                  سبد خالی است — در نتایج جست‌وجو، +/− یا چیپ‌های +N را بزنید؛ همان لحظه به سبد اضافه می‌شود
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -1224,7 +1236,7 @@ export default function OrdersView() {
                   { key: 'open', label: 'در انتظار تأیید', n: counts?.open },
                   { key: 'active', label: 'در جریان', n: counts?.active },
                   { key: 'done', label: 'تکمیل‌شده', n: counts?.done },
-                  { key: 'cancelled', label: 'لغوشده', n: counts?.cancelled },
+                  { key: 'cancelled', label: 'لغو‌شده', n: counts?.cancelled },
                   { key: 'all', label: 'همه', n: counts?.all },
                 ].map((c) => (
                   <button key={c.key} type="button"
@@ -1317,7 +1329,7 @@ export default function OrdersView() {
                 <Button variant="ghost" size="sm" onClick={() => shiftMonth(-1)} className="gap-1">
                   <I.chevronRight size={16} /> ماه قبل
                 </Button>
-                <CardTitle>{JALALI_MONTHS[cal.jm - 1]} {fa(cal.jy)}</CardTitle>
+                <CardTitle>{JALALI_MONTHS[cal.jm - 1]} {toFaDigits(String(cal.jy))}</CardTitle>
                 <Button variant="ghost" size="sm" onClick={() => shiftMonth(1)} className="gap-1">
                   ماه بعد <I.chevronLeft size={16} />
                 </Button>
@@ -1451,7 +1463,7 @@ export default function OrdersView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCartonAsk(null)}>انصراف</Button>
             <Button onClick={() => confirmCartonAsk()} className="gap-1">
-              <I.carton size={14} /> افزودن کارتن به سبد
+              <I.carton size={14} /> ثبت اندازه و افزودن کارتن
             </Button>
           </DialogFooter>
         </DialogContent>

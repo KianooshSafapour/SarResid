@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')
 
-  const data: Record<string, string | number | null> = {}
+  const data: Record<string, string | number | boolean | null> = {}
   for (const field of PERSONNEL_FIELDS) {
     if (field in body) data[field] = optStr(body[field])
   }
@@ -72,6 +72,11 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       if (!Number.isFinite(n) || n < 0) return fail('حقوق قرارداد معتبر نیست')
       data.contractSalary = n
     }
+  }
+
+  // فعال/غیرفعال‌سازی پرونده (R5-C — حذف نرم از صفحهٔ پرونده پرسنل)
+  if ('active' in body) {
+    data.active = body.active === true || body.active === 'true'
   }
 
   let linkedUserId = person.userId

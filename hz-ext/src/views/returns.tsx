@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Textarea, Badge, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, money, toman, fa, toEnDigits, toFaDigits, todayJalali, formatJalali, formatJalaliLong, parseJalali, Icon, I, barcode128, amountWords } from '../lib/hz'
+import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Textarea, Badge, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, money, toman, fa, toEnDigits, toFaDigits, todayJalali, formatJalali, formatJalaliLong, parseJalali, Icon, I, barcode128, amountWords, MoneyInput, NumInput, ensureBrand, brandNow } from '../lib/hz'
 
 /* ═══════════════════════════════════════════════════════════════
    returns/new — «ثبت مرجوعی جدید» هایپر زیتون
@@ -8,6 +8,13 @@ import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, But
    ═══════════════════════════════════════════════════════════════ */
 
 const REASONS = ['کالای معیوب', 'اشتباه در خرید', 'اختلاف قیمت', 'انقضای کالا', 'عدم رضایت از کیفیت', 'خطای کارت‌خوان', 'سایر']
+
+/** R7: واحدهای وزنی — مقدار اعشاری مجاز (۰٫۷۲ کیلو) */
+const WEIGHT_UNITS = ['کیلوگرم', 'گرم', 'کیلو', 'لیتر', 'متر']
+const fmtQty = (q: number): string => {
+  const r = Math.round(q * 1000) / 1000
+  return toFaDigits(String(r)).replace('.', '٫')
+}
 
 type SettleType = 'full' | 'exchange' | 'partial' | 'debt'
 const SETTLE_META: Record<SettleType, { label: string; badge: string; box: string }> = {
@@ -138,10 +145,14 @@ function detectBankName(digits: string): string | null {
 }
 
 
-/* ───── قانون نوع تسویه — همان قانون سرور ───── */
+/* ───── قانون نوع تسویه — همان قانون سرور ─────
+   «exchange» فقط وقتی درست است که کالای جایگزین به‌تنهایی کل مبلغ را بپوشاند و
+   هیچ واریزی به کارت در کار نباشد. اگر «پرداخت به کارت» بخشی از مبلغ را
+   پر می‌کند (حالت ترکیبی: کالا + کارت)، نوع «full» است چون وجهی به کارت
+   مشتری برمی‌گردد و شماره کارت لازم است. */
 function computeSettlement(total: number, exchange: number, transfer: number): SettleType {
   if (exchange > total) return 'debt'
-  if (exchange > 0 && Math.abs(transfer + exchange - total) <= 1) return 'exchange'
+  if (exchange > 0 && Math.abs(transfer + exchange - total) <= 1) return transfer > 1 ? 'full' : 'exchange'
   if (transfer + exchange < total - 1) return 'partial'
   return 'full'
 }
@@ -324,6 +335,7 @@ function renderThermalReceipt(
     code: string
     customerName: string
     customerPhone: string
+    customerCard?: string | null
     reason: string
     note?: string | null
     totalAmount: number
@@ -331,6 +343,7 @@ function renderThermalReceipt(
     items: { name: string; barcode?: string | null; qty: number; unitPrice: number; lineTotal: number }[]
   },
   cashierName: string,
+  logoImg?: HTMLImageElement | null,
 ): HTMLCanvasElement | null {
   const W = 510
   const M = 16
@@ -400,8 +413,19 @@ function renderThermalReceipt(
     y += h + 18
   }
 
-  /* سربرگ فروشگاه — درشت و خوانا */
-  center('هایپر زیتون', 44, 800)
+  /* سربرگ فروشگاه — R7: لوگوی بارگذاری‌شدهٔ مدیر (system/data) یا متن درشت */
+  if (logoImg) {
+    const maxH = 84
+    const ratio = Math.min(1, maxH / logoImg.height, MAX_W / logoImg.width)
+    const w = Math.round(logoImg.width * ratio)
+    const h = Math.round(logoImg.height * ratio)
+    ops.push({ kind: 'image', img: logoImg, x: Math.round((W - w) / 2), y: y + 4, w, h })
+    y += h + 10
+    const bn = (brandNow().storeName || '').trim()
+    if (bn) center(bn, 22, 700)
+  } else {
+    center('هایپر زیتون', 44, 800)
+  }
   center('رسید ثبت مرجوعی کالا', 26, 700)
   rule()
 
@@ -414,6 +438,11 @@ function renderThermalReceipt(
   /* اطلاعات مشتری و ثبت */
   row('مشتری', data.customerName || '—')
   row('موبایل', toFaDigits(data.customerPhone || '—'))
+  /* شمارهٔ کارت بانکی مشتری — کامل و بدون مخفی‌سازی (برای واریز مرجوعی) */
+  if (data.customerCard) {
+    const d = String(data.customerCard).replace(/\D/g, '')
+    if (d.length >= 12) row('کارت مشتری', toFaDigits(d.replace(/(\d{4})(?=\d)/g, '$1-')))
+  }
   row('علت مرجوعی', data.reason || '—')
   row('صندوقدار', cashierName || '—')
   row('زمان ثبت', toFaDigits(formatJalaliLong(new Date(data.createdAt))))
@@ -423,7 +452,7 @@ function renderThermalReceipt(
   /* اقلام مرجوعی — نام ۲۰، تعداد ۱۹، فی ۱۷، جمع قلم ۲۴ + بارکد هر قلم */
   right(`اقلام مرجوعی (${toFaDigits(String(data.items.length))} قلم)`, 20, 700, 4)
   data.items.forEach((it, i) => {
-    const qtyText = `×${toFaDigits(String(it.qty))}`
+    const qtyText = `×${fmtQty(it.qty)}` // R7: وزنی اعشاری با ممیز فارسی — ۰٫۷۲
     measure.font = fontOf(19, 600)
     const qtyW = Math.ceil(measure.measureText(qtyText).width) + 22
     const nameLines = wrap(it.name, 20, 700, MAX_W - qtyW)
@@ -532,27 +561,44 @@ function ReceiptDialog({
 
   useEffect(() => {
     if (!open || !created) return
-    const c = renderThermalReceipt(
-      {
-        code: String(created.code ?? ''),
-        customerName: String(created.customerName ?? ''),
-        customerPhone: String(created.customerPhone ?? ''),
-        reason: String(created.reason ?? ''),
-        note: created.note,
-        totalAmount: Number(created.totalAmount) || 0,
-        createdAt: String(created.createdAt ?? new Date().toISOString()),
-        items: (Array.isArray(created.items) ? created.items : []).map((it: any) => ({
-          name: String(it.name ?? ''),
-          barcode: it.barcode ? String(it.barcode) : null,
-          qty: Math.trunc(Number(it.qty) || 0),
-          unitPrice: Number(it.unitPrice) || 0,
-          lineTotal: Number(it.lineTotal) || Number(it.qty) * Number(it.unitPrice) || 0,
-        })),
-      },
-      cashierName,
-    )
-    canvasRef.current = c
-    setPreviewUrl(c ? c.toDataURL('image/png') : '')
+    ;(async () => {
+      /* R7: لوگوی فروشگاه روی رسید حرارتی — از هویت چاپی */
+      let logoImg: HTMLImageElement | null = null
+      try {
+        const br = await ensureBrand()
+        if (br?.logoUrl) {
+          logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
+            const im = new Image()
+            im.onload = () => resolve(im)
+            im.onerror = () => resolve(null)
+            im.src = br.logoUrl
+          })
+        }
+      } catch { /* بدون لوگو ادامه بده */ }
+      const c = renderThermalReceipt(
+        {
+          code: String(created.code ?? ''),
+          customerName: String(created.customerName ?? ''),
+          customerPhone: String(created.customerPhone ?? ''),
+          customerCard: created.customerCardNumber ?? null,
+          reason: String(created.reason ?? ''),
+          note: created.note,
+          totalAmount: Number(created.totalAmount) || 0,
+          createdAt: String(created.createdAt ?? new Date().toISOString()),
+          items: (Array.isArray(created.items) ? created.items : []).map((it: any) => ({
+            name: String(it.name ?? ''),
+            barcode: it.barcode ? String(it.barcode) : null,
+            qty: Math.round((Number(it.qty) || 0) * 1000) / 1000, // R7: وزنی اعشاری (۰٫۷۲)
+            unitPrice: Number(it.unitPrice) || 0,
+            lineTotal: Number(it.lineTotal) || Number(it.qty) * Number(it.unitPrice) || 0,
+          })),
+        },
+        cashierName,
+        logoImg,
+      )
+      canvasRef.current = c
+      setPreviewUrl(c ? c.toDataURL('image/png') : '')
+    })()
   }, [open, created, cashierName])
 
   function settings(): BixolonSettings {
@@ -593,7 +639,7 @@ function ReceiptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><I.printer size={18} /> چاپ رسید حرارتی</DialogTitle>
           <DialogDescription>چاپگر حرارتی Bixolon SRP-330II از طریق سرویس Web Print SDK روی همین رایانهٔ صندوق</DialogDescription>
@@ -617,7 +663,8 @@ function ReceiptDialog({
             <span className="text-[10px] text-stone-400">تنظیمات در همین مرورگر ذخیره می‌شود</span>
           </div>
 
-          <div className="flex justify-center rounded-xl border border-stone-200 bg-stone-100 p-3">
+          {/* R7: پیش‌نمایش رسید با ارتفاع محدود و اسکرول — رسیدهای بلند دیگر دکمهٔ چاپ را نمی‌پوشانند */}
+          <div className="flex max-h-[52vh] justify-center overflow-y-auto rounded-xl border border-stone-200 bg-stone-100 p-3 scroll-area">
             {previewUrl ? (
               <img src={previewUrl} alt="پیش‌نمایش رسید حرارتی" className="w-[306px] max-w-full rounded-md border border-stone-300 bg-white shadow-sm" />
             ) : (
@@ -690,8 +737,10 @@ export default function ReturnsNewView() {
   })()
   const settleType = computeSettlement(total, exchangeValue, transferAmount)
   const remaining = Math.max(0, total - exchangeValue - transferAmount)
-  /* کالای جایگزین مبلغ مرجوعی را پوشش می‌دهد → کارت بانکی لازم نیست */
-  const cardDisabled = settleType === 'exchange' || settleType === 'debt'
+  /* کارت بانکی فقط وقتی لازم است که کالای جایگزین، «کل» مبلغ مرجوعی را نپوشاند:
+     - exchange < total → مبلغی باید به کارت مشتری برگردد (واریز به کارت) → کارت الزامی
+     - exchange ≥ total → کالا همه‌چیز را پوشش می‌دهد (مساوی: تعویض کامل؛ بیشتر: بدهی مشتری) → کارت لازم نیست */
+  const cardDisabled = total > 0 && exchangeValue >= total
 
   /* بازیابی پیش‌نویس هنگام بارگذاری */
   useEffect(() => {
@@ -756,7 +805,8 @@ export default function ReturnsNewView() {
     if (!q) return
     setSearching(true)
     let direct: any = null
-    if (/^\d{8,}$/.test(q)) {
+    /* بارکد داخلی فروشگاه می‌تواند ۴ رقمی باشد (مثلاً ۱۵۵۰) — از ۴ رقم به بالا مسیر بارکد دقیق */
+    if (/^\d{4,}$/.test(q)) {
       const exact = await api(`/api/products/search${qs({ barcode: q })}`)
       if (exact.ok && exact.data?.id && exact.data.barcode === q) direct = exact.data
     }
@@ -848,12 +898,18 @@ export default function ReturnsNewView() {
     if (items.length === 0) return toast.error('حداقل یک کالا به فهرست اضافه کنید')
     for (const it of items) {
       if (!it.name.trim()) return toast.error('نام همه اقلام را وارد کنید')
-      if (Math.trunc(num(it.qty)) < 1) return toast.error('تعداد همه اقلام باید بیشتر از صفر باشد')
+      /* R7: کالای وزنی (کیلوگرم/گرم) مقدار اعشاری می‌پذیرد — مثلاً ۰٫۷۲ کیلو بادام زمینی (بارکد ۱۵۵۰) */
+      const q = num(it.qty)
+      if (!(q > 0)) return toast.error(`مقدار «${it.name.trim()}» باید بیشتر از صفر باشد`)
+      if (!WEIGHT_UNITS.includes(it.unit) && Math.abs(q - Math.round(q)) > 1e-9) {
+        return toast.error(`«${it.name.trim()}» به ${it.unit} است — مقدار باید عدد صحیح باشد (اعشار فقط برای کالای وزنی)`)
+      }
     }
     if (total <= 0) return toast.error('مبلغ کل مرجوعی باید بیشتر از صفر باشد — فی اقلام را وارد کنید')
     if (customerName.trim().length < 2) return toast.error('نام مشتری را کامل وارد کنید')
     const p = normalizeMobile(phone)
     if (!phoneOk) return toast.error('شماره موبایل مشتری معتبر نیست (فرمت: ۰۹۱۲۳۴۵۶۷۸۹)')
+    if (!cardDisabled && transferAmount > 0 && !cardOk) return toast.error('بخشی از وجه به کارت مشتری برمی‌گردد — شماره کارت ۱۶ رقمی معتبر (الگوریتم لان) الزامی است')
     if (!cardDisabled && cardDigits.length > 0 && !cardOk) return toast.error('شماره کارت ۱۶ رقمی مشتری معتبر نیست (الگوریتم لان)')
     if (!purchaseOk) return toast.error('تاریخ خرید معتبر نیست (فرمت: ۱۴۰۵-۰۷-۲۷)')
     if (!reason) return toast.error('علت مرجوعی را انتخاب کنید')
@@ -868,7 +924,8 @@ export default function ReturnsNewView() {
           productId: it.productId,
           name: it.name.trim(),
           barcode: it.manual ? null : it.barcode,
-          qty: Math.trunc(num(it.qty)),
+          unit: it.unit, // R7: واحد قلم — برای تشخیص وزنی/عددی
+          qty: Math.round(num(it.qty) * 1000) / 1000, // R7: اعشاری برای کالای وزنی (۰٫۷۲ کیلو)
           unitPrice: Math.max(0, Math.round(num(it.unitPrice))),
         })),
         customerName: customerName.trim(),
@@ -1072,20 +1129,24 @@ export default function ReturnsNewView() {
                     </p>
                   </div>
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-[10px] text-muted-foreground">تعداد</label>
-                    <Input
-                      dir="ltr" inputMode="numeric" className="num h-9 text-center text-sm"
+                    <label className="mb-1 block text-[10px] text-muted-foreground">
+                      مقدار {WEIGHT_UNITS.includes(it.unit) ? <span className="text-emerald-600">(اعشاری مجاز)</span> : ''}
+                    </label>
+                    <NumInput
+                      className="h-9 text-sm"
+                      unit={it.unit}
+                      decimals={WEIGHT_UNITS.includes(it.unit) ? 3 : 0}
                       value={it.qty}
-                      onChange={(e: any) => updateItem(it.key, { qty: toEnDigits(e.target.value).replace(/[^\d.]/g, '') })}
+                      onChange={(v: string) => updateItem(it.key, { qty: v })}
                     />
                   </div>
                   <div className="md:col-span-3">
                     <label className="mb-1 block text-[10px] text-muted-foreground">فی (ریال)</label>
-                    <Input
-                      dir="ltr" inputMode="numeric" className="num h-9 text-center text-sm"
+                    <MoneyInput
+                      className="h-9 text-sm"
                       value={it.unitPrice}
-                      placeholder="فی هر عدد"
-                      onChange={(e: any) => updateItem(it.key, { unitPrice: toEnDigits(e.target.value).replace(/[^\d.]/g, '') })}
+                      placeholder="فی هر واحد"
+                      onChange={(v: string) => updateItem(it.key, { unitPrice: v })}
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -1212,7 +1273,7 @@ export default function ReturnsNewView() {
               </div>
               {cardDisabled ? (
                 <p className="rounded-lg bg-yellow-500/10 px-2.5 py-1.5 text-xs font-medium leading-5 text-yellow-800">
-                  کالای جایگزین مبلغ مرجوعی را پوشش می‌دهد — کارت بانکی لازم نیست
+                  کالای جایگزین کل مبلغ مرجوعی را پوشش می‌دهد — واریزی به کارت انجام نمی‌شود و کارت بانکی لازم نیست
                 </p>
               ) : cardDigits.length > 0 ? (() => {
                 const live = detectBankLive(cardDigits)
@@ -1339,9 +1400,15 @@ export default function ReturnsNewView() {
         {/* جعبهٔ وضعیت تسویه */}
         <div className={cn('rounded-xl border p-4 space-y-3', SETTLE_META[settleType].box)}>
           {settleType === 'full' ? (
-            <p className="flex items-center gap-2 text-sm font-bold text-emerald-700">
-              <I.check size={16} /> کل مبلغ ({money(total)} ریال) پس از تأیید مدیریت به کارت مشتری واریز می‌شود.
-            </p>
+            exchangeValue > 0 ? (
+              <p className="flex items-center gap-2 text-sm font-bold text-emerald-700">
+                <I.check size={16} /> {money(transferAmount)} ریال پس از تأیید مدیریت به کارت مشتری واریز می‌شود و {money(exchangeValue)} ریال با کالای جایگزین تسویه شده است — شماره کارت الزامی است.
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 text-sm font-bold text-emerald-700">
+                <I.check size={16} /> کل مبلغ ({money(total)} ریال) پس از تأیید مدیریت به کارت مشتری واریز می‌شود.
+              </p>
+            )
           ) : settleType === 'exchange' ? (
             <p className="flex items-center gap-2 text-sm font-bold text-yellow-700">
               <I.refresh size={16} /> تسویه کامل با کالای جایگزین — وجهی به کارت واریز نمی‌شود.
@@ -1433,7 +1500,7 @@ export default function ReturnsNewView() {
                         <div className="rounded-md bg-stone-50 p-1.5 text-[10px] leading-5 text-stone-600">
                           {rv.items.map((it: any, i: number) => (
                             <div key={i} className="flex items-center justify-between gap-1">
-                              <span className="truncate">{it.name} ×{toFaDigits(String(it.qty ?? ''))}</span>
+                              <span className="truncate">{it.name} ×{fmtQty(Number(it.qty ?? 0))}</span>
                               <span className="num shrink-0" dir="ltr">{money(it.lineTotal ?? 0)}</span>
                             </div>
                           ))}

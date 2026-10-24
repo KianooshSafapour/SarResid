@@ -37,7 +37,7 @@ export interface JalaliDateProps {
 
 /** انتخابگر تاریخ شمسی با تقویم بازشو — جایگزین ورودی متنی تاریخ */
 export function JalaliDate(props: JalaliDateProps) {
-  const { value, onChange, placeholder = '۱۴۰۵-۰۷-۲۷', className, disabled, quickChips, editable = true } = props
+  const { value, onChange, placeholder = '۱۴۰۵/۰۷/۲۷', className, disabled, quickChips, editable = true } = props
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<{ jy: number; jm: number }>(() => {
     const p = parseJalali(value || '')
@@ -96,31 +96,31 @@ export function JalaliDate(props: JalaliDateProps) {
           ref={inputRef as any}
           dir="ltr"
           className={cn('hz-jalali-input num h-9 w-full rounded-md border border-input bg-background pr-8 text-center text-sm outline-none transition-colors focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50', className)}
-          value={value ? toFaDigits(value) : ''}
+          value={value ? toFaDigits(value).replace(/-/g, '/') : ''}
           placeholder={placeholder}
           disabled={disabled}
           readOnly={!editable}
-          onChange={(e: any) => onChange(toEnDigits(String(e.target.value)).replace(/[^\d-]/g, ''))}
+          onChange={(e: any) => onChange(toEnDigits(String(e.target.value)).replace(/[^\d/\-]/g, '').replace(/\//g, '-'))}
           onFocus={() => !disabled && setOpen(true)}
           onClick={() => !disabled && setOpen(true)}
         />
       </div>
       {open && !disabled && (
-        <div className="absolute z-50 mt-1.5 w-64 rounded-xl border border-stone-200 bg-white p-2.5 shadow-xl" dir="rtl">
-          {/* سربرگ ماه */}
+        <div className="absolute z-50 mt-1.5 w-72 rounded-xl border border-stone-200 bg-white p-3 shadow-xl" dir="rtl">
+          {/* سربرگ ماه — در RTL دکمهٔ «ماه قبل» سمت راست (›) و «ماه بعد» سمت چپ (‹) */}
           <div className="mb-2 flex items-center justify-between">
-            <button type="button" className="rounded-md p-1 text-stone-500 transition-colors hover:bg-stone-100" onClick={() => shiftMonth(1)} aria-label="ماه بعد" title="ماه بعد">
-              <I.chevronLeft size={16} />
+            <button type="button" className="rounded-md p-1.5 text-stone-600 transition-colors hover:bg-stone-100" onClick={() => shiftMonth(-1)} aria-label="ماه قبل" title="ماه قبل">
+              <I.chevronRight size={18} />
             </button>
-            <div className="text-xs font-bold text-stone-700">{JALALI_MONTHS[view.jm - 1]} {toFaDigits(String(view.jy))}</div>
-            <button type="button" className="rounded-md p-1 text-stone-500 transition-colors hover:bg-stone-100" onClick={() => shiftMonth(-1)} aria-label="ماه قبل" title="ماه قبل">
-              <I.chevronRight size={16} />
+            <div className="text-sm font-bold text-stone-700">{JALALI_MONTHS[view.jm - 1]} {toFaDigits(String(view.jy))}</div>
+            <button type="button" className="rounded-md p-1.5 text-stone-600 transition-colors hover:bg-stone-100" onClick={() => shiftMonth(1)} aria-label="ماه بعد" title="ماه بعد">
+              <I.chevronLeft size={18} />
             </button>
           </div>
           {/* روزهای هفته */}
           <div className="mb-1 grid grid-cols-7 gap-0.5">
             {WEEKDAY_FA.map((w: string, i: number) => (
-              <div key={i} className={cn('py-0.5 text-center text-[9.5px] font-medium', i === 6 ? 'text-rose-500' : 'text-stone-400')}>{w}</div>
+              <div key={i} className={cn('py-0.5 text-center text-[11px] font-medium', i === 6 ? 'text-rose-500' : 'text-stone-400')}>{w}</div>
             ))}
           </div>
           {/* روزها */}
@@ -136,7 +136,7 @@ export function JalaliDate(props: JalaliDateProps) {
                   key={d} type="button"
                   onClick={() => pick(d)}
                   className={cn(
-                    'h-7 rounded-md text-[11px] font-medium transition-colors',
+                    'h-8 rounded-md text-xs font-medium transition-colors',
                     isSel ? 'bg-emerald-600 text-white shadow-sm'
                       : isToday ? 'border border-emerald-400 text-emerald-800'
                         : isFri ? 'text-rose-500 hover:bg-rose-50' : 'text-stone-600 hover:bg-stone-100',
@@ -148,21 +148,21 @@ export function JalaliDate(props: JalaliDateProps) {
             })}
           </div>
           {/* پابرگ */}
-          <div className="mt-2 flex items-center justify-between border-t border-stone-100 pt-2">
-            <button type="button" className="rounded-md px-2 py-1 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
+          <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-2">
+            <button type="button" className="rounded-md px-2.5 py-1 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
               onClick={() => { onChange(today); setOpen(false) }}>
               امروز
             </button>
             {value && (
-              <button type="button" className="rounded-md px-2 py-1 text-[11px] text-stone-500 transition-colors hover:bg-stone-100"
+              <button type="button" className="rounded-md px-2.5 py-1 text-xs text-stone-500 transition-colors hover:bg-stone-100"
                 onClick={() => { onChange(''); setOpen(false) }}>
                 پاک کردن
               </button>
             )}
-            <span className="text-[10px] text-stone-400">{formatJalaliLong(parseJalali(today as any) as any)}</span>
+            <span className="text-[11px] text-stone-400">{formatJalaliLong(parseJalali(today as any) as any)}</span>
           </div>
           {!!quickChips?.length && (
-            <div className="mt-1.5 flex flex-wrap gap-1 border-t border-stone-100 pt-2">
+            <div className="mt-1.5 flex flex-wrap gap-1 border-t border-stone-200 pt-2">
               {quickChips.map((ch) => {
                 const d = parseJalali(today)
                 if (!d) return null
@@ -204,6 +204,159 @@ export function jsDateToJalali(date: Date): string {
   return `${jy}-${pad2(jm)}-${pad2(jd)}`
 }
 
+/** نمایش تاریخ جلالی با ممیز: '1405-07-28' → '۱۴۰۵/۰۷/۲۸' */
+export function faSlash(v: string | null | undefined): string {
+  if (!v) return ''
+  return toFaDigits(v.replace(/-/g, '/'))
+}
+
+/* ═══════════════════════ ۱٫۵) ورودی ساعت با قالب‌بندی خودکار ═══════════════════════ */
+
+export interface TimeInputProps {
+  value: string            // '08:30' or ''
+  onChange: (v: string) => void
+  placeholder?: string     // default '۰۸:۳۰'
+  className?: string
+  disabled?: boolean
+}
+
+/**
+ * ورودی ساعت با قالب‌بندی خودکار hh:mm —
+ * کاربر رقم می‌زند؛ بعد از دو رقم ساعت، «:» خودکار درج می‌شود.
+ * ارقام فارسی/لاتین پذیرفته می‌شود. مقدار همیشه ASCII 'HH:MM' برمی‌گردد.
+ */
+export function TimeInput(props: TimeInputProps) {
+  const { value, onChange, placeholder = '۰۸:۳۰', className, disabled } = props
+  const display = value ? toFaDigits(value) : ''
+  function handle(raw: string) {
+    // فقط ارقام (فارسی/لاتین) را نگه دار
+    let d = toEnDigits(raw).replace(/[^\d]/g, '').slice(0, 4)
+    let out = d
+    if (d.length >= 3) out = d.slice(0, 2) + ':' + d.slice(2)
+    else if (d.length === 2) out = d + ':'
+    // اعتبارسنجی ساعت/دقیقه
+    if (out.length >= 2 && Number(out.slice(0, 2)) > 23) out = '23' + out.slice(2)
+    if (out.length === 5 && Number(out.slice(3)) > 59) out = out.slice(0, 3) + '59'
+    onChange(out)
+  }
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      dir="ltr"
+      className={cn('num h-9 w-full rounded-md border border-input bg-background px-2.5 text-center text-sm outline-none transition-colors focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50', className)}
+      value={display}
+      placeholder={placeholder}
+      disabled={disabled}
+      onChange={(e: any) => handle(String(e.target.value ?? ''))}
+      onBlur={(e: any) => {
+        // اگر فقط «08:» مانده، پاکش کن
+        const v = String(e.target.value ?? '')
+        if (toEnDigits(v).replace(':', '').length < 3) onChange('')
+      }}
+    />
+  )
+}
+
+/* ═══════════════════════ ۱٫۶) ورودی مبلغ با جداکنندهٔ خودکار هزارگان ═══════════════════════ */
+
+export interface MoneyInputProps {
+  value: string | number   // ارقام خام (ممیز ندارد — ریال صحیح)
+  onChange: (v: string) => void
+  placeholder?: string
+  className?: string
+  disabled?: boolean
+  suffix?: string          // برچسب کوچک داخل ورودی (مثل «ریال»)
+}
+
+/**
+ * ورودی مبلغ ریالی — جداکنندهٔ هزارگان فارسی (٬) همان‌طور که کاربر تایپ می‌کند
+ * خودکار درج می‌شود؛ مقدارِ برگشتی همیشه رشتهٔ ارقام خام ASCII است.
+ * 1250000 → نمایش «۱٬۲۵۰٬۰۰۰»
+ */
+export function MoneyInput(props: MoneyInputProps) {
+  const { value, onChange, placeholder = '۰', className, disabled, suffix } = props
+  const raw = toEnDigits(String(value ?? '')).replace(/[^\d]/g, '')
+  const display = raw ? toFaDigits(Number(raw).toLocaleString('en-US')).replace(/,/g, '٬') : ''
+  function handle(rawInput: string) {
+    onChange(toEnDigits(rawInput).replace(/[^\d]/g, '').replace(/^0+(?=\d)/, ''))
+  }
+  return (
+    <div className="relative w-full">
+      <input
+        type="text"
+        inputMode="numeric"
+        dir="ltr"
+        className={cn('num h-9 w-full rounded-md border border-input bg-background px-2.5 text-center text-sm font-bold outline-none transition-colors focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50', suffix && 'pe-11', className)}
+        value={display}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e: any) => handle(String(e.target.value ?? ''))}
+      />
+      {suffix ? (
+        <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-[10px] font-medium text-muted-foreground">{suffix}</span>
+      ) : null}
+    </div>
+  )
+}
+
+export interface NumInputProps {
+  value: string | number
+  onChange: (v: string) => void
+  placeholder?: string
+  className?: string
+  disabled?: boolean
+  decimals?: number       // حداکثر ارقام اعشار (۰ = فقط صحیح) — برای کیلو/گرم: ۳
+  unit?: string           // برچسب کوچک داخل ورودی (مثل «کیلوگرم»)
+}
+
+/**
+ * ورودی مقدار عددی — برای وزن/حجم اعشار می‌پذیرد (۰٫۷۲) و عدد صحیح را
+ * با جداکنندهٔ هزارگان نمایش می‌دهد. مقدار برگشتی رشتهٔ خام ASCII است
+ * ('0.72' یا '1250') تا caller خودش parse کند.
+ */
+export function NumInput(props: NumInputProps) {
+  const { value, onChange, placeholder = '۰', className, disabled, decimals = 0, unit } = props
+  function fmt(v: string): string {
+    if (!v) return ''
+    const neg = v.startsWith('-')
+    const body = neg ? v.slice(1) : v
+    const [ip, dp] = body.split('.')
+    let out = ip ? toFaDigits(Number(ip).toLocaleString('en-US')).replace(/,/g, '٬') : '۰'
+    if (dp !== undefined) out += '٫' + toFaDigits(dp)
+    return (neg ? '−' : '') + out
+  }
+  function handle(rawInput: string) {
+    let v = toEnDigits(String(rawInput ?? '')).replace(/,/g, '.').replace(/[^\d.]/g, '')
+    const parts = v.split('.')
+    if (decimals <= 0) v = parts[0] ?? ''
+    else if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('')
+    if (v.includes('.')) {
+      const [a, b] = v.split('.')
+      v = a + '.' + b.slice(0, decimals)
+    }
+    if (v === '.') v = ''
+    onChange(v.replace(/^0+(?=\d)/, ''))
+  }
+  return (
+    <div className="relative w-full">
+      <input
+        type="text"
+        inputMode={decimals > 0 ? 'decimal' : 'numeric'}
+        dir="ltr"
+        className={cn('num h-9 w-full rounded-md border border-input bg-background px-2.5 text-center text-sm outline-none transition-colors focus:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50', unit && 'pe-12', className)}
+        value={fmt(String(value ?? ''))}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e: any) => handle(String(e.target.value ?? ''))}
+      />
+      {unit ? (
+        <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-[10px] font-medium text-muted-foreground">{unit}</span>
+      ) : null}
+    </div>
+  )
+}
+
 /* ═══════════════════════ ۲) پله‌شمار (− مقدار +) ═══════════════════════ */
 
 export interface StepperProps {
@@ -230,7 +383,7 @@ export function Stepper(props: StepperProps) {
           onClick={() => onChange(Math.max(min, value - step))} aria-label="کم کردن" title="کم کردن">
           <I.minus size={13} />
         </button>
-        <span className={cn('num min-w-7 text-center font-bold text-stone-800', size === 'sm' ? 'text-xs' : 'text-sm')}>
+        <span className={cn('num min-w-7 text-center font-bold text-stone-700', size === 'sm' ? 'text-xs' : 'text-sm')}>
           {toFaDigits(String(value))}
         </span>
         <button type="button" className={btn} disabled={disabled || value >= max}

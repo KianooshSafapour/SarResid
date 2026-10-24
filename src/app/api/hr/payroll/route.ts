@@ -11,7 +11,9 @@ import { getStatutory } from '@/lib/payroll-statutory'
 export const dynamic = 'force-dynamic'
 
 /** GET /api/hr/payroll?year=&month= → full payroll sheet
- *  GET /api/hr/payroll?userId= → سوابق فیش‌های یک پرسنل (همهٔ دوره‌ها — R4-6) */
+ *  GET /api/hr/payroll?userId= → سوابق فیش‌های یک پرسنل (همهٔ دوره‌ها — R4-6)
+ *  R5-H: ردیف‌ها + nationalId/department/honorific/contractSalary برای فیش حقوقیِ چاپی؛
+ *  حقوق پایه: SalaryProfile → fallback Personnel.contractSalary → fallback ثابت‌های قانونی. */
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest) {
     const rec = userId ? recordByUser.get(userId) : undefined
 
     const profile = {
-      baseSalary: sp?.baseSalary ?? statutory.minWage,
+      baseSalary: sp?.baseSalary ?? p.contractSalary ?? statutory.minWage,
       housingAllowance: sp?.housingAllowance ?? statutory.housing,
       foodAllowance: sp?.foodAllowance ?? statutory.food,
       childAllowance: sp?.childAllowance ?? 0,
@@ -77,8 +79,12 @@ export async function GET(req: NextRequest) {
     return {
       userId: userId || null,
       fullName: p.fullName,
+      honorific: u?.honorific ?? '',
       role: u?.role ?? '',
       jobTitle: p.jobTitle,
+      department: p.department ?? null,
+      nationalId: p.nationalId ?? null,
+      contractSalary: p.contractSalary ?? null,
       profile,
       saved,
       inputs,
@@ -185,7 +191,7 @@ async function staffRecords(staffId: string) {
     const statutory = statutoryByYear.get(r.year)
     if (!statutory) return null
     const profile = {
-      baseSalary: sp?.baseSalary ?? statutory.minWage,
+      baseSalary: sp?.baseSalary ?? person?.contractSalary ?? statutory.minWage,
       housingAllowance: sp?.housingAllowance ?? statutory.housing,
       foodAllowance: sp?.foodAllowance ?? statutory.food,
       childAllowance: sp?.childAllowance ?? 0,

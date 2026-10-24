@@ -15,6 +15,8 @@
  *            performance | problems | stockcount | contract | payslip
  */
 import { jsx } from 'hz:jsx'
+import { api } from 'hz:api'
+import { useState, useEffect } from 'hz:react'
 
 /* ══════════════════════════════════════════════════════════════════
  * ۱) موتور جلالی — پورت دقیق ماژول زندهٔ 956657 (فرمت‌ها یکسان با برنامه)
@@ -232,6 +234,15 @@ function maskCard(card?: string | null): string {
   return toFa(String(card))
 }
 
+/** شمارهٔ کارت — کامل و بدون مخفی‌سازی: ۶۰۳۷-۹۹۱۲-۳۴۵۶-۱۲۳۴ (فارسی)
+ *  در اسناد مرجوعی، شمارهٔ کارت برای واریز وجه لازم است؛ مدیران باید همهٔ ارقام را ببینند. */
+function fullCard(card?: string | null): string {
+  if (!card) return ''
+  const d = String(card).replace(/\D/g, '')
+  if (d.length === 16) return toFa(`${d.slice(0, 4)}-${d.slice(4, 8)}-${d.slice(8, 12)}-${d.slice(12)}`)
+  return toFa(String(card))
+}
+
 /** ساعت جاری HH:MM فارسی */
 function nowHM(): string { const d = new Date(); return toFa(`${pad2(d.getHours())}:${pad2(d.getMinutes())}`) }
 
@@ -269,6 +280,65 @@ const STORE = {
   sub: 'فروشگاه زنجیره‌ای — رفسنجان',
   addr: 'نشانی: رفسنجان، بلوار ... — تلفن: ۰۳۴-۳۳ ...',
 }
+
+/* ═══ R7: هویت چاپی فروشگاه (لوگو + مشخصات از system/data) ═══
+ * کش سه‌لایه: حافظهٔ ماژول → localStorage (همیشه تابع، سندساز هم‌زمان می‌خواند)
+ * → GET /api/settings/brand (یک‌بار در هر بارگذاری صفحه، fire-and-forget). */
+const BRAND_LS_KEY = 'hz-brand-cache'
+type Brand = { logoUrl: string; storeName: string; storePhone: string; storeAddress: string; footerNote: string }
+let brandMem: Brand | null = null
+let brandPromise: Promise<Brand | null> | null = null
+
+function readBrandLS(): Partial<Brand> | null {
+  try {
+    const ls = (globalThis as any).localStorage
+    const raw = ls && ls.getItem ? ls.getItem(BRAND_LS_KEY) : null
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+/** هویت چاپی لحظه‌ای — sync؛ برای docHTML */
+function brand(): Brand {
+  if (brandMem) return brandMem
+  const ls = readBrandLS() || {}
+  brandMem = {
+    logoUrl: String(ls.logoUrl || ''),
+    storeName: String(ls.storeName || ''),
+    storePhone: String(ls.storePhone || ''),
+    storeAddress: String(ls.storeAddress || ''),
+    footerNote: String(ls.footerNote || ''),
+  }
+  return brandMem
+}
+
+/** هویت چاپی لحظه‌ای (کش‌شده) — sync؛ برای مصرف‌کننده‌هایی که همین حالا مقدار می‌خواهند */
+export function brandNow(): Brand { return brand() }
+
+/** بارگیری/تازه‌سازی هویت چاپی از سرور — await-کردنی؛ فراخوانی از printDoc/DocPreview */
+export function ensureBrand(): Promise<Brand | null> {
+  if (brandPromise) return brandPromise
+  brandPromise = (async () => {
+    try {
+      const r = await api('/api/settings/brand')
+      if (r.ok && r.data) {
+        const b: Brand = {
+          logoUrl: String(r.data.logoUrl || ''),
+          storeName: String(r.data.storeName || ''),
+          storePhone: String(r.data.storePhone || ''),
+          storeAddress: String(r.data.storeAddress || ''),
+          footerNote: String(r.data.footerNote || ''),
+        }
+        brandMem = b
+        try { (globalThis as any).localStorage?.setItem?.(BRAND_LS_KEY, JSON.stringify(b)) } catch { /* ignore */ }
+        return b
+      }
+    } catch { /* آفلاین/خطا — با کش محلی ادامه بده */ }
+    return brand()
+  })()
+  return brandPromise
+}
+// یک‌بار در هر بارگذاری صفحه، لوگو را تازه کن (سند بعدی قطعاً به‌روز است)
+if (typeof window !== 'undefined') { try { void ensureBrand() } catch { /* ignore */ } }
 
 const SETTLE_LABEL: Record<string, string> = {
   full: 'بازگشت کامل وجه', exchange: 'تسویه با کالای جایگزین',
@@ -323,13 +393,14 @@ const COUNT_STATUS: Record<string, { label: string; tone: string }> = {
   DONE: { label: 'انجام‌شده', tone: 'emerald' },
   MISMATCH: { label: 'دارای مغایرت', tone: 'rose' },
 }
-/** معیارهای کارنامه — وزن‌های موتور /api/performance */
+/** معیارهای کارنامه — وزن‌های موتور /api/performance (R7-PERF: ۷ مؤلفه با بازرسی روزانه) */
 const PERF_CRITERIA: { key: string; label: string; weight: number }[] = [
-  { key: 'task', label: 'انجام دستور کار', weight: 0.35 },
-  { key: 'section', label: 'ارزیابی چیدمان و نظم بخش', weight: 0.25 },
+  { key: 'task', label: 'انجام دستور کار', weight: 0.30 },
+  { key: 'section', label: 'ارزیابی چیدمان و نظم بخش', weight: 0.20 },
+  { key: 'dailyCheck', label: 'بازرسی روزانهٔ تیم', weight: 0.15 },
   { key: 'checklist', label: 'چک‌لیست‌های روزانه', weight: 0.15 },
   { key: 'attendance', label: 'حضور و ساعت‌کاری', weight: 0.10 },
-  { key: 'zoneCount', label: 'انبارگردانی و شمارش', weight: 0.10 },
+  { key: 'zoneCount', label: 'انبارگردانی و شمارش', weight: 0.05 },
   { key: 'extra', label: 'امتیاز دستی مدیر', weight: 0.05 },
 ]
 
@@ -346,6 +417,7 @@ function baseCSS(thermal: boolean): string {
 .sheet{width:80mm;min-height:auto;padding:5mm 4.5mm;font-size:10px;line-height:1.75;border-radius:0}
 .lh{flex-direction:column;align-items:center;text-align:center;gap:5px}
 .lh-emblem{width:40px;height:40px;font-size:19px}
+.lh-logo{width:40px;height:40px;object-fit:contain;border-radius:6px}
 .lh-name{font-size:16px}
 .lh-sub{font-size:9px}
 .lh-doc{max-width:100%;text-align:center}
@@ -367,6 +439,7 @@ body{font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;color:#292524;backgrou
 .lh{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
 .lh-brand{display:flex;align-items:center;gap:11px;min-width:0}
 .lh-emblem{flex:none;width:54px;height:54px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:27px}
+.lh-logo{flex:none;width:54px;height:54px;object-fit:contain;border-radius:10px;border:1px solid #d1fae5;background:#fff;padding:2px}
 .lh-name{font-size:22px;font-weight:800;color:#065f46;line-height:1.35}
 .lh-sub{font-size:10.5px;font-weight:600;color:#57534e}
 .lh-addr{font-size:8.8px;color:#78716c;margin-top:1px}
@@ -520,6 +593,14 @@ function shell(p: ShellParams): string {
   const dateDash = jalaliDash(dt)
   const time = p.time ? toFa(p.time) : nowHM()
   const code = p.code ? String(p.code) : ''
+  const br = brand()
+  const storeName = br.storeName || STORE.name
+  const storeAddr = [br.storeAddress || '', br.storePhone ? `تلفن: ${toFa(br.storePhone)}` : ''].filter(Boolean).join(' — ')
+    || STORE.addr
+  // R7: لوگوی بارگذاری‌شدهٔ مدیر (system/data) — وگرنه نشان 🫒
+  const emblem = br.logoUrl
+    ? `<img class="lh-logo" src="${esc(br.logoUrl)}" alt="لوگو" />`
+    : `<div class="lh-emblem">🫒</div>`
   const wm = p.watermark
     ? `<div class="wm"><div class="wm-in"><div class="wm-olive">🫒</div><div class="wm-text">سر رسید</div></div></div>`
     : ''
@@ -528,7 +609,7 @@ function shell(p: ShellParams): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(p.title)} — ${esc(STORE.name)}</title>
+<title>${esc(p.title)} — ${esc(storeName)}</title>
 <style>${baseCSS(thermal)}</style>
 </head>
 <body>
@@ -537,11 +618,11 @@ ${wm}
 <div class="doc">
 <header class="lh">
   <div class="lh-brand">
-    <div class="lh-emblem">🫒</div>
+    ${emblem}
     <div>
-      <div class="lh-name">${esc(STORE.name)}</div>
+      <div class="lh-name">${esc(storeName)}</div>
       <div class="lh-sub">${esc(STORE.sub)}</div>
-      <div class="lh-addr">${esc(STORE.addr)}</div>
+      <div class="lh-addr">${esc(storeAddr)}</div>
     </div>
   </div>
   <div class="lh-doc">
@@ -554,11 +635,11 @@ ${wm}
 <div class="rule"></div>
 ${p.body}
 <footer class="docfoot">
-  <span>سند توسط سامانهٔ سررسید (SarResid) تولید شده${code ? ` — کد سند: <span class="num">${esc(code)}</span>` : ''}</span>
+  <span>${br.footerNote ? esc(br.footerNote) : `سند توسط سامانهٔ سررسید (SarResid) تولید شده${code ? ` — کد سند: <span class="num">${esc(code)}</span>` : ''}`}</span>
   <span>تاریخ تولید: ${dateLong} — ساعت ${time}</span>
 </footer>
 </div>
-<div class="pfoot">${esc(STORE.name)} — ${esc(p.title)}${code ? ` — کد سند: ${esc(code)}` : ''}</div>
+<div class="pfoot">${esc(storeName)} — ${esc(p.title)}${code ? ` — کد سند: ${esc(code)}` : ''}</div>
 </div>
 </body>
 </html>`
@@ -801,7 +882,7 @@ export function returnDocHTML(data: ReturnDocData, opts?: DocOpts): string {
   const transfer = +d.transferAmount || 0
   const settle = SETTLE_LABEL[d.settleType || ''] || d.settleType || ''
   const st = RETURN_STATUS[d.status || ''] || { label: d.status || '', tone: 'stone' }
-  const card = maskCard(d.customerCardNumber)
+  const card = fullCard(d.customerCardNumber)
 
   const rowsHtml = items.map((it, i) => {
     const qty = +(it && it.qty) || 0
@@ -907,7 +988,7 @@ export function returnThermalHTML(data: ReturnDocData, opts?: DocOpts): string {
 <div style="font-size:9.5px;line-height:1.9">
   ${d.customerName ? `<div>مشتری: <b>${esc(d.customerName)}</b></div>` : ''}
   ${d.customerPhone ? `<div>تلفن: <span class="num">${toFa(d.customerPhone)}</span></div>` : ''}
-  ${maskCard(d.customerCardNumber) ? `<div>کارت: <span class="num">${maskCard(d.customerCardNumber)}</span></div>` : ''}
+  ${d.customerCardNumber ? `<div>کارت: <span class="num">${fullCard(d.customerCardNumber)}</span></div>` : ''}
   <div>نوع تسویه: <b>${esc(settle)}</b> — وضعیت: <b>${esc(st.label)}</b></div>
   ${d.purchaseAt ? `<div>تاریخ خرید: ${toFa(jalaliLong(resolveDate(d.purchaseAt) || new Date()))}</div>` : ''}
 </div>
@@ -1664,8 +1745,10 @@ export function docHTML(kind: DocKind | string, data: AnyDocData | Record<string
 /**
  * چاپ/ذخیرهٔ PDF سند — فقط سمت مرورگر.
  * پورت وفادار printHTML از lib/ui.tsx (iframe مخفی + @page + فونت‌ها).
+ * R7: پیش از ساخت HTML، هویت چاپی (لوگو) از سرور تازه می‌شود.
  */
-export function printDoc(kind: DocKind | string, data: AnyDocData | Record<string, unknown>, opts?: { width?: string } & DocOpts): void {
+export async function printDoc(kind: DocKind | string, data: AnyDocData | Record<string, unknown>, opts?: { width?: string } & DocOpts): Promise<void> {
+  try { await ensureBrand() } catch { /* با کش محلی ادامه بده */ }
   const html = docHTML(kind, data, opts)
   const width = (opts && opts.width) || (kind === 'return-thermal' ? '80mm' : '210mm')
   const frame = document.createElement('iframe')
@@ -1709,10 +1792,18 @@ export interface DocPreviewProps {
 /** پیش‌نمایش سند در iframe کوچک‌شده — پیش از چاپ */
 export function DocPreview(props: DocPreviewProps) {
   const { kind, data = {}, className, scale = 0.85 } = props
+  // R7: با رسیدن لوگو/هویت چاپی از سرور، پیش‌نمایش تازه شود
+  const [brandTick, setBrandTick] = useState(0)
+  useEffect(() => {
+    let alive = true
+    ensureBrand().then(() => { if (alive) setBrandTick((t) => t + 1) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
   let html = ''
   try { html = docHTML(kind, data) } catch { html = '<!DOCTYPE html><html dir="rtl"><body style="font-family:Tahoma;padding:24px;color:#9f1239">خطا در تولید سند</body></html>' }
   const thermal = kind === 'return-thermal'
   return jsx('div', {
+    key: brandTick,
     className: 'w-full overflow-auto rounded-xl border border-stone-200 bg-stone-100' + (className ? ' ' + className : ''),
     style: { height: '600px' },
     children: jsx('div', {

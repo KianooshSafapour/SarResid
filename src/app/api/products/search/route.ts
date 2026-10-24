@@ -48,9 +48,11 @@ export async function GET(req: NextRequest) {
   if (!q) return ok({ products: [] })
 
   /* جست‌وجوی فازی: نام کالا شامل متن باشد (فاصله‌ها را هم برطرف می‌کنیم تا
-     «بیژن» و «بیژن صنعت» هم‌جست شوند) یا کد هولو/بارکد دقیقاً بخورد */
+     «بیژن» و «بیژن صنعت» هم‌جست شوند) یا کد هولو/بانک بارکد دقیقاً بخورد
+     (R5-F: barcodesJson هم بررسی می‌شود تا کالای تازه‌ثبت‌شدهٔ «فقط بارکددار»
+     بدون کد، در جست‌وجوی سفارش‌گذاری پیدا شود) */
   const products = await db.product.findMany({
-    where: { OR: [{ name: { contains: q } }, { code: q }] },
+    where: { OR: [{ name: { contains: q } }, { code: q }, { barcodesJson: { contains: q } }] },
     orderBy: [{ lastBuyPrice: 'desc' }, { name: 'asc' }],
     take: limit,
     select: {
@@ -59,6 +61,7 @@ export async function GET(req: NextRequest) {
       defaultOrderQty: true, defaultCartonQty: true, unitsPerCarton: true,
       lowStockThreshold: true, monthlySold: true, leadTimeDays: true,
       category: true, mainGroup: true,
+      barcodesJson: true, // R5-P4: ستون «کد/بارکد» سفارش‌گذاری — از select جا افتاده بود
     },
   })
 
@@ -119,7 +122,7 @@ export async function GET(req: NextRequest) {
     linksBy.set(l.productId, arr)
   }
   /* آخرین سفارش هر کالا: نخستین ردیف تاریخ‌مرتب‌شده */
-  const lastBy = new Map<string, (typeof recentItems)[number]>()
+  const lastBy = new Map<string | null, (typeof recentItems)[number]>() // productId در OrderItem نال‌پذیر است (پیش‌موجود)
   for (const it of recentItems) {
     if (!lastBy.has(it.productId)) lastBy.set(it.productId, it)
   }
@@ -128,11 +131,15 @@ export async function GET(req: NextRequest) {
     products: products.map((p) => {
       const lks = linksBy.get(p.id) ?? []
       const last = lastBy.get(p.id) ?? null
+      /* R5-F: نخستین بارکد بانک بارکد غیر از کد — ستون «کد/بارکد» جدول سفارش‌گذاری */
+      const bank: string[] = safeJson(p.barcodesJson, [])
+      const bankBarcode = bank.find((b) => b && b !== p.code) ?? null
       return {
         id: p.id,
         name: p.name,
         unit: p.unit,
         barcode: p.code,
+        bankBarcode,
         sellPrice: p.sellPrice,
         lastBuyPrice: p.lastBuyPrice,
         stock: p.stock,

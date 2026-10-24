@@ -1,30 +1,38 @@
-import { useState, useEffect, useMemo, api, qs, useShell, toast, cn, Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Checkbox, money, toman, fa, JALALI_MONTHS, WEEKDAY_FA, jalaliWeekday, addJalaliDays, formatJalali, formatJalaliLong, jalaliMonthLength, jalaliToDate, parseJalali, toEnDigits, toFaDigits, todayJalali, Icon, I } from '../lib/hz'
+import { useState, useEffect, useMemo, api, qs, useShell, toast, cn, Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Checkbox, money, toman, fa, JALALI_MONTHS, WEEKDAY_FA, jalaliWeekday, addJalaliDays, formatJalali, formatJalaliLong, jalaliMonthLength, jalaliToDate, parseJalali, toEnDigits, toFaDigits, todayJalali, TimeInput, faSlash, JalaliDate, Icon, I } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
-   finance/cheques — چک و تقویم پرداخت
-   ۱) چک‌ها (دفتر چک + گردش وضعیت)
+   finance/cheques — چک و تقویم پرداخت (R5-G)
+   ۱) چک‌ها (دفتر چک + گردش وضعیت + ویرایش کامل مدیران
+      + اطلاعات گیرنده/صدور + اتصال به سفارش)
    ۲) محاسبه‌گر زمان چک (نوار تقویم + تعطیلی‌های ردشده)
-   ۳) تقویم پرداخت (برنامه‌ها + سررسید چک‌ها + تعطیلات مذهبی/رسمی
-      با پنل جزئیات روز در کنار تقویم + افزودن سریع برنامه)
+      + پیشنهاد هوشمند پرداخت (کامل / خرد کردن هوشمند
+        با احترام به سقف‌های روزانه/هفتگی)
+   ۳) تقویم پرداخت (برنامه‌ها + سررسید چک‌ها + تعطیلات
+      + تاریخ هجری/میلادی هر روز + پنل جزئیات روز)
+   ۴) تنظیم سقف‌ها و پارامترهای چک (cheque:limits / cheque:split)
    ───────────────────────────────────────────────────────────── */
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING_OWNER: 'در انتظار امضا',
+  WRITTEN: 'نوشته‌شده',
   SIGNED: 'امضا شده',
   DELIVERED: 'تحویل شده',
   CLEARED: 'پرداخت شده',
   REJECTED: 'رد شده',
   RETURNED: 'برگشتی',
   BOUNCED: 'برگشت خورد',
+  UNCOLLECTED: 'برداشت‌نشده',
 }
 const STATUS_CLASS: Record<string, string> = {
   PENDING_OWNER: 'border-amber-400 bg-amber-50 text-amber-800',
+  WRITTEN: 'border-stone-400 bg-stone-100 text-stone-700',
   SIGNED: 'border-teal-400 bg-teal-50 text-teal-800',
   DELIVERED: 'border-orange-400 bg-orange-50 text-orange-800',
   CLEARED: 'border-emerald-400 bg-emerald-50 text-emerald-800',
   REJECTED: 'border-rose-400 bg-rose-50 text-rose-800',
   RETURNED: 'border-rose-400 bg-rose-50 text-rose-800',
   BOUNCED: 'border-rose-500 bg-rose-100 text-rose-900',
+  UNCOLLECTED: 'border-rose-600 bg-rose-100 text-rose-900',
 }
 const ACTION_LABELS: Record<string, string> = {
   create: 'ثبت چک',
@@ -35,12 +43,14 @@ const ACTION_LABELS: Record<string, string> = {
   bounce: 'برگشت چک',
   return: 'بازگشت چک',
   edit: 'ویرایش',
+  status: 'تغییر وضعیت',
+  uncollected: 'علامت‌گذاری برداشت‌نشده (خودکار)',
 }
-/** گردش وضعیت — مطابق چانک زنده و PATCH موجود */
+/** گردش وضعیت — مطابق PATCH زنده + R5-G: UNCOLLECTED برمی‌گردد به گردش */
 const TRANSITIONS: Record<string, { from: string[]; to: string; reason?: 'required' | 'optional' }> = {
   sign: { from: ['PENDING_OWNER'], to: 'SIGNED' },
-  deliver: { from: ['SIGNED'], to: 'DELIVERED' },
-  clear: { from: ['SIGNED', 'DELIVERED'], to: 'CLEARED' },
+  deliver: { from: ['SIGNED', 'UNCOLLECTED'], to: 'DELIVERED' },
+  clear: { from: ['SIGNED', 'DELIVERED', 'UNCOLLECTED'], to: 'CLEARED' },
   reject: { from: ['PENDING_OWNER', 'SIGNED', 'DELIVERED'], to: 'REJECTED', reason: 'required' },
   bounce: { from: ['SIGNED', 'DELIVERED'], to: 'BOUNCED', reason: 'required' },
   return: { from: ['SIGNED', 'DELIVERED'], to: 'RETURNED', reason: 'optional' },
@@ -50,9 +60,12 @@ const FILTERS = [
   { key: 'PENDING_OWNER', label: 'در انتظار امضا' },
   { key: 'SIGNED', label: 'امضا شده' },
   { key: 'DELIVERED', label: 'تحویل شده' },
+  { key: 'UNCOLLECTED', label: 'برداشت‌نشده' },
   { key: 'CLEARED', label: 'پرداخت شده' },
   { key: 'BOUNCED,REJECTED,RETURNED', label: 'برگشتی / رد شده' },
 ]
+/** وضعیت‌های قابل تنظیم دستی در دیالوگ ویرایش */
+const EDITABLE_STATUSES = ['PENDING_OWNER', 'SIGNED', 'DELIVERED', 'CLEARED', 'REJECTED', 'BOUNCED', 'RETURNED', 'UNCOLLECTED', 'WRITTEN']
 const KIND_LABEL: Record<string, string> = { CHEQUE: 'چک', POS: 'کارت‌خوان (POS)', CASH: 'نقدی' }
 const KIND_DOT: Record<string, string> = { CHEQUE: 'bg-amber-500', POS: 'bg-teal-600', CASH: 'bg-emerald-600' }
 const KIND_CLASS: Record<string, string> = {
@@ -107,55 +120,85 @@ function tsFa(iso: string): string {
   return `${toFaDigits(formatJalali(d).replace(/-/g, '/'))} · ${toFaDigits(hh)}:${toFaDigits(mm)}`
 }
 
+/* ───────── تاریخ دومیلادی/هجریِ هر روز شمسی (تقویم جدولی، همان seed-holidays) ───────── */
+const HIJRI_MONTHS = ['محرم', 'صفر', 'ربیع‌الاول', 'ربیع‌الثانی', 'جمادی‌الاول', 'جمادی‌الثانی', 'رجب', 'شعبان', 'رمضان', 'شوال', 'ذی‌القعده', 'ذی‌الحجه']
+const GREG_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/* ───────── ورودی تاریخ شمسی (مثل چانک زنده + چیپ‌های سریع) ───────── */
+function gregToJdn(gy: number, gm: number, gd: number): number {
+  const a = Math.floor((14 - gm) / 12)
+  const y = gy + 4800 - a
+  const m = gm + 12 * a - 3
+  return gd + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045
+}
+
+function islamicToJdn(hy: number, hm: number, hd: number): number {
+  return hd + Math.ceil(29.5 * (hm - 1)) + (hy - 1) * 354 + Math.floor((3 + 11 * hy) / 30) + 1948439
+}
+
+/** شمسی ← هجری قمری جدولی (±۱ روز) */
+function jalaliToHijri(dash: string): { hy: number; hm: number; hd: number } | null {
+  const g = parseJalali(dash)
+  if (!g || isNaN(g.getTime())) return null
+  const jdn = gregToJdn(g.getFullYear(), g.getMonth() + 1, g.getDate())
+  const hy = Math.floor((30 * (jdn - 1948439) + 10646) / 10631)
+  const startOfYear = islamicToJdn(hy, 1, 1)
+  const intoYear = jdn - startOfYear // 0..354
+  let hm = Math.min(12, Math.floor(intoYear / 29.5) + 1)
+  let hd = intoYear - Math.ceil(29.5 * (hm - 1))
+  if (hd < 1) { hd = 1 }
+  if (hd > 30) { hd = 30 }
+  return { hy, hm, hd }
+}
+
+/** «۱۴ رمضان ۱۴۴۷ · 12 Nov» — ریزتاریخ دوم برای سلول‌های تقویم */
+function secondDateFa(dash: string): string {
+  const g = parseJalali(dash)
+  if (!g || isNaN(g.getTime())) return ''
+  const h = jalaliToHijri(dash)
+  const gPart = `${g.getDate()} ${GREG_MONTHS[g.getMonth()]}`
+  return h ? `${toFaDigits(h.hd)} ${HIJRI_MONTHS[h.hm - 1]} · ${gPart}` : gPart
+}
+
+/** هجری کامل با سال — برای پنل روز */
+function secondDateLongFa(dash: string): string {
+  const g = parseJalali(dash)
+  if (!g || isNaN(g.getTime())) return ''
+  const h = jalaliToHijri(dash)
+  const gPart = `${g.getDate()} ${GREG_MONTHS[g.getMonth()]} ${g.getFullYear()}`
+  return h ? `${toFaDigits(h.hd)} ${HIJRI_MONTHS[h.hm - 1]} ${toFaDigits(h.hy)} · ${gPart}` : gPart
+}
+
+/** پیش‌فرض‌های محلی برای دیالوگ تنظیمات (اگر API پاسخ نداد) */
+const LOCAL_LIMITS = { day: 0, week: 0, month: 0 }
+const LOCAL_SPLIT = { mediumMax: 3, heavyMax: 5, mediumThreshold: 200_000_000, heavyThreshold: 800_000_000, roundTo: 100_000 }
+
+
+
+/* ───────── ورودی تاریخ شمسی — تاریخ‌گیر مشترک جلالی (تقویم + ارقام فارسی +
+   پیکان‌های ماه RTL درست) با چیپ‌های سریع ───────── */
 function JInput({ value, onChange, quick = true }: { value: string; onChange: (v: string) => void; quick?: boolean }) {
-  const [draft, setDraft] = useState(value)
-  const [err, setErr] = useState('')
-  useEffect(() => { setDraft(value) }, [value])
-  function commit(raw: string) {
-    const t = toEnDigits(raw).replace(/\//g, '-').trim()
-    if (!t) { onChange(''); setErr(''); return }
-    const m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
-    if (!m) { setErr('قالب تاریخ: ۱۴۰۵/۰۷/۱۵'); return }
-    const norm = `${m[1]}-${pad2(Number(m[2]))}-${pad2(Number(m[3]))}`
-    if (parseJalali(norm)) { setErr(''); onChange(norm) } else setErr('تاریخ نامعتبر است')
-  }
   return (
-    <div>
-      <Input
-        dir="ltr" value={draft} placeholder="1405/07/15"
-        className="text-center font-mono"
-        onChange={(e: any) => setDraft(e.target.value)}
-        onBlur={(e: any) => commit(e.target.value)}
-        onKeyDown={(e: any) => { if (e.key === 'Enter') commit(e.target.value) }}
-      />
-      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        {quick && ([['امروز', 0], ['فردا', 1], ['یک هفته دیگر', 7]] as const).map(([label, n]) => (
-          <button
-            key={label} type="button"
-            className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-600 transition-colors hover:bg-stone-100"
-            onClick={() => { const d = addJalaliDays(todayJalali(), Number(n)); setDraft(d); onChange(d); setErr('') }}
-          >
-            {label}
-          </button>
-        ))}
-        {err && <span className="text-[11px] text-rose-600">{err}</span>}
-      </div>
-    </div>
+    <JalaliDate
+      value={value}
+      onChange={onChange}
+      quickChips={quick ? [{ label: 'امروز', deltaDays: 0 }, { label: 'فردا', deltaDays: 1 }, { label: 'یک هفته دیگر', deltaDays: 7 }] : undefined}
+    />
   )
 }
 
-/* ───────── ورودی مبلغ (ریال) — نمایش فارسی، ورودی لاتین/فارسی ───────── */
+/* ───────── ورودی مبلغ (ریال) — R7: جداکنندهٔ هزارگان خودکار (۱٬۲۵۰٬۰۰۰) ───────── */
 function AmountInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const n = Number(value)
   return (
     <div>
-      <Input
-        dir="ltr" inputMode="numeric" placeholder="۰" className="num text-end"
-        value={value ? toFaDigits(value) : ''}
-        onChange={(e: any) => onChange(toEnDigits(String(e.target.value)).replace(/[^\d]/g, ''))}
-      />
+      <div className="relative">
+        <Input
+          dir="ltr" inputMode="numeric" placeholder="۰" className="num pe-10 text-end font-bold"
+          value={value ? fa(n > 0 ? n : value.replace(/\D/g, '')) : ''}
+          onChange={(e: any) => onChange(toEnDigits(String(e.target.value)).replace(/[^\d]/g, '').replace(/٬/g, ''))}
+        />
+        <span className="pointer-events-none absolute inset-y-0 end-2.5 flex items-center text-[10px] font-medium text-stone-400">ریال</span>
+      </div>
       {Number.isFinite(n) && n > 0 && (
         <p className="mt-1 text-[11px] text-stone-500">{money(n)} ریال ≈ {toman(n)} تومان</p>
       )}
@@ -181,18 +224,42 @@ function DueChip({ days, status }: { days: number; status: string }) {
 
 /* ═════════════════════════ نماهای کوچک ═════════════════════════ */
 
-function StatCard({ title, value, amount, tone }: { title: string; value: number; amount?: number; tone: 'amber' | 'teal' | 'emerald' | 'rose' }) {
+function StatCard({
+  title, value, amount, tone, sub, chips, titleHint,
+}: {
+  title: string
+  value: number
+  amount?: number
+  tone: 'amber' | 'teal' | 'emerald' | 'rose' | 'stone'
+  sub?: string | null
+  chips?: Array<{ label: string; value: number; amount?: number; cls?: string }>
+  titleHint?: string
+}) {
   const tones: Record<string, string> = {
     amber: 'border-amber-300 bg-amber-50 text-amber-900',
     teal: 'border-teal-300 bg-teal-50 text-teal-900',
     emerald: 'border-emerald-300 bg-emerald-50 text-emerald-800',
     rose: 'border-rose-300 bg-rose-50 text-rose-900',
+    stone: 'border-stone-300 bg-stone-50 text-stone-700',
   }
   return (
     <div className={cn('rounded-xl border p-3', tones[tone])}>
-      <p className="text-[11px] leading-4 opacity-80">{title}</p>
+      <p className="text-[11px] leading-4 opacity-80" title={titleHint}>{title}</p>
       <p className="mt-1 text-lg font-black">{fa(value)} فقره</p>
       {amount ? <p className="text-[11px] opacity-75">{money(amount)} ریال</p> : null}
+      {sub ? <p className="mt-1 text-[10px] leading-4 opacity-80">{sub}</p> : null}
+      {chips && chips.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1 border-t border-dashed pt-2" style={{ borderColor: 'rgb(0 0 0 / 0.08)' }}>
+          {chips.map((c) => (
+            <span key={c.label} title={c.amount ? `${money(c.amount)} ریال` : undefined} className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-medium',
+              c.cls || 'bg-white/70',
+            )}>
+              {c.label}: <b className="num">{fa(c.value)}</b>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -215,12 +282,18 @@ export default function ChequesView() {
   const [q, setQ] = useState('')
   const [qEff, setQEff] = useState('')
 
-  /* ── ثبت/ویرایش چک ── */
-  const emptyForm = { number: '', amount: '', dueDate: '', recipient: '', selfIssued: true, sayadSerial: '', orderCode: '', note: '' }
+  /* ── ثبت/ویرایش چک (+ اطلاعات گیرنده/صدور + وضعیت + سفارش) ── */
+  const emptyForm = {
+    number: '', amount: '', dueDate: '', recipient: '', selfIssued: true, sayadSerial: '', orderCode: '', note: '',
+    writtenAt: '',
+    receiverName: '', receiverPhone: '', issuedTime: '',
+    status: '',
+  }
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<any>(null)
   const [form, setForm] = useState<any>(emptyForm)
   const [savingForm, setSavingForm] = useState(false)
+  const [recentOrders, setRecentOrders] = useState<any[]>([])
 
   /* ── گردش وضعیت ── */
   const [busyId, setBusyId] = useState('')
@@ -228,8 +301,18 @@ export default function ChequesView() {
   const [reasonText, setReasonText] = useState('')
   const [reasonBusy, setReasonBusy] = useState(false)
   const [histRow, setHistRow] = useState<any>(null)
+  /* ── تحویل چک: اطلاعات گیرنده + تاریخ/ساعت تحویل (new-4.txt سطر ۵۶) ── */
+  const [deliverDlg, setDeliverDlg] = useState<any>(null)
+  const [deliverBusy, setDeliverBusy] = useState(false)
+  const [dv, setDv] = useState({ receiverName: '', receiverPhone: '', date: '', time: '' })
 
-  /* ── محاسبه‌گر ── */
+  /* ── تنظیمات سقف/خرد کردن (cheque:limits / cheque:split) ── */
+  const [setOpen, setSetOpen] = useState(false)
+  const [setSaving, setSetSaving] = useState(false)
+  const [lim, setLim] = useState<any>({ ...LOCAL_LIMITS })
+  const [spl, setSpl] = useState<any>({ ...LOCAL_SPLIT })
+
+  /* ── محاسبه‌گر + پیشنهاد هوشمند ── */
   const [days, setDays] = useState('45')
   const [defDays, setDefDays] = useState<number | null>(null)
   const [from, setFrom] = useState(today)
@@ -237,6 +320,10 @@ export default function ChequesView() {
   const [calcBusy, setCalcBusy] = useState(false)
   const [chosenDate, setChosenDate] = useState('')
   const [calcHols, setCalcHols] = useState<any[]>([]) // تعطیلی‌های بازه شروع → سررسید
+  const [calcAmount, setCalcAmount] = useState('') // مبلغ (ریال) برای پیشنهاد هوشمند
+  const [calcSupplier, setCalcSupplier] = useState('') // تأمین‌کننده برای برنامه‌های پیشنهادی
+  const [smart, setSmart] = useState<any>(null) // خروجی /api/cheque-calc/split
+  const [applyingSmart, setApplyingSmart] = useState('')
 
   /* ── تقویم پرداخت ── */
   const [calY, setCalY] = useState(Number(today.slice(0, 4)))
@@ -256,7 +343,7 @@ export default function ChequesView() {
   }, [q])
 
   useEffect(() => { void loadCheques() }, [status, qEff])
-  useEffect(() => { void loadAll(); void loadDefaults() }, [])
+  useEffect(() => { void loadAll(); void loadDefaults(); void loadSettings(); void loadRecentOrders() }, [])
   useEffect(() => { void loadCal() }, [calY, calM])
 
   async function loadCheques() {
@@ -271,6 +358,19 @@ export default function ChequesView() {
   async function loadAll() {
     const r = await api('/api/cheques')
     if (r.ok) setAllCheques(r.data?.items || [])
+  }
+
+  async function loadSettings() {
+    const r = await api('/api/cheques/settings')
+    if (!r.ok) return // تنظیمات در دسترس نیست — پیش‌فرض‌ها می‌مانند
+    if (r.data?.limits) setLim({ ...LOCAL_LIMITS, ...r.data.limits })
+    if (r.data?.split) setSpl({ ...LOCAL_SPLIT, ...r.data.split })
+  }
+
+  /** سفارش‌های اخیر برای اتصال چک ← سفارش (در صورت دسترسی) */
+  async function loadRecentOrders() {
+    const r = await api('/api/orders?status=open&pageSize=12')
+    if (r.ok && Array.isArray(r.data?.items)) setRecentOrders(r.data.items)
   }
 
   async function loadDefaults() {
@@ -288,11 +388,12 @@ export default function ChequesView() {
 
   function openCreate(due?: string) {
     setEditing(null)
-    setForm({ ...emptyForm, dueDate: due || today })
+    setForm({ ...emptyForm, dueDate: due || today, writtenAt: today })
     setCreateOpen(true)
   }
 
   function openEdit(row: any) {
+    const m = row.meta || {}
     setEditing(row)
     setForm({
       number: row.number || '',
@@ -303,8 +404,26 @@ export default function ChequesView() {
       sayadSerial: row.sayadSerial || '',
       orderCode: row.orderCode || '',
       note: row.note || '',
+      writtenAt: row.writtenAt || today,
+      receiverName: m.receiverName || '',
+      receiverPhone: m.receiverPhone || '',
+      issuedTime: m.issuedTime || '',
+      status: row.status || '',
     })
     setCreateOpen(true)
+  }
+
+  /** وقتی کد سفارش از فهرست انتخاب شد، طرف حساب را خودکار پر کن */
+  function onOrderCodeChange(v: string) {
+    const code = v.trim()
+    setForm((f: any) => {
+      const ord = recentOrders.find((o: any) => o.code === code)
+      return {
+        ...f,
+        orderCode: code,
+        recipient: ord?.supplierName ? ord.supplierName : f.recipient,
+      }
+    })
   }
 
   async function submitForm(e?: any) {
@@ -314,7 +433,14 @@ export default function ChequesView() {
     if (!Number.isFinite(amount) || amount <= 0) return toast.error('مبلغ چک را وارد کنید')
     if (!parseJalali(form.dueDate)) return toast.error('تاریخ سررسید را وارد کنید')
     setSavingForm(true)
-    const body = {
+    const meta = {
+      receiverName: form.receiverName.trim() || undefined,
+      receiverPhone: toEnDigits(form.receiverPhone).replace(/[^\d+]/g, '') || undefined,
+      issuedAt: form.writtenAt || undefined,
+      issuedTime: form.issuedTime || undefined,
+      orderCode: form.orderCode.trim() || undefined,
+    }
+    const body: any = {
       number: form.number.trim(),
       amount,
       dueDate: form.dueDate,
@@ -323,13 +449,19 @@ export default function ChequesView() {
       sayadSerial: form.sayadSerial.trim(),
       orderCode: form.orderCode.trim(),
       note: form.note.trim(),
+      writtenAt: form.writtenAt || today,
+      meta,
+    }
+    if (editing) {
+      if (form.status && form.status !== editing.status) body.status = form.status
+      body.recipient = form.recipient.trim()
     }
     const r = editing
       ? await api(`/api/cheques/${editing.id}`, { method: 'PATCH', body: { action: 'edit', ...body } })
       : await api('/api/cheques', { method: 'POST', body })
     setSavingForm(false)
     if (!r.ok) return toast.error(r.error || 'ثبت ناموفق بود')
-    toast.success(editing ? 'چک ویرایش شد' : 'چک جدید ثبت شد (در انتظار امضای مدیرعامل)')
+    toast.success(editing ? 'چک ویرایش شد' : 'چک جدید ثبت شد و به مالک ارسال شد (در انتظار تأیید و امضا)')
     setCreateOpen(false)
     void loadCheques(); void loadAll()
   }
@@ -351,6 +483,46 @@ export default function ChequesView() {
     if (!t.from.includes(row.status)) return
     if (t.reason === 'required') { setReasonDlg({ row, action }); setReasonText(''); return }
     void doAction(row, action)
+  }
+
+  /** تحویل چک — با ثبت اطلاعات گیرنده و تاریخ/ساعت تحویل (دیالوگ) */
+  function openDeliver(row: any) {
+    const m = row.meta || {}
+    setDv({
+      receiverName: m.receiverName || row.recipient || '',
+      receiverPhone: m.receiverPhone ? String(m.receiverPhone) : '',
+      date: today,
+      time: '',
+    })
+    setDeliverDlg(row)
+  }
+
+  async function submitDeliver() {
+    if (!deliverDlg) return
+    if (!dv.receiverName.trim()) return toast.error('نام دریافت‌کننده چک را وارد کنید')
+    if (dv.receiverPhone && !/^[0-9+]{10,14}$/.test(toEnDigits(dv.receiverPhone))) {
+      return toast.error('شمارهٔ موبایل دریافت‌کننده معتبر نیست')
+    }
+    setDeliverBusy(true)
+    const prevMeta = deliverDlg.meta || {}
+    const r = await api(`/api/cheques/${deliverDlg.id}`, {
+      method: 'PATCH',
+      body: {
+        action: 'deliver',
+        meta: {
+          ...prevMeta,
+          receiverName: dv.receiverName.trim(),
+          receiverPhone: toEnDigits(dv.receiverPhone).replace(/[^\d+]/g, '') || undefined,
+          issuedAt: dv.date || undefined,
+          issuedTime: dv.time || undefined,
+        },
+      },
+    })
+    setDeliverBusy(false)
+    if (!r.ok) return toast.error(r.error || 'ثبت تحویل ناموفق بود')
+    toast.success('چک تحویل شد و اطلاعات دریافت‌کننده ثبت شد')
+    setDeliverDlg(null)
+    void loadCheques(); void loadAll()
   }
 
   async function submitReason() {
@@ -385,7 +557,7 @@ export default function ChequesView() {
           </Button>
         )}
         {ok('deliver') && (
-          <Button size="sm" variant="outline" className={sm} disabled={busyId === row.id} onClick={() => onAction(row, 'deliver')}>تحویل</Button>
+          <Button size="sm" variant="outline" className={sm} disabled={busyId === row.id} onClick={() => openDeliver(row)}>تحویل</Button>
         )}
         {ok('clear') && (
           <Button size="sm" className={cn('bg-emerald-700 hover:bg-emerald-800', sm)} disabled={busyId === row.id} onClick={() => onAction(row, 'clear')}>وصول</Button>
@@ -400,12 +572,12 @@ export default function ChequesView() {
           <Button size="sm" variant="outline" className={cn('border-rose-400 text-rose-700 hover:bg-rose-50', sm)} disabled={busyId === row.id} onClick={() => onAction(row, 'reject')}>رد</Button>
         )}
         {row.status === 'PENDING_OWNER' && (
-          <Button size="sm" variant="ghost" className={sm} disabled={busyId === row.id} onClick={() => openEdit(row)}>ویرایش</Button>
-        )}
-        {row.status === 'PENDING_OWNER' && (
           <Button size="sm" variant="ghost" className={cn('text-rose-600', sm)} disabled={busyId === row.id} onClick={() => void removeCheque(row)} aria-label="حذف چک">
             <I.trash size={13} />
           </Button>
+        )}
+        {row.status !== 'PENDING_OWNER' && (
+          <Button size="sm" variant="ghost" className={sm} disabled={busyId === row.id} onClick={() => openEdit(row)}>ویرایش</Button>
         )}
         <Button size="sm" variant="ghost" className={cn(sm, 'text-stone-500')} onClick={() => setHistRow(row)} aria-label={`تاریخچه چک ${row.number}`}>
           <I.history size={13} />
@@ -414,7 +586,7 @@ export default function ChequesView() {
     )
   }
 
-  /* ───────────── محاسبه‌گر زمان چک ───────────── */
+  /* ───────────── محاسبه‌گر زمان چک + پیشنهاد هوشمند ───────────── */
 
   async function runCalc() {
     const d = Number(days)
@@ -430,6 +602,72 @@ export default function ChequesView() {
     const h = await api(`/api/holidays${qs({ from, to: r.data?.target || from })}`)
     if (h.ok) setCalcHols(h.data?.holidays || [])
     else setCalcHols([])
+    // پیشنهاد هوشمند پرداخت — فقط وقتی مبلغ معتبر وارد شده باشد
+    const amt = Number(calcAmount)
+    if (Number.isFinite(amt) && amt > 0) {
+      const s = await api('/api/cheque-calc/split', { method: 'POST', body: { amount: amt, days: Math.round(d), from } })
+      if (s.ok) setSmart(s.data)
+      else { setSmart(null); toast.error(s.error || 'پیشنهاد هوشمند انجام نشد') }
+    } else {
+      setSmart(null)
+    }
+  }
+
+  /** اعمال یک پیشنهاد: ثبت برنامه‌های پرداخت پیش‌ثبت روی تقویم */
+  async function applySmart(opt: any) {
+    if (!opt || !Array.isArray(opt.cheques) || !opt.cheques.length) return
+    const key = `full-${opt.cheques[0]?.date}` || String(opt.n)
+    setApplyingSmart(key)
+    let done = 0
+    for (const c of opt.cheques) {
+      const r = await api('/api/payment-plans', {
+        method: 'POST',
+        body: {
+          date: c.date,
+          kind: 'CHEQUE',
+          amount: c.amount,
+          supplierName: calcSupplier.trim() || undefined,
+          note: `پیشنهاد هوشمند پرداخت — ${opt.n === 1 ? 'پرداخت کامل' : `${fa(opt.n)} قلمی`}${c.deltaFromTarget ? ` · ${fa(Math.abs(c.deltaFromTarget))} روز ${c.deltaFromTarget < 0 ? 'زودتر' : ''}` : ''}`,
+        },
+      })
+      if (r.ok) done++
+    }
+    setApplyingSmart('')
+    if (done === opt.cheques.length) {
+      toast.success(`${fa(done)} برنامه پرداخت پیش‌ثبت روی تقویم ثبت شد — وضعیت هر کدام را بعداً به چک واقعی تبدیل کنید`)
+      void loadCal()
+    } else {
+      toast.error(`فقط ${fa(done)} از ${fa(opt.cheques.length)} برنامه ثبت شد — دوباره تلاش کنید`)
+    }
+  }
+
+  /* ───────────── ذخیره تنظیمات سقف/خرد کردن ───────────── */
+
+  async function saveSettings() {
+    setSetSaving(true)
+    const r = await api('/api/cheques/settings', {
+      method: 'POST',
+      body: {
+        limits: {
+          day: Number(lim.day) || 0,
+          week: Number(lim.week) || 0,
+          month: Number(lim.month) || 0,
+        },
+        split: {
+          mediumMax: Number(spl.mediumMax) || 3,
+          heavyMax: Number(spl.heavyMax) || 5,
+          mediumThreshold: Number(spl.mediumThreshold) || 0,
+          heavyThreshold: Number(spl.heavyThreshold) || 0,
+          roundTo: Number(spl.roundTo) || 100_000,
+        },
+      },
+    })
+    setSetSaving(false)
+    if (!r.ok) return toast.error(r.error || 'ذخیره تنظیمات ناموفق بود')
+    if (r.data?.limits) setLim({ ...LOCAL_LIMITS, ...r.data.limits })
+    if (r.data?.split) setSpl({ ...LOCAL_SPLIT, ...r.data.split })
+    toast.success('سقف‌ها و پارامترهای چک ذخیره شد')
+    setSetOpen(false)
   }
 
   /** متن هشدار روز غیرکاری — «این تاریخ جمعه است» / «تعطیل رسمی: …» */
@@ -572,6 +810,12 @@ export default function ChequesView() {
   const monthPlans = plans.filter((p: any) => String(p.date).startsWith(monthPrefix))
   const monthOutstanding = monthPlans.filter((p: any) => p.status !== 'DONE').reduce((s: number, p: any) => s + (p.amount || 0), 0)
 
+  /** صف امضای مالک — چک‌های ثبت‌شده توسط مدیر کل که منتظر امضا/رد هستند */
+  const signQueue = useMemo(
+    () => allCheques.filter((c: any) => c.status === 'PENDING_OWNER'),
+    [allCheques],
+  )
+
   /* ───────────── افزودن سریع برنامه پرداخت (پنل روز) ───────────── */
 
   async function submitQuickAdd() {
@@ -593,22 +837,98 @@ export default function ChequesView() {
 
   /* ═════════════════════════ رندر ═════════════════════════ */
 
+  /* ریزمتن سقف‌ها برای نوار ابزار */
+  const limitsLine = lim.day || lim.week || lim.month
+    ? `سقف‌ها: روزانه ${money(lim.day || 0)} · هفتگی ${money(lim.week || 0)} · ماهانه ${money(lim.month || 0)} ریال`
+    : 'سقف پرداخت تعیین نشده است'
+
   return (
     <div className="space-y-4">
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={setTab} dir="rtl">
         <TabsList className="grid h-auto w-full grid-cols-3">
           <TabsTrigger value="list" className="gap-1.5 py-2 text-xs sm:text-sm"><I.banknote size={15} /> چک‌ها</TabsTrigger>
-          <TabsTrigger value="calc" className="gap-1.5 py-2 text-xs sm:text-sm"><I.timer size={15} /> محاسبه‌گر زمان چک</TabsTrigger>
+          <TabsTrigger value="calc" className="gap-1.5 py-2 text-xs sm:text-sm"><I.timer size={15} /> محاسبه‌گر و پیشنهاد هوشمند</TabsTrigger>
           <TabsTrigger value="calendar" className="gap-1.5 py-2 text-xs sm:text-sm"><I.calendar size={15} /> تقویم پرداخت</TabsTrigger>
         </TabsList>
 
         {/* ═══════════ تب ۱: دفتر چک ═══════════ */}
         <TabsContent value="list" className="space-y-4">
+          {/* ═══ صف امضای مالک — چک‌های در انتظار امضا با یک کلیک امضا/رد (new-4.txt سطر ۱۹-۲۱) ═══ */}
+          {canSign && signQueue.length > 0 && (
+            <div className="rounded-xl border border-amber-400 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <I.penLine size={20} className="text-amber-600" />
+                <p className="text-sm font-bold text-amber-900">
+                  چک‌های در انتظار امضای شما
+                  <span className="num mr-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[11px]">{fa(signQueue.length)} فقره</span>
+                </p>
+                <p className="text-[11px] text-amber-700">ثبت‌شده توسط مدیر کل — پس از امضا/رد، به مدیر کل اطلاع‌رسانی می‌شود.</p>
+              </div>
+              <div className="mt-2.5 space-y-1.5">
+                {signQueue.map((c: any) => (
+                  <div key={c.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2">
+                    <span dir="ltr" className="font-mono text-xs font-bold text-stone-700">{c.number}</span>
+                    <span className="text-xs text-stone-600">{c.recipient || 'بدون طرف حساب'}</span>
+                    <span className="num text-xs font-bold text-stone-800">{money(c.amount)} <span className="text-[10px] font-normal text-stone-500">ریال</span></span>
+                    <span className="num text-[11px] text-stone-500">سررسید {faSlash(c.dueDate)}</span>
+                    {c.meta?.receiverName && (
+                      <span className="text-[11px] text-stone-500">گیرنده: {c.meta.receiverName}{c.meta?.receiverPhone ? ` · ${toFaDigits(c.meta.receiverPhone)}` : ''}</span>
+                    )}
+                    {c.orderCode && <span className="text-[11px] text-stone-500">سفارش: <span dir="ltr" className="font-mono">{c.orderCode}</span></span>}
+                    <span className="mr-auto" />
+                    <Button size="sm" className="h-8 gap-1.5" disabled={busyId === c.id} onClick={() => onAction(c, 'sign')}>
+                      {busyId === c.id ? <I.loader size={13} className="animate-spin" /> : <I.check size={13} />} امضا
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50" disabled={busyId === c.id} onClick={() => onAction(c, 'reject')}>
+                      <I.x size={13} /> رد
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* کارت‌های آماری بالا — new-4.txt سطر ۱۳۵ */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard title="در انتظار امضای مدیرعامل" value={stats?.pendingOwner?.count ?? 0} amount={stats?.pendingOwner?.amount} tone="amber" />
-            <StatCard title="در گردش (امضا / تحویل)" value={stats?.inTransit?.count ?? 0} amount={stats?.inTransit?.amount} tone="teal" />
-            <StatCard title="وصول‌شده این ماه" value={stats?.clearedThisMonth?.count ?? 0} amount={stats?.clearedThisMonth?.amount} tone="emerald" />
-            <StatCard title="برگشتی و رد شده" value={stats?.bouncedRejected?.count ?? 0} amount={stats?.bouncedRejected?.amount} tone="rose" />
+            <StatCard
+              title="نوشته‌شده (کل دفتر چک)"
+              titleHint="همهٔ چک‌های ثبت‌شده در سامانه، در هر وضعیتی"
+              value={stats?.written?.count ?? 0}
+              amount={stats?.written?.amount}
+              tone="stone"
+              sub={stats && (stats.bouncedRejected?.count || stats.uncollected?.count)
+                ? `برگشتی/ردشده: ${fa(stats.bouncedRejected?.count || 0)}${stats.uncollected?.count ? ` · برداشت‌نشده: ${fa(stats.uncollected?.count || 0)}` : ''}`
+                : null}
+            />
+            <StatCard
+              title="در انتظار امضا یا دریافت"
+              titleHint="در انتظار تأیید/امضای مالک یا تحویل به گیرنده"
+              value={stats?.awaiting?.count ?? 0}
+              amount={stats?.awaiting?.amount}
+              tone="amber"
+              sub={stats?.pendingOwner?.count ? `از جمله ${fa(stats.pendingOwner.count)} فقره در انتظار امضای مالک` : null}
+            />
+            <StatCard
+              title="دریافت/وصول‌شده"
+              titleHint="تحویل شده به گیرنده یا وصول شده از بانک"
+              value={stats?.received?.count ?? 0}
+              amount={stats?.received?.amount}
+              tone="emerald"
+              sub={stats?.clearedThisMonth?.count ? `وصول از بانک این ماه: ${fa(stats.clearedThisMonth.count)} فقره` : null}
+            />
+            <StatCard
+              title="سررسیدهای پیش‌رو (فعال)"
+              titleHint="چک‌های فعال به تفکیک دوره — فقط اگر امروز/فردا/هفته/ماه سررسید دارند"
+              value={stats?.due?.week?.count ?? 0}
+              amount={stats?.due?.week?.amount}
+              tone="teal"
+              chips={[
+                { label: 'امروز', value: stats?.due?.today?.count ?? 0, amount: stats?.due?.today?.amount, cls: 'bg-amber-100 text-amber-900' },
+                { label: 'فردا', value: stats?.due?.tomorrow?.count ?? 0, amount: stats?.due?.tomorrow?.amount, cls: 'bg-white/70' },
+                { label: 'این هفته', value: stats?.due?.week?.count ?? 0, amount: stats?.due?.week?.amount, cls: 'bg-white/70' },
+                { label: 'این ماه', value: stats?.due?.month?.count ?? 0, amount: stats?.due?.month?.amount, cls: 'bg-white/70' },
+              ]}
+            />
           </div>
 
           <Card>
@@ -616,6 +936,11 @@ export default function ChequesView() {
               {canFinance && (
                 <Button onClick={() => openCreate()} className="gap-2">
                   <I.plus size={16} /> چک جدید
+                </Button>
+              )}
+              {['OWNER', 'GM', 'ADMIN'].includes(user?.role || '') && (
+                <Button variant="outline" onClick={() => setSetOpen(true)} className="gap-2" title={limitsLine}>
+                  <I.settings size={16} /> سقف‌ها و پارامترها
                 </Button>
               )}
               <Select value={status || 'all'} onValueChange={(v: string) => setStatus(v === 'all' ? '' : v)}>
@@ -632,6 +957,7 @@ export default function ChequesView() {
                 <I.search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
                 <Input value={q} onChange={(e: any) => setQ(e.target.value)} placeholder="جستجو: شماره، گیرنده، سری صیادی…" className="pr-3 pl-8" aria-label="جستجوی چک" />
               </div>
+              <p className="w-full text-[10px] leading-4 text-stone-400">{limitsLine}</p>
             </CardContent>
           </Card>
 
@@ -678,8 +1004,17 @@ export default function ChequesView() {
                           <TableCell className="num font-bold">
                             <span title={`${money(c.amount)} ریال ≈ ${toman(c.amount)} تومان`}>{money(c.amount)}</span>
                           </TableCell>
-                          <TableCell className="max-w-40 truncate text-xs">{c.recipient || '—'}</TableCell>
-                          <TableCell className="num text-xs text-stone-500">{c.writtenAt ? faSlash(c.writtenAt) : '—'}</TableCell>
+                          <TableCell className="max-w-40">
+                            <div className="truncate text-xs">{c.recipient || '—'}</div>
+                            {c.orderCode && <div className="mt-0.5 text-[10px] text-stone-500">سفارش: <span dir="ltr" className="font-mono">{c.orderCode}</span></div>}
+                            {c.meta?.receiverName && (
+                              <div className="mt-0.5 text-[10px] text-stone-500">گیرنده چک: {c.meta.receiverName}{c.meta?.receiverPhone ? ` · ${toFaDigits(c.meta.receiverPhone)}` : ''}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="num text-xs text-stone-500">
+                            {c.writtenAt ? faSlash(c.writtenAt) : '—'}
+                            {c.meta?.issuedTime && <div className="text-[10px] text-stone-400">ساعت {toFaDigits(c.meta.issuedTime)}</div>}
+                          </TableCell>
                           <TableCell>
                             <div className="num text-xs">{faSlash(c.dueDate)}</div>
                             <div className="text-[10px] text-stone-500">{weekdayOf(c.dueDate)}</div>
@@ -697,32 +1032,50 @@ export default function ChequesView() {
           </Card>
         </TabsContent>
 
-        {/* ═══════════ تب ۲: محاسبه‌گر زمان چک ═══════════ */}
+        {/* ═══════════ تب ۲: محاسبه‌گر زمان چک + پیشنهاد هوشمند ═══════════ */}
         <TabsContent value="calc" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base"><I.timer size={18} /> محاسبه‌گر زمان چک</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base"><I.timer size={18} /> محاسبه‌گر زمان چک و پیشنهاد هوشمند</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div>
+              {/* R7: همهٔ خانه‌ها هم‌قد — ساختار یکسان برچسب + ورودی + خط راهنما (min-h) و items-start */}
+              <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="flex h-full flex-col">
                   <label className="mb-1 block text-xs text-stone-500">دوره چک (روز)</label>
                   <Input
                     dir="ltr" inputMode="numeric" className="num text-center"
                     value={days ? toFaDigits(days) : ''}
                     onChange={(e: any) => setDays(toEnDigits(String(e.target.value)).replace(/[^\d]/g, ''))}
                   />
-                  <p className="mt-1 text-[11px] text-stone-400">
+                  <p className="mt-1 min-h-4 text-[11px] leading-4 text-stone-400">
                     {defDays ? `پیش‌فرض سامانه: ${fa(defDays)} روز` : 'پیش‌فرض: ۴۵ روز'}
                   </p>
                 </div>
-                <div>
+                <div className="flex h-full flex-col">
                   <label className="mb-1 block text-xs text-stone-500">تاریخ شروع (شمسی)</label>
-                  <JInput value={from} onChange={(v: string) => { setFrom(v); setCalc(null); setChosenDate(''); setCalcHols([]) }} />
+                  <JInput value={from} onChange={(v: string) => { setFrom(v); setCalc(null); setChosenDate(''); setCalcHols([]); setSmart(null) }} />
+                  <p className="mt-1 min-h-4 text-[11px] leading-4 text-stone-400">مبنا برای محاسبهٔ سررسید</p>
                 </div>
+                <div className="flex h-full flex-col">
+                  <label className="mb-1 block text-xs text-stone-500">مبلغ (ریال) — برای پیشنهاد هوشمند</label>
+                  <AmountInput value={calcAmount} onChange={setCalcAmount} />
+                  <p className="mt-1 min-h-4 text-[11px] leading-4 text-stone-400">مبنای تقسیم پرداخت</p>
+                </div>
+                <div className="flex h-full flex-col">
+                  <label className="mb-1 block text-xs text-stone-500">تأمین‌کننده / طرف حساب (اختیاری)</label>
+                  <Input value={calcSupplier} onChange={(e: any) => setCalcSupplier(e.target.value)} placeholder="مثلاً: شیرین عسل کرمان" maxLength={120} />
+                  <p className="mt-1 min-h-4 text-[11px] leading-4 text-stone-400">برای ثبت روی سند پیشنهادی</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
                 <Button onClick={() => void runCalc()} disabled={calcBusy} className="gap-2">
-                  {calcBusy ? <I.loader size={16} className="animate-spin" /> : <I.sparkles size={16} />} محاسبه
+                  {calcBusy ? <I.loader size={16} className="animate-spin" /> : <I.sparkles size={16} />} محاسبه و پیشنهاد
                 </Button>
+                <p className="text-[11px] leading-5 text-stone-500">
+                  با مبلغ، دوره و سقف‌های تعیین‌شده، سامانه هم تاریخ سررسید و هم چگونگی تقسیم پرداخت را پیشنهاد می‌دهد.
+                </p>
               </div>
 
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
@@ -887,6 +1240,85 @@ export default function ChequesView() {
                       </Button>
                     </div>
                   )}
+
+                  {/* ═══ پیشنهاد هوشمند پرداخت — new-4.txt سطر ۱۳۵ ═══ */}
+                  {smart && (
+                    <div className="space-y-3 rounded-xl border border-teal-200 bg-teal-50/40 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="flex items-center gap-1.5 text-sm font-bold text-teal-900">
+                          <I.sparkles size={16} /> پیشنهاد هوشمند پرداخت
+                          <Badge variant="outline" className="border-teal-300 bg-white text-[10px] text-teal-800">{smart.tierLabel} · تا {fa(smart.maxN)} چک</Badge>
+                        </p>
+                        <p className="text-[11px] text-stone-500">
+                          مبلغ {money(smart.amount)} ریال · موعد {faSlash(smart.target?.date)} · رند {money(smart.settings?.split?.roundTo)} ریال
+                        </p>
+                      </div>
+                      {(lim.day || lim.week || lim.month) > 0 && (
+                        <p className="text-[11px] text-stone-600">
+                          سقف‌ها: روزانه {money(lim.day)} · هفتگی {money(lim.week)} · ماهانه {money(lim.month)} ریال
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {/* گزینه پرداخت کامل */}
+                        {smart.full && (
+                          <button
+                            type="button"
+                            disabled={applyingSmart !== ''}
+                            onClick={() => void applySmart(smart.full)}
+                            className={cn(
+                              'rounded-xl border p-3 text-start transition-colors disabled:opacity-60',
+                              smart.full.ok ? 'border-emerald-300 bg-emerald-50 hover:border-emerald-500' : 'border-amber-300 bg-amber-50',
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-bold text-stone-800">پرداخت کامل — یک چک</p>
+                              {applyingSmart === `full-${smart.full.cheques[0]?.date}` && <I.loader size={14} className="animate-spin" />}
+                            </div>
+                            <p className="mt-1 num text-[12px] text-stone-700">
+                              {smart.full.cheques[0] ? `${faSlash(smart.full.cheques[0].date)} · ${weekdayOf(smart.full.cheques[0].date)}` : ''} — <b>{money(smart.full.cheques[0]?.amount)}</b> ریال
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4 text-stone-500">ثبت به‌عنوان برنامه پرداخت روی تقویم</p>
+                            {smart.full.warnings?.map((w: string, i: number) => (
+                              <p key={i} className="mt-1 text-[10px] leading-4 text-amber-800">⚠ {w}</p>
+                            ))}
+                          </button>
+                        )}
+                        {/* گزینه‌های خرد کردن */}
+                        {(smart.options || []).map((opt: any) => (
+                          <button
+                            key={opt.n}
+                            type="button"
+                            disabled={applyingSmart !== ''}
+                            onClick={() => void applySmart(opt)}
+                            className={cn(
+                              'rounded-xl border p-3 text-start transition-colors disabled:opacity-60',
+                              opt.ok ? 'border-teal-300 bg-white hover:border-teal-500' : 'border-rose-300 bg-rose-50',
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-bold text-stone-800">{fa(opt.n)} چک — {money(opt.cheques?.[0]?.amount || 0)} تا {money(opt.cheques?.[opt.cheques.length - 1]?.amount || 0)} ریال</p>
+                              {applyingSmart === `full-${opt.cheques?.[0]?.date}` && <I.loader size={14} className="animate-spin" />}
+                            </div>
+                            <div className="mt-1.5 space-y-1">
+                              {(opt.cheques || []).map((c: any, i: number) => (
+                                <div key={c.date} className="flex items-center justify-between gap-2 rounded-lg bg-stone-50 px-2 py-1">
+                                  <span className="text-[10px] text-stone-500">چک {fa(i + 1)}</span>
+                                  <span className="num text-[11px] text-stone-700">{faSlash(c.date)} · {c.weekday || weekdayOf(c.date)}</span>
+                                  <span className="num text-[12px] font-bold text-stone-800">{money(c.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="mt-1.5 text-[10px] leading-4 text-stone-500">جمع: {money(opt.sum)} ریال — ثبت {fa(opt.n)} برنامه روی تقویم</p>
+                            {(opt.warnings || []).map((w: string, i: number) => (
+                              <p key={i} className="mt-1 text-[10px] leading-4 text-rose-700">⚠ {w}</p>
+                            ))}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] leading-4 text-stone-400">{smart.note}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -921,13 +1353,15 @@ export default function ChequesView() {
                   </div>
                 </div>
 
-                <div className="mb-1.5 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-stone-500">
-                  {WEEKDAY_FA.map((w) => <div key={w}>{w}</div>)}
+                <div className="mb-1.5 grid grid-cols-7 gap-1.5 text-center text-[11px] font-bold text-stone-500">
+                  {WEEKDAY_FA.map((w, i) => (
+                    <div key={w} className={i === 6 ? 'text-rose-500' : undefined}>{w}</div>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-7 gap-1.5">
                   {cells.map((d, i) => {
-                    if (!d) return <div key={`blank-${i}`} className="min-h-20 rounded-lg bg-stone-50" aria-hidden="true" />
+                    if (!d) return <div key={`blank-${i}`} className="min-h-[88px] rounded-lg bg-stone-50" aria-hidden="true" />
                     const dayPlans = plansByDate.get(d) || []
                     const dayCheques = chequesByDate.get(d) || []
                     const dayHols = holidayByDate.get(d) || []
@@ -941,13 +1375,15 @@ export default function ChequesView() {
                         key={d}
                         onClick={() => { setSelDay(d); setQaOpen(false) }}
                         title={[
+                          longFa(d),
+                          secondDateLongFa(d),
                           dayHols.length ? `تعطیل: ${dayHols.map((h: any) => h.title).join(' و ')}` : '',
                           isFriday ? 'جمعه' : '',
                           dayPlans.length ? `${fa(dayPlans.length)} برنامه پرداخت` : '',
                           dayCheques.length ? `${fa(dayCheques.length)} چک سررسید` : '',
-                        ].filter(Boolean).join(' — ')}
+                        ].filter(Boolean).join('\n')}
                         className={cn(
-                          'min-h-20 cursor-pointer rounded-lg border p-1.5 text-start transition-colors hover:border-emerald-400',
+                          'flex min-h-[88px] cursor-pointer flex-col rounded-lg border p-1.5 text-start transition-colors hover:border-emerald-400',
                           isSel ? 'border-emerald-600 ring-2 ring-emerald-500/40'
                             : isToday ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-500/25'
                             : dayHols.length ? 'border-rose-300 bg-rose-50'
@@ -956,9 +1392,11 @@ export default function ChequesView() {
                             : 'border-transparent bg-stone-50',
                         )}
                       >
-                        <span className={cn('num text-xs font-bold', isToday ? 'text-emerald-700' : dayHols.length ? 'text-rose-700' : 'text-stone-700')}>{toFaDigits(Number(d.slice(8)))}</span>
-                        {dayHols.length > 0 && <span className="mt-0.5 block truncate text-[9px] leading-tight text-rose-700">{dayHols[0]?.title}{dayHols.length > 1 ? ` +${toFaDigits(dayHols.length - 1)}` : ''}</span>}
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                        <span className={cn('num text-[13px] font-black leading-5', isToday ? 'text-emerald-700' : dayHols.length ? 'text-rose-700' : 'text-stone-700')}>{toFaDigits(Number(d.slice(8)))}</span>
+                        {/* ریزتاریخ هجری/میلادی — خوانا (≥۱۰px) */}
+                        <span dir="rtl" className="truncate text-[10px] leading-3 text-stone-400">{secondDateFa(d)}</span>
+                        {dayHols.length > 0 && <span className="mt-0.5 block truncate text-[10px] leading-4 text-rose-700">{dayHols[0]?.title}{dayHols.length > 1 ? ` +${toFaDigits(dayHols.length - 1)}` : ''}</span>}
+                        <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
                           {dayHols.length > 0 && (
                             <span className="h-2 w-2 rounded-full bg-rose-500" title={dayHols.map((h: any) => h.title).join(' و ')} />
                           )}
@@ -966,10 +1404,10 @@ export default function ChequesView() {
                             <span key={k} className={cn('h-2 w-2 rounded-full', KIND_DOT[k] || 'bg-stone-400')} title={KIND_LABEL[k] || k} />
                           ))}
                           {dayCheques.length > 0 && (
-                            <span className="rounded bg-amber-100 px-1 text-[9px] font-bold leading-4 text-amber-800">{fa(dayCheques.length)} چک</span>
+                            <span className="rounded bg-amber-100 px-1 text-[10px] font-bold leading-4 text-amber-800">{fa(dayCheques.length)} چک</span>
                           )}
                           {dayPlans.length > kinds.length + (dayHols.length ? 1 : 0) && (
-                            <span className="text-[9px] text-stone-400">+{fa(dayPlans.length - kinds.length - (dayHols.length ? 1 : 0))}</span>
+                            <span className="text-[10px] text-stone-400">+{fa(dayPlans.length - kinds.length - (dayHols.length ? 1 : 0))}</span>
                           )}
                         </div>
                       </button>
@@ -1007,6 +1445,7 @@ export default function ChequesView() {
                       <div>
                         <p className="text-sm font-black text-stone-800">{longFa(selDay)}</p>
                         <p className="num mt-0.5 text-[11px] text-stone-500">{faSlash(selDay)} · {weekdayOf(selDay)}</p>
+                        <p dir="rtl" className="mt-0.5 text-[11px] text-stone-400">{secondDateLongFa(selDay)}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         {selIsFriday && <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-700">جمعه — روز تعطیل هفتگی</Badge>}
@@ -1145,7 +1584,7 @@ export default function ChequesView() {
           <DialogHeader>
             <DialogTitle>{editing ? 'ویرایش چک' : 'ثبت چک جدید'}</DialogTitle>
             <DialogDescription>
-              {editing ? 'فقط چک‌های «در انتظار امضا» قابل ویرایش هستند.' : 'چک دریافتنی از مشتری یا صادره فروشگاه ثبت می‌شود.'}
+              {editing ? 'اطلاعات چک اصلاح می‌شود — هر تغییر در تاریخچهٔ چک ثبت می‌گردد.' : 'چک دریافتنی از مشتری یا صادره فروشگاه ثبت می‌شود و به مالک برای تأیید و امضا ارسال می‌شود.'}
               {form.dueDate && ` — سررسید: ${longFa(form.dueDate)}`}
             </DialogDescription>
           </DialogHeader>
@@ -1192,6 +1631,48 @@ export default function ChequesView() {
               <label className="text-xs text-stone-600">یادداشت</label>
               <Textarea rows={2} value={form.note} onChange={(e: any) => setForm((f) => ({ ...f, note: e.target.value }))} placeholder="اختیاری…" />
             </div>
+
+            {/* ═══ اطلاعات گیرنده و صدور (new-4.txt سطر ۵۶: نام/موبایل دریافت‌کننده + تاریخ/ساعت) ═══ */}
+            <div className="space-y-2.5 rounded-lg border border-stone-200 bg-stone-50/60 p-3">
+              <p className="text-xs font-bold text-stone-700">اطلاعات گیرنده و صدور <span className="font-normal text-stone-400">(اختیاری هنگام ثبت — هنگام «تحویل» نیز پرسیده می‌شود)</span></p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-stone-600">تاریخ صدور (شمسی)</label>
+                  <JInput value={form.writtenAt} onChange={(v: string) => setForm((f) => ({ ...f, writtenAt: v }))} quick={false} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-stone-600">ساعت صدور / تحویل</label>
+                  <TimeInput value={form.issuedTime} onChange={(v: string) => setForm((f) => ({ ...f, issuedTime: v }))} placeholder="۰۹:۳۰" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-stone-600">نام دریافت‌کننده چک</label>
+                  <Input value={form.receiverName} onChange={(e: any) => setForm((f) => ({ ...f, receiverName: e.target.value }))} placeholder="مثلاً: خانم رضایی — حسابدار شیرین عسل" maxLength={80} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-stone-600">موبایل دریافت‌کننده</label>
+                  <Input dir="ltr" inputMode="tel" className="num text-center" value={form.receiverPhone ? toFaDigits(form.receiverPhone) : ''} onChange={(e: any) => setForm((f) => ({ ...f, receiverPhone: toEnDigits(String(e.target.value)).replace(/[^\d+]/g, '') }))} placeholder="۰۹۱۲۳۴۵۶۷۸۹" maxLength={14} />
+                </div>
+              </div>
+            </div>
+
+            {/* وضعیت دستی — فقط در ویرایش (گردش کامل توسط دکمه‌های اقدامات انجام می‌شود) */}
+            {editing && (
+              <div className="space-y-1.5">
+                <label className="text-xs text-stone-600">وضعیت (تنظیم دستی — اختیاری)</label>
+                <Select value={form.status || editing.status} onValueChange={(v: string) => setForm((f) => ({ ...f, status: v }))}>
+                  <SelectTrigger className="h-9 text-xs" aria-label="وضعیت چک"><SelectValue /></SelectTrigger>
+                  <SelectContent dir="rtl">
+                    {EDITABLE_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>{STATUS_LABELS[s] || s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-stone-400">در صورت تغییر، از این وضعیت به وضعیت انتخابی منتقل می‌شود (در تاریخچه ثبت می‌گردد).</p>
+              </div>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>انصراف</Button>
               <Button type="submit" disabled={savingForm} className="gap-2">
@@ -1245,6 +1726,111 @@ export default function ChequesView() {
                 </div>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════ دیالوگ تحویل چک — اطلاعات دریافت‌کننده + تاریخ/ساعت (new-4.txt سطر ۵۶) ═══════════ */}
+      <Dialog open={!!deliverDlg} onOpenChange={(o: boolean) => { if (!o) setDeliverDlg(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>تحویل چک <span dir="ltr" className="font-mono text-sm">{deliverDlg?.number}</span></DialogTitle>
+            <DialogDescription>
+              {deliverDlg ? `${money(deliverDlg.amount)} ریال — سررسید ${faSlash(deliverDlg.dueDate)} (${weekdayOf(deliverDlg.dueDate)}) — گیرنده: ${deliverDlg.recipient || '—'}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-stone-600">نام دریافت‌کننده *</label>
+                <Input value={dv.receiverName} onChange={(e: any) => setDv((f) => ({ ...f, receiverName: e.target.value }))} placeholder="نام کامل دریافت‌کننده چک" maxLength={80} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-stone-600">موبایل دریافت‌کننده</label>
+                <Input dir="ltr" inputMode="tel" className="num text-center" value={dv.receiverPhone ? toFaDigits(dv.receiverPhone) : ''} onChange={(e: any) => setDv((f) => ({ ...f, receiverPhone: toEnDigits(String(e.target.value)).replace(/[^\d+]/g, '') }))} placeholder="۰۹۱۲۳۴۵۶۷۸۹" maxLength={14} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-stone-600">تاریخ تحویل (شمسی)</label>
+                <JInput value={dv.date} onChange={(v: string) => setDv((f) => ({ ...f, date: v }))} quick={false} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-stone-600">ساعت تحویل</label>
+                <TimeInput value={dv.time} onChange={(v: string) => setDv((f) => ({ ...f, time: v }))} placeholder="۱۴:۳۰" />
+              </div>
+            </div>
+            <p className="text-[11px] leading-5 text-stone-500">چک به وضعیت «تحویل شده» می‌رود و اطلاعات دریافت‌کننده و زمان تحویل در تاریخچهٔ چک ثبت می‌شود.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setDeliverDlg(null)}>انصراف</Button>
+              <Button disabled={deliverBusy} onClick={() => void submitDeliver()} className="gap-2">
+                {deliverBusy ? <I.loader size={15} className="animate-spin" /> : <I.send size={15} />} ثبت تحویل
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════ دیالوگ تنظیم سقف‌ها و پارامترهای چک (cheque:limits / cheque:split) ═══════════ */}
+      <Dialog open={setOpen} onOpenChange={setSetOpen}>
+        <DialogContent className="max-h-[85vh] max-w-md overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><I.settings size={16} /> سقف‌ها و پارامترهای چک</DialogTitle>
+            <DialogDescription>
+              سقف پرداخت روزانه/هفتگی/ماهانه و قواعد خرد کردن هوشمند — محاسبه‌گر و تقویم پرداخت از همین مقادیر پیروی می‌کنند.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2.5 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+              <p className="text-xs font-bold text-stone-700">سقف پرداخت (ریال)</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">روزانه</label>
+                  <AmountInput value={String(lim.day || '')} onChange={(v) => setLim((f: any) => ({ ...f, day: v }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">هفتگی</label>
+                  <AmountInput value={String(lim.week || '')} onChange={(v) => setLim((f: any) => ({ ...f, week: v }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">ماهانه</label>
+                  <AmountInput value={String(lim.month || '')} onChange={(v) => setLim((f: any) => ({ ...f, month: v }))} />
+                </div>
+              </div>
+              <p className="text-[10px] leading-4 text-stone-500">۰ یا خالی = بدون سقف. تجاوز از سقف‌ها در پیشنهاد هوشمند هشدار می‌گیرد.</p>
+            </div>
+            <div className="space-y-2.5 rounded-lg border border-teal-200 bg-teal-50/40 p-3">
+              <p className="text-xs font-bold text-stone-700">خرد کردن هوشمند پرداخت</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">حداکثر تعداد چک (مبلغ متوسط)</label>
+                  <Input dir="ltr" inputMode="numeric" className="num text-center" value={spl.mediumMax ? toFaDigits(String(spl.mediumMax)) : ''} onChange={(e: any) => setSpl((f: any) => ({ ...f, mediumMax: Number(toEnDigits(String(e.target.value)).replace(/[^\d]/g, '')) || 0 }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">حداکثر تعداد چک (مبلغ سنگین)</label>
+                  <Input dir="ltr" inputMode="numeric" className="num text-center" value={spl.heavyMax ? toFaDigits(String(spl.heavyMax)) : ''} onChange={(e: any) => setSpl((f: any) => ({ ...f, heavyMax: Number(toEnDigits(String(e.target.value)).replace(/[^\d]/g, '')) || 0 }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">آستانهٔ مبلغ متوسط (ریال)</label>
+                  <AmountInput value={String(spl.mediumThreshold || '')} onChange={(v) => setSpl((f: any) => ({ ...f, mediumThreshold: v }))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-stone-500">آستانهٔ مبلغ سنگین (ریال)</label>
+                  <AmountInput value={String(spl.heavyThreshold || '')} onChange={(v) => setSpl((f: any) => ({ ...f, heavyThreshold: v }))} />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[11px] text-stone-500">رند کردن مبالغ به (ریال)</label>
+                  <AmountInput value={String(spl.roundTo || '')} onChange={(v) => setSpl((f: any) => ({ ...f, roundTo: v }))} />
+                </div>
+              </div>
+              <p className="text-[10px] leading-4 text-stone-500">مبالغ بالای آستانه به چند چک خرد می‌شوند (تا سقف تعیین‌شده) و مبالغ به مضرب «رند» گرد می‌شوند.</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setSetOpen(false)}>انصراف</Button>
+              <Button onClick={() => void saveSettings()} disabled={setSaving} className="gap-2">
+                {setSaving ? <I.loader size={15} className="animate-spin" /> : <I.save size={15} />} ذخیره تنظیمات
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

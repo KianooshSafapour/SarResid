@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser, isManager } from '@/lib/auth'
+import { monthsBetween, syncPayrollInputs } from '@/lib/hr-attendance'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,17 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     where: { id },
     data: { status, responseNote, approverId: user.id, approverName: user.fullName },
   })
+
+  // R5-C: مرخصی تأییدشده → بازتولید جمع‌بندی ماه‌های درگیر برای سیستم حقوق
+  if (status === 'APPROVED') {
+    try {
+      for (const m of monthsBetween(updated.fromDate, updated.toDate)) {
+        await syncPayrollInputs(m.year, m.month)
+      }
+    } catch {
+      // همگام‌سازی حقوق هرگز جریان تأیید را نمی‌شکند
+    }
+  }
 
   await logActivity({
     userId: user.id,

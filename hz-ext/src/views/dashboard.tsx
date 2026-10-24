@@ -495,8 +495,20 @@ export default function DashboardView() {
                 <I.sparkles className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-base font-extrabold text-stone-700">
-                  {greeting}، {user?.honorific ? `${user.honorific} ` : ''}{user?.fullName || 'همکار گرامی'}
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-base font-extrabold text-stone-700">
+                    {greeting}، {user?.honorific ? `${user.honorific} ` : ''}{user?.fullName || 'همکار گرامی'}
+                  </span>
+                  {/* شخصی‌سازی میزکار — دکمهٔ فشرده در سربرگ (R5-P5: از ردیف اقدامات سریع حذف شد) */}
+                  <button
+                    type="button"
+                    onClick={openPz}
+                    className="shrink-0 rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-emerald-700"
+                    title="شخصی‌سازی میزکار (نمایش/پنهان و جابه‌جایی کارت‌ها)"
+                    aria-label="شخصی‌سازی میزکار"
+                  >
+                    <I.settings className="h-4 w-4" />
+                  </button>
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-stone-500">
                   <I.calendarDays className="h-3.5 w-3.5 text-emerald-600" />
@@ -532,7 +544,7 @@ export default function DashboardView() {
           </CardContent>
         </Card>
 
-        {/* اقدامات سریع + شخصی‌سازی */}
+        {/* اقدامات سریع — «شخصی‌سازی» حذف شد (R5-P5: صفحهٔ شخصی‌سازی از منوی کاربر «پروفایل من» در دسترس است؛ شخصی‌سازی میزکار با دکمهٔ چرخ‌دنده در سربرگ) */}
         <div className="flex flex-wrap items-start gap-2">
           {actions.map((a) => (
             <Button key={a.go} variant="outline" size="sm" className="gap-1.5" onClick={() => go(a.go)}>
@@ -540,10 +552,6 @@ export default function DashboardView() {
               {a.label}
             </Button>
           ))}
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={openPz}>
-            <I.settings size={14} />
-            شخصی‌سازی
-          </Button>
         </div>
       </div>
 

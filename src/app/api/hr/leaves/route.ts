@@ -7,13 +7,18 @@ export const dynamic = 'force-dynamic'
 
 const LEAVE_TYPES = ['HOURLY', 'DAILY', 'SICK', 'UNPAID']
 
-/** GET /api/hr/leaves → {manager, items} */
-export async function GET() {
+/** GET /api/hr/leaves → {manager, items} — ?userId= فقط مرخصی‌های یک پرسنل (تب سوابق پرونده) */
+export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
 
+  const userIdFilter = req.nextUrl.searchParams.get('userId') || ''
+
   const [leaves, users] = await Promise.all([
-    db.leaveRequest.findMany({ orderBy: { createdAt: 'desc' } }),
+    db.leaveRequest.findMany({
+      where: userIdFilter ? { userId: userIdFilter } : undefined,
+      orderBy: { createdAt: 'desc' },
+    }),
     db.user.findMany(),
   ])
   const userById = new Map(users.map((u) => [u.id, u]))

@@ -8,6 +8,38 @@ export const dynamic = 'force-dynamic'
 
 export const MARGIN_ROLES = ['OWNER', 'GM', 'ADMIN', 'ACC']
 
+/** R5-B: آستانه‌های سود — قابل تنظیم توسط مدیران ارشد (Setting margin:thresholds) */
+export interface MarginThresholds {
+  alert: number
+  ok: number
+}
+export const DEFAULT_MARGIN_THRESHOLDS: MarginThresholds = { alert: 12, ok: 21 }
+export const MARGIN_THRESHOLDS_KEY = 'margin:thresholds'
+
+export function parseMarginThresholds(raw: string | null | undefined): MarginThresholds {
+  if (!raw) return DEFAULT_MARGIN_THRESHOLDS
+  try {
+    const parsed = JSON.parse(raw)
+    const alert = Number(parsed?.alert)
+    const ok = Number(parsed?.ok)
+    if (Number.isFinite(alert) && Number.isFinite(ok) && alert >= 0 && ok > alert && ok <= 500) {
+      return { alert, ok }
+    }
+  } catch {
+    /* مقدار خراب → پیش‌فرض */
+  }
+  return DEFAULT_MARGIN_THRESHOLDS
+}
+
+export async function getMarginThresholds(): Promise<MarginThresholds> {
+  const row = await db.setting.findUnique({ where: { key: MARGIN_THRESHOLDS_KEY } })
+  return parseMarginThresholds(row?.value)
+}
+
+function round4(n: number): number {
+  return Math.round(n * 10000) / 10000
+}
+
 export interface MarginItemInput {
   productId: string | null
   barcode: string | null
@@ -17,20 +49,35 @@ export interface MarginItemInput {
   totalCost: number
   printedPrice: number
   note: string | null
+  /* ── R5-B ── */
+  salePrice?: number // قیمت فروش نهایی (۰ = همان قیمت چاپی)
+  marginPct?: number // درصد سود ۴ رقمی روی بهای خرید (کلید واگذار برای کالای رایگان)
+  free100?: boolean // تخفیف ۱۰۰٪ / رایگان
+  baseCost?: number // مبنای محاسبهٔ فروش کالای رایگان
 }
 
-/** per-item derived values (live contract):
- *  unitCost = totalCost/qty · margin = (printed-unitCost)/printed (fraction) ·
- *  profitPerUnit = printed-unitCost · level from markup (printed-unitCost)/unitCost ×100 */
-export function deriveItem(it: MarginItemInput) {
-  const quantity = Math.max(1, Math.trunc(Number(it.quantity) || 1))
-  const totalCost = Math.max(0, Math.round(Number(it.totalCost) || 0))
-  const printedPrice = Math.max(0, Math.round(Number(it.printedPrice) || 0))
+/** per-item derived values (R5-B live contract):
+ *  quantity اعشاری مجاز (اقلام وزنی) · unitCost = totalCost/qty ·
+ *  sale = salePrice || printedPrice (سازگار با ردیف‌های قدیمی) ·
+ *  margin = (sale-unitCost)/sale (کسر — سازگار با stats قدیمی) ·
+ *  marginPct = (sale-unitCost)/unitCost×100 با ۴ رقم اعشار — همان عدد حسابدار ·
+ *  کالای رایگان: totalCost=printedPrice=0، درصد سود از ورودی، level=OK */
+export function deriveItem(it: MarginItemInput, th: MarginThresholds = DEFAULT_MARGIN_THRESHOLDS) {
+  const quantity = Math.max(1, Math.round((Number(it.quantity) || 1) * 1000) / 1000)
+  const free100 = it.free100 === true
+  const totalCost = free100 ? 0 : Math.max(0, Math.round(Number(it.totalCost) || 0))
+  const printedPrice = free100 ? 0 : Math.max(0, Math.round(Number(it.printedPrice) || 0))
+  const baseCost = Math.max(0, Math.round(Number(it.baseCost) || 0))
   const unitCost = quantity > 0 ? totalCost / quantity : 0
-  const profitPerUnit = printedPrice - unitCost
-  const margin = printedPrice > 0 ? (printedPrice - unitCost) / printedPrice : 0
-  const markup = unitCost > 0 ? ((printedPrice - unitCost) / unitCost) * 100 : printedPrice > 0 ? 1000 : 0
-  const level = markup < 0 ? 'CRITICAL' : markup < 12 ? 'WARN' : 'OK'
+  const salePrice = Math.max(0, Math.round(Number(it.salePrice) || 0)) || printedPrice
+  const profitPerUnit = salePrice - unitCost
+  const margin = salePrice > 0 ? (salePrice - unitCost) / salePrice : 0
+  const marginPct = free100
+    ? round4(Math.max(0, Number(it.marginPct) || 0))
+    : unitCost > 0
+      ? round4((profitPerUnit / unitCost) * 100)
+      : 0
+  const level = free100 ? 'OK' : marginPct < 0 ? 'CRITICAL' : marginPct < th.alert ? 'WARN' : 'OK'
   return {
     productId: it.productId,
     barcode: it.barcode,
@@ -40,6 +87,10 @@ export function deriveItem(it: MarginItemInput) {
     totalCost,
     unitCost,
     printedPrice,
+    salePrice,
+    marginPct,
+    free100,
+    baseCost,
     margin,
     profitPerUnit,
     note: it.note,
@@ -53,7 +104,7 @@ export function invoiceDateKey(inv: { dateJalali: string | null; createdAt: Date
   return inv.dateJalali || formatJalaliDash(inv.createdAt)
 }
 
-/** list row (live margin.json shape) */
+/** list row (live margin.json shape + R5-B fields) */
 export function invoiceListOut(inv: {
   id: string
   number: number
@@ -64,12 +115,14 @@ export function invoiceListOut(inv: {
   archivedAt: Date | null
   createdAt: Date
   dateJalali: string | null
-  items: { quantity: number; totalCost: number; printedPrice: number }[]
+  providerDocNumber?: string | null
+  purchaseOrderId?: string | null
+  items: { quantity: number; totalCost: number; printedPrice: number; salePrice?: number }[]
 }) {
   const itemCount = inv.items.length
   const totalQty = inv.items.reduce((s, i) => s + i.quantity, 0)
   const totalCost = inv.items.reduce((s, i) => s + i.totalCost, 0)
-  const revenue = inv.items.reduce((s, i) => s + i.printedPrice * i.quantity, 0)
+  const revenue = inv.items.reduce((s, i) => s + (i.salePrice || i.printedPrice) * i.quantity, 0)
   const profit = revenue - totalCost
   const margin = totalCost > 0 ? (profit / totalCost) * 100 : null
   return {
@@ -79,6 +132,8 @@ export function invoiceListOut(inv: {
     supplierName: inv.supplierName,
     note: inv.note,
     status: inv.status,
+    providerDocNumber: inv.providerDocNumber ?? null,
+    purchaseOrderId: inv.purchaseOrderId ?? null,
     archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : null,
     createdAt: inv.createdAt.toISOString(),
     itemCount,
@@ -105,7 +160,7 @@ export async function GET(req: NextRequest) {
   const rows = await db.marginInvoice.findMany({
     where: archived === 'archived' ? { archived: true } : archived === 'all' ? {} : { archived: false },
     orderBy: { createdAt: 'desc' },
-    include: { items: { select: { quantity: true, totalCost: true, printedPrice: true } } },
+    include: { items: { select: { quantity: true, totalCost: true, printedPrice: true, salePrice: true } } },
   })
 
   let list = rows
@@ -129,7 +184,7 @@ export async function GET(req: NextRequest) {
   return ok({ invoices: list.map(invoiceListOut) })
 }
 
-/** POST /api/margin — {supplierId?, supplierName?, note?, items:[…]} */
+/** POST /api/margin — {supplierId?, supplierName?, note?, providerDocNumber?, dateJalali?, items:[…]} */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
@@ -143,26 +198,36 @@ export async function POST(req: NextRequest) {
 
   const supplierId = String(body.supplierId ?? '').trim() || null
   const note = String(body.note ?? '').trim() || null
+  const providerDocNumber = String(body.providerDocNumber ?? '').trim() || null
 
   const rawItems = Array.isArray(body.items) ? body.items : []
   if (rawItems.length === 0) return fail('فاکتور باید حداقل یک قلم داشته باشد')
 
+  const thresholds = await getMarginThresholds()
+
   const prepared = rawItems.map((raw: Record<string, unknown>) => {
     const name = String(raw?.productName ?? '').trim()
     if (!name) return { error: 'نام کالا را وارد کنید' }
-    const quantity = Math.trunc(Number(raw?.quantity) || 0)
+    const quantity = Math.round((Number(raw?.quantity) || 0) * 1000) / 1000
     if (quantity < 1) return { error: 'تعداد باید بزرگ‌تر از صفر باشد' }
     return {
-      value: deriveItem({
-        productId: raw?.productId ? String(raw.productId) : null,
-        barcode: raw?.barcode ? String(raw.barcode).trim() : null,
-        productName: name,
-        unit: String(raw?.unit ?? 'عدد').trim() || 'عدد',
-        quantity,
-        totalCost: Number(raw?.totalCost) || 0,
-        printedPrice: Number(raw?.printedPrice) || 0,
-        note: raw?.note ? String(raw.note).trim() : null,
-      }) as MarginItemInput & { alertsJson: string },
+      value: deriveItem(
+        {
+          productId: raw?.productId ? String(raw.productId) : null,
+          barcode: raw?.barcode ? String(raw.barcode).trim() : null,
+          productName: name,
+          unit: String(raw?.unit ?? 'عدد').trim() || 'عدد',
+          quantity,
+          totalCost: Number(raw?.totalCost) || 0,
+          printedPrice: Number(raw?.printedPrice) || 0,
+          note: raw?.note ? String(raw.note).trim() : null,
+          salePrice: Number(raw?.salePrice) || 0,
+          marginPct: Number(raw?.marginPct) || 0,
+          free100: raw?.free100 === true,
+          baseCost: Number(raw?.baseCost) || 0,
+        },
+        thresholds,
+      ) as MarginItemInput & { alertsJson: string },
     }
   })
   for (const p of prepared) if ('error' in p) return fail(p.error as string)
@@ -179,6 +244,7 @@ export async function POST(req: NextRequest) {
       supplierName,
       note,
       status: 'draft',
+      providerDocNumber,
       dateJalali: (typeof body?.dateJalali === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dateJalali.trim())) ? body.dateJalali.trim() : todayJalaliDash(),
       items: { create: items },
     },
@@ -194,5 +260,5 @@ export async function POST(req: NextRequest) {
     entityId: created.id,
   })
 
-  return ok({ id: created.id, number: created.number, status: created.status, archived: created.archived })
+  return ok({ id: created.id, number: created.number, status: created.status, archived: created.archived, providerDocNumber })
 }

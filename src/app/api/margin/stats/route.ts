@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   // ---- kpis ----
   const totalPurchase = items.reduce((s, { it }) => s + it.totalCost, 0)
-  const totalRevenue = items.reduce((s, { it }) => s + it.printedPrice * it.quantity, 0)
+  const totalRevenue = items.reduce((s, { it }) => s + (it.salePrice || it.printedPrice) * it.quantity, 0)
   const totalProfit = totalRevenue - totalPurchase
   const weightedMargin = totalPurchase > 0 ? (totalProfit / totalPurchase) * 100 : null
 
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
     }
     for (const it of inv.items) {
       g.purchase += it.totalCost
-      g.revenue += it.printedPrice * it.quantity
+      g.revenue += (it.salePrice || it.printedPrice) * it.quantity
     }
     g.profit = g.revenue - g.purchase
     g.invoices += 1
@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
     }
     for (const it of inv.items) {
       g.purchase += it.totalCost
-      g.revenue += it.printedPrice * it.quantity
+      g.revenue += (it.salePrice || it.printedPrice) * it.quantity
     }
     g.profit = g.revenue - g.purchase
     g.invoices += 1

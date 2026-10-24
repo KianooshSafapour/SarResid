@@ -4,10 +4,11 @@ import { ok, fail, logActivity, safeJson, clampInt } from '@/lib/api'
 import { getSessionUser, isManager, MANAGER_ROLES } from '@/lib/auth'
 import { displayName } from '@/lib/notify'
 import { addDaysJalaliDash, todayJalaliDash } from '@/lib/jalali'
+import { laneOfColumn } from '@/app/api/store/lanes/route'
 
 export const dynamic = 'force-dynamic'
 
-/** product-bearing block kinds (carry goods → column-based date checking) */
+/** product-bearing block kinds (carry goods → lane-based date checking) */
 function isProductBlock(kind: string): boolean {
   return (
     kind === 'GONDOLA' ||
@@ -32,7 +33,7 @@ export function cycleDaysOfKind(kind: string): number {
 }
 
 export interface SectionColumnState {
-  columns: { id: string; name: string; order: number; active: boolean }[]
+  columns: { id: string; name: string; order: number; active: boolean; products: { productId: string; name: string; capacity: number }[]; target: number; remaining: number | null; threshold: number; minCount: number | null; lastCharge: { count: number; at: string; by: string } | null; lastCount: { count: number; at: string; by: string } | null; low: boolean }[]
   lastCheckedAt: string | null
   lastCheckedColumns: string[]
   nextStart: string | null
@@ -78,8 +79,9 @@ export async function columnStatesByBlock(planId?: string): Promise<Map<string, 
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   })
 
+  // R5-E: هر ردیف با وضعیت شارژ (محصولات/ظرفیت/آخرین شارژ) غنی‌سازی می‌شود
   for (const [blockLabel, list] of byBlock) {
-    const columns = list.map((c) => ({ id: c.id, name: c.name, order: c.order, active: c.active }))
+    const columns = list.map((c) => ({ id: c.id, name: c.name, order: c.order, active: c.active, ...laneOfColumn(c) }))
     const active = columns.filter((c) => c.active)
     const blockChecks = checks.filter((ch) => ch.blockLabel === blockLabel)
     const latest = blockChecks[0] || null
@@ -157,7 +159,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('نیاز به ورود', 401)
-  if (!isManager(me)) return fail('فقط مدیران می‌توانند ستون تعریف کنند', 403)
+  if (!isManager(me)) return fail('فقط مدیران می‌توانند ردیف تعریف کنند', 403)
 
   const body = (await req.json().catch(() => ({}))) as {
     planId?: string
@@ -167,7 +169,7 @@ export async function POST(req: NextRequest) {
   }
 
   const name = String(body.name || '').trim().slice(0, 60)
-  if (!name) return fail('نام ستون را وارد کنید')
+  if (!name) return fail('نام ردیف را وارد کنید')
   const blockLabel = String(body.blockLabel || '').trim()
   if (!blockLabel) return fail('بخش (برچسب بلوک) را انتخاب کنید')
 
@@ -182,7 +184,7 @@ export async function POST(req: NextRequest) {
   const dup = await db.zoneColumn.findUnique({
     where: { planId_blockLabel_name: { planId: plan.id, blockLabel, name } },
   })
-  if (dup) return fail('ستونی با این نام در این بخش قبلاً ثبت شده است')
+  if (dup) return fail('ردیفی با این نام در این بخش قبلاً ثبت شده است')
 
   const last = await db.zoneColumn.findFirst({
     where: { planId: plan.id, blockLabel },
@@ -198,9 +200,9 @@ export async function POST(req: NextRequest) {
     userId: me.id,
     userName: displayName(me),
     action: 'store.section-column',
-    actionLabel: 'ستون چیدمان',
+    actionLabel: 'ردیف چیدمان',
     category: 'store',
-    detail: `افزودن ستون «${name}» به بخش ${blockLabel}`,
+    detail: `افزودن ردیف «${name}» به بخش ${blockLabel}`,
     entityId: column.id,
   })
 

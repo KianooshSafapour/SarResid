@@ -10,16 +10,16 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 /**
  * PATCH /api/store/section-columns/[id] — managers only.
- *  {name?, order?, active?} → update  |  {action:'delete'} → delete
+ *  {name?, order?, active?} → update  |  {action:'delete'} → delete (ردیف = ZoneColumn)
  */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('نیاز به ورود', 401)
-  if (!isManager(me)) return fail('فقط مدیران می‌توانند ستون‌ها را ویرایش کنند', 403)
+  if (!isManager(me)) return fail('فقط مدیران می‌توانند ردیف‌ها را ویرایش کنند', 403)
 
   const { id } = await ctx.params
   const column = await db.zoneColumn.findUnique({ where: { id } })
-  if (!column) return fail('ستون یافت نشد', 404)
+  if (!column) return fail('ردیف یافت نشد', 404)
 
   const body = (await req.json().catch(() => ({}))) as {
     action?: string
@@ -35,9 +35,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       userId: me.id,
       userName: displayName(me),
       action: 'store.section-column',
-      actionLabel: 'ستون چیدمان',
+      actionLabel: 'ردیف چیدمان',
       category: 'store',
-      detail: `حذف ستون «${column.name}» از بخش ${column.blockLabel}`,
+      detail: `حذف ردیف «${column.name}» از بخش ${column.blockLabel}`,
       entityId: id,
     })
     return ok({ deleted: true })
@@ -48,14 +48,14 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const data: { name?: string; order?: number; active?: boolean } = {}
   if (body.name !== undefined) {
     const name = String(body.name || '').trim().slice(0, 60)
-    if (!name) return fail('نام ستون را وارد کنید')
+    if (!name) return fail('نام ردیف را وارد کنید')
     if (name !== column.name) {
       const dup = await db.zoneColumn.findUnique({
         where: {
           planId_blockLabel_name: { planId: column.planId, blockLabel: column.blockLabel, name },
         },
       })
-      if (dup) return fail('ستونی با این نام در این بخش قبلاً ثبت شده است')
+      if (dup) return fail('ردیفی با این نام در این بخش قبلاً ثبت شده است')
       data.name = name
     }
   }
@@ -67,9 +67,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     userId: me.id,
     userName: displayName(me),
     action: 'store.section-column',
-    actionLabel: 'ستون چیدمان',
+    actionLabel: 'ردیف چیدمان',
     category: 'store',
-    detail: `ویرایش ستون «${updated.name}» بخش ${updated.blockLabel}${
+    detail: `ویرایش ردیف «${updated.name}» بخش ${updated.blockLabel}${
       data.active === false ? ' (غیرفعال)' : data.active === true ? ' (فعال)' : ''
     }`,
     entityId: id,
@@ -81,20 +81,20 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('نیاز به ورود', 401)
-  if (!isManager(me)) return fail('فقط مدیران می‌توانند ستون‌ها را حذف کنند', 403)
+  if (!isManager(me)) return fail('فقط مدیران می‌توانند ردیف‌ها را حذف کنند', 403)
 
   const { id } = await ctx.params
   const column = await db.zoneColumn.findUnique({ where: { id } })
-  if (!column) return fail('ستون یافت نشد', 404)
+  if (!column) return fail('ردیف یافت نشد', 404)
 
   await db.zoneColumn.delete({ where: { id } })
   await logActivity({
     userId: me.id,
     userName: displayName(me),
     action: 'store.section-column',
-    actionLabel: 'ستون چیدمان',
+    actionLabel: 'ردیف چیدمان',
     category: 'store',
-    detail: `حذف ستون «${column.name}» از بخش ${column.blockLabel}`,
+    detail: `حذف ردیف «${column.name}» از بخش ${column.blockLabel}`,
     entityId: id,
   })
   return ok({ deleted: true })

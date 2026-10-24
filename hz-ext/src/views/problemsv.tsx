@@ -3,20 +3,24 @@ import {
   api, qs, useShell, toast, cn,
   Button, Input, Textarea, Card, CardContent,
   Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Checkbox,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-  JalaliDate, jsDateToJalali,
+  JalaliDate, TimeInput, faSlash, jsDateToJalali,
   fa,
-  parseJalali, toEnDigits, toFaDigits, todayJalali, formatJalaliLong,
+  toFaDigits, todayJalali, addJalaliDays,
   I,
 } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
    tasks/problems — ثبت مشکلات و پیگیری
    ۱) آمار زنده + توزیع دسته‌بندی + فیلترهای وضعیت/دسته/شدت/شیفت/جستجو
-   ۲) ثبت مشکل ساختاریافته: دسته، شدت، محل (بلوک نقشه)، مسئول پیگیری،
-      مهلت جلالی، ساعت، اقدام اولیه
-   ۳) کارت‌های موبایل‌پسند با نوار شدت؛ جریان: باز → در حال بررسی → حل
-      + ارجاع (مدیران) + بنر مشکلات حل‌نشدهٔ شیفت صبح برای مدیر عصر
+   ۲) ثبت مشکل ساختاریافته: تاریخ ثبت (پیش‌فرض امروز)، دسته، شدت، محل،
+      مسئول پیگیری، مهلت جلالی، ساعت (TimeInput)، شیفت (دکمه‌ای — بدون
+      دراپ‌داون)، اقدام اولیه و کلید اطلاع‌رسانی پیامکی (مدیران)
+   ۳) هشدار مهلت: هنگام باز شدن صفحه /api/problems/alerts صدا زده می‌شود
+      و برای مشکلات نزدیک/سررسید/گذشتهٔ مهلت، اعلان و (در صورت فعال‌بودن
+      کلید پیامک) پیامک به مسئول ارسال می‌شود — یک‌باره و idempotent
+   ۴) کارت‌های فشرده در شبکهٔ دوستونه — کارت آخر در تعداد فرد تمام عرض را می‌گیرد
    ───────────────────────────────────────────────────────────── */
 
 const MANAGERS = ['OWNER', 'GM', 'ADMIN', 'EXEC']
@@ -51,11 +55,6 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n))
 
-function longFa(dash: string): string {
-  const d = parseJalali(String(dash || ''))
-  return d ? toFaDigits(formatJalaliLong(d)) : toFaDigits(String(dash || '—'))
-}
-
 function clockFa(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -67,7 +66,7 @@ function dateTimeFa(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${toFaDigits(jsDateToJalali(d))} · ساعت ${clockFa(iso)}`
+  return `${faSlash(jsDateToJalali(d))} · ساعت ${clockFa(iso)}`
 }
 
 function shiftFa(s: string): string {
@@ -76,6 +75,22 @@ function shiftFa(s: string): string {
 
 function sevOf(key: string) {
   return SEVERITIES.find((s) => s.key === key) || SEVERITIES[2]
+}
+
+/** فاز مهلت نسبت به امروز: null | near(فردا) | today | past */
+function duePhase(due: string | null | undefined, status: string): 'near' | 'today' | 'past' | null {
+  if (!due || status === 'RESOLVED' || !DATE_RE.test(due)) return null
+  const t = todayJalali()
+  if (due < t) return 'past'
+  if (due === t) return 'today'
+  if (due === addJalaliDays(t, 1)) return 'near'
+  return null
+}
+
+const DUE_CHIP: Record<string, { label: string; cls: string }> = {
+  near: { label: 'فردا مهلت', cls: 'border-amber-300 bg-amber-50 text-amber-800' },
+  today: { label: 'امروز مهلت', cls: 'border-rose-300 bg-rose-50 text-rose-800' },
+  past: { label: 'مهلت گذشته', cls: 'border-rose-500 bg-rose-100 text-rose-800' },
 }
 
 /* ═══════════════ قطعات کوچک ═══════════════ */
@@ -88,17 +103,6 @@ function SevBadge({ severity }: { severity: string }) {
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS[status] || { label: status, cls: 'border-stone-300 bg-stone-100 text-stone-600' }
   return <Badge variant="outline" className={cn('text-[10px]', s.cls)}>{s.label}</Badge>
-}
-
-function TimeInput({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
-  return (
-    <Input
-      dir="ltr" inputMode="numeric" placeholder="۱۸:۳۰" maxLength={5}
-      className={cn('num text-center', className)}
-      value={value ? toFaDigits(value) : ''}
-      onChange={(e: any) => onChange(toEnDigits(String(e.target.value)).replace(/[^\d:]/g, '').slice(0, 5))}
-    />
-  )
 }
 
 /* ═══════════════ نمای اصلی ═══════════════ */
@@ -126,7 +130,8 @@ export default function ProblemsView() {
   const [newBusy, setNewBusy] = useState(false)
   const [nf, setNf] = useState({
     problem: '', category: 'other', severity: 'normal', location: 'none',
-    assigneeId: 'none', dueDate: '', time: '', shift: 'MORNING', action: '',
+    assigneeId: 'none', date: '', dueDate: '', time: '', shift: 'MORNING', action: '',
+    smsAlert: false,
   })
 
   /* دیالوگ‌های اقدام */
@@ -139,7 +144,8 @@ export default function ProblemsView() {
   const [busyId, setBusyId] = useState('')
 
   useEffect(() => {
-    /* یک‌بار در ابتدا: فهرست پرسنل + بنر مشکلات صبح */
+    /* یک‌بار در ابتدا: هشدارهای مهلت + فهرست پرسنل + بنر مشکلات صبح */
+    void checkAlerts()
     void loadRoster()
     if (isManager) void loadMorning()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,11 +171,20 @@ export default function ProblemsView() {
     setItems(r.data?.items || [])
     setStats(r.data?.stats || null)
     setBlocks(Array.isArray(r.data?.blocks) ? r.data.blocks : [])
+    // هشدارهای مهلت هم در همین فراخوانی ارزیابی می‌شوند (سمت سرور) — اگر
+    // اعلانی ساخته شد، شمارندهٔ زنگ به‌روز شود
+    if (Number(r.data?.alerts?.created) > 0) refreshBadges?.()
   }
 
   async function loadRoster() {
     const r = await api('/api/auth/roster')
     if (r.ok) setRoster((r.data?.users || []).filter((u: any) => u.active !== false))
+  }
+
+  /** هشدارهای مهلت رسیدگی — بی‌صدا؛ اگر اعلانی ساخته شد شمارندهٔ زنگ به‌روز می‌شود */
+  async function checkAlerts() {
+    const r = await api('/api/problems/alerts')
+    if (r.ok && Number(r.data?.created) > 0) refreshBadges?.()
   }
 
   /** مشکلات حل‌نشدهٔ شیفت صبح امروز — بنر مدیر شیفت عصر (قرارداد ارجاع) */
@@ -197,7 +212,8 @@ export default function ProblemsView() {
     const hour = new Date().getHours()
     setNf({
       problem: '', category: 'other', severity: 'normal', location: 'none',
-      assigneeId: 'none', dueDate: '', time: '', shift: hour >= 14 ? 'EVENING' : 'MORNING', action: '',
+      assigneeId: 'none', date: todayJalali(), dueDate: '', time: '',
+      shift: hour >= 14 ? 'EVENING' : 'MORNING', action: '', smsAlert: false,
     })
     setNewOpen(true)
   }
@@ -205,6 +221,7 @@ export default function ProblemsView() {
   async function submitNew() {
     const problem = nf.problem.trim()
     if (problem.length < 3) return toast.error('شرح مشکل را وارد کنید (حداقل ۳ کاراکتر)')
+    if (!nf.date || !DATE_RE.test(nf.date)) return toast.error('تاریخ وقوع مشکل را از تقویم انتخاب کنید')
     if (nf.time && !TIME_RE.test(nf.time)) return toast.error('ساعت وقوع را به شکل ۱۸:۳۰ وارد کنید')
     if (nf.dueDate && !DATE_RE.test(nf.dueDate)) return toast.error('مهلت رسیدگی را از تقویم انتخاب کنید')
 
@@ -213,12 +230,14 @@ export default function ProblemsView() {
       category: nf.category,
       severity: nf.severity,
       shift: nf.shift,
+      date: nf.date,
     }
     if (nf.location !== 'none') body.location = nf.location
     if (isManager && nf.assigneeId !== 'none') body.assigneeId = nf.assigneeId
     if (nf.dueDate) body.dueDate = nf.dueDate
     if (nf.time) body.time = nf.time
     if (nf.action.trim()) body.action = nf.action.trim()
+    if (isManager && nf.smsAlert && nf.assigneeId !== 'none') body.smsAlert = true
 
     setNewBusy(true)
     const r = await api('/api/problems', { method: 'POST', body })
@@ -275,11 +294,24 @@ export default function ProblemsView() {
     if (ok) setAssignDlg(null)
   }
 
+  /** کلید اطلاع‌رسانی پیامکی (مدیران) */
+  async function toggleSms(p: any) {
+    setBusyId(p.id)
+    const r = await api(`/api/problems/${p.id}`, {
+      method: 'PATCH',
+      body: { action: 'smsAlert', enabled: !p.smsAlert },
+    })
+    setBusyId('')
+    if (!r.ok) { toast.error(r.error || 'تغییر تنظیم پیامک انجام نشد'); return }
+    toast.success(!p.smsAlert ? 'اطلاع‌رسانی پیامکی به مسئول فعال شد' : 'اطلاع‌رسانی پیامکی خاموش شد')
+    setItems((prev) => prev.map((x) => (x.id === p.id ? { ...x, smsAlert: !p.smsAlert } : x)))
+  }
+
   /* ───────── رندر ───────── */
 
   const byCategory: Record<string, number> = stats?.byCategory || {}
   const hasFilter = statusF !== 'all' || categoryF !== 'all' || severityF !== 'all' || shiftF !== 'all' || q.trim() !== ''
-  const sevDots: Record<string, string> = Object.fromEntries(SEVERITIES.map((s) => [s.key, s.dot]))
+  const odd = filtered.length % 2 === 1
 
   return (
     <div className="space-y-4">
@@ -294,7 +326,7 @@ export default function ProblemsView() {
               </p>
               <ul className="mt-1 space-y-0.5">
                 {morningUnresolved.slice(0, 3).map((p: any) => (
-                  <li key={p.id} className="truncate text-xs text-amber-700">• {p.title}{p.detail ? ` — ${p.detail}` : ''}</li>
+                  <li key={p.id} className="truncate text-xs text-amber-700">• {toFaDigits(p.title)}{p.detail ? ` — ${toFaDigits(p.detail)}` : ''}</li>
                 ))}
                 {morningUnresolved.length > 3 ? (
                   <li className="text-xs text-amber-700">و {fa(morningUnresolved.length - 3)} مورد دیگر…</li>
@@ -415,16 +447,17 @@ export default function ProblemsView() {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="outline" size="icon" className="h-9 w-9" title="به‌روزرسانی" onClick={() => { void load(); if (isManager) void loadMorning() }}>
+            <Button variant="outline" size="icon" className="h-9 w-9" title="به‌روزرسانی و بررسی هشدارها"
+              onClick={() => { void load(); void checkAlerts(); if (isManager) void loadMorning() }}>
               <I.refresh size={14} />
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* ═══════ فهرست مشکلات ═══════ */}
+      {/* ═══════ فهرست مشکلات — دو ستونه؛ کارت آخر در تعداد فرد تمام‌عرض ═══════ */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {[0, 1, 2, 3].map((i) => <div key={i} className="h-40 animate-pulse rounded-xl border border-stone-200 bg-stone-100" />)}
         </div>
       ) : filtered.length === 0 ? (
@@ -442,13 +475,15 @@ export default function ProblemsView() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {filtered.map((p: any) => {
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {filtered.map((p: any, i: number) => {
             const s = sevOf(p.severity)
-            const duePast = !!p.dueDate && p.status !== 'RESOLVED' && p.dueDate < today
+            const phase = duePhase(p.dueDate, p.status)
+            const dueChip = phase ? DUE_CHIP[phase] : null
             const assignable = isManager && p.status !== 'RESOLVED'
+            const last = odd && i === filtered.length - 1
             return (
-              <Card key={p.id} className="relative overflow-hidden">
+              <Card key={p.id} className={cn('relative overflow-hidden', last && 'xl:col-span-2')}>
                 {/* نوار شدت */}
                 <span className={cn('absolute inset-y-0 right-0 w-1.5', s.stripe)} aria-hidden="true" />
                 <CardContent className="p-4 pr-5">
@@ -462,6 +497,11 @@ export default function ProblemsView() {
                     ) : null}
                     {p.escalated ? (
                       <Badge variant="outline" className="border-amber-400 bg-amber-50 text-[10px] text-amber-800">ارجاع به شیفت عصر</Badge>
+                    ) : null}
+                    {dueChip ? (
+                      <Badge variant="outline" className={cn('text-[10px]', dueChip.cls)}>
+                        <I.timer size={10} className="ml-1" /> {dueChip.label}
+                      </Badge>
                     ) : null}
                     <span className="mr-auto flex items-center gap-1.5">
                       <SevBadge severity={p.severity} />
@@ -477,7 +517,7 @@ export default function ProblemsView() {
 
                   {/* متادیتا */}
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-500">
-                    <span className="flex items-center gap-1"><I.calendar size={11} /> {longFa(p.date)}</span>
+                    <span className="num flex items-center gap-1" dir="rtl"><I.calendar size={11} /> {faSlash(p.date)}</span>
                     {p.time ? <span className="num flex items-center gap-1"><I.clock size={11} /> {toFaDigits(p.time)}</span> : null}
                     <span>شیفت {shiftFa(p.shift)}</span>
                     {p.reporter ? (
@@ -487,11 +527,37 @@ export default function ProblemsView() {
                       <span className="flex items-center gap-1 font-medium text-teal-700"><I.userCheck size={11} /> {p.assignee.fullName}</span>
                     ) : null}
                     {p.dueDate ? (
-                      <span className={cn('flex items-center gap-1', duePast ? 'font-bold text-rose-600' : 'text-stone-500')}>
-                        <I.timer size={11} /> مهلت {longFa(p.dueDate)}{duePast ? ' (گذشته)' : ''}
+                      <span className={cn('num flex items-center gap-1', phase === 'past' ? 'font-bold text-rose-600' : 'text-stone-500')} dir="rtl">
+                        <I.timer size={11} /> مهلت {faSlash(p.dueDate)}
                       </span>
                     ) : null}
                   </div>
+
+                  {/* اطلاع‌رسانی پیامکی */}
+                  {(isManager && p.assigneeId && p.status !== 'RESOLVED') ? (
+                    <div className="mt-2">
+                      <button
+                        type="button" disabled={busyId === p.id}
+                        onClick={() => void toggleSms(p)}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-medium transition-colors disabled:opacity-50',
+                          p.smsAlert
+                            ? 'border-teal-200 bg-teal-50 text-teal-700'
+                            : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100',
+                        )}
+                        title="یادآوری پیامکی به مسئول نزدیک مهلت و پس از آن"
+                      >
+                        <I.send size={11} />
+                        {p.smsAlert ? 'پیامک یادآوری: روشن' : 'پیامک یادآوری: خاموش'}
+                      </button>
+                    </div>
+                  ) : p.smsAlert ? (
+                    <div className="mt-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[10.5px] font-medium text-teal-700">
+                        <I.send size={11} /> پیامک یادآوری فعال
+                      </span>
+                    </div>
+                  ) : null}
 
                   {/* نمایش حل */}
                   {p.status === 'RESOLVED' ? (
@@ -600,6 +666,10 @@ export default function ProblemsView() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
+                <label className="mb-1 block text-xs font-medium text-stone-600">تاریخ وقوع مشکل (پیش‌فرض امروز)</label>
+                <JalaliDate value={nf.date} onChange={(v: string) => setNf((f) => ({ ...f, date: v }))} quickChips={[{ label: 'امروز', deltaDays: 0 }, { label: 'دیروز', deltaDays: -1 }]} />
+              </div>
+              <div>
                 <label className="mb-1 block text-xs font-medium text-stone-600">مهلت رسیدگی</label>
                 <JalaliDate value={nf.dueDate} onChange={(v: string) => setNf((f) => ({ ...f, dueDate: v }))} quickChips={[{ label: 'امروز', deltaDays: 0 }, { label: 'فردا', deltaDays: 1 }, { label: 'هفتهٔ آینده', deltaDays: 7 }]} />
               </div>
@@ -607,17 +677,46 @@ export default function ProblemsView() {
                 <label className="mb-1 block text-xs font-medium text-stone-600">ساعت وقوع</label>
                 <TimeInput value={nf.time} onChange={(v: string) => setNf((f) => ({ ...f, time: v }))} />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-stone-600">شیفت</label>
-                <Select value={nf.shift} onValueChange={(v: string) => setNf((f) => ({ ...f, shift: v }))}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MORNING">صبح</SelectItem>
-                    <SelectItem value="EVENING">عصر</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
+
+            {/* شیفت — دکمه‌های دوگانهٔ راست‌به‌چپ (به‌جای دراپ‌داون) */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-stone-600">شیفت وقوع</label>
+                <div className="grid w-44 grid-cols-2 gap-1 rounded-lg border border-stone-200 bg-stone-50 p-1" dir="rtl">
+                  <button
+                    type="button"
+                    onClick={() => setNf((f) => ({ ...f, shift: 'MORNING' }))}
+                    className={cn('rounded-md py-1.5 text-xs font-medium transition-colors',
+                      nf.shift === 'MORNING' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500 hover:bg-stone-100')}
+                  >
+                    صبح
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNf((f) => ({ ...f, shift: 'EVENING' }))}
+                    className={cn('rounded-md py-1.5 text-xs font-medium transition-colors',
+                      nf.shift === 'EVENING' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500 hover:bg-stone-100')}
+                  >
+                    عصر
+                  </button>
+                </div>
+              </div>
+              {isManager && nf.assigneeId !== 'none' ? (
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs font-medium text-stone-600">اطلاع‌رسانی</label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 transition-colors hover:bg-stone-100" dir="rtl">
+                    <Checkbox
+                      checked={nf.smsAlert}
+                      onCheckedChange={(v: any) => setNf((f) => ({ ...f, smsAlert: v === true }))}
+                    />
+                    <span className="text-xs font-medium text-stone-700">اطلاع‌رسانی پیامکی به مسئول</span>
+                  </label>
+                  <p className="mt-1 text-[10.5px] text-stone-400">یک روز قبل از مهلت، روز مهلت و پس از آن، یادآوری پیامکی به موبایل مسئول ارسال می‌شود (در صورت داشتن شمارهٔ معتبر).</p>
+                </div>
+              ) : null}
+            </div>
+
             <div>
               <label className="mb-1 block text-xs font-medium text-stone-600">توضیح اقدام اولیه (اختیاری)</label>
               <Textarea

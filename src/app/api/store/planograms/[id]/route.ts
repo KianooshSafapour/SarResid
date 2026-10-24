@@ -77,8 +77,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return fail('درخواست نامعتبر است')
 
-  const data: { cellsJson?: string; status?: string; name?: string; note?: string } = {}
+  const data: { cellsJson?: string; status?: string; name?: string; note?: string; blockLabel?: string | null } = {}
   let detail = pg.name
+
+  // R7: تغییر بخش متصل پلانوگرام (اتصال پلانوگرام به جای فروشگاه)
+  if (body.blockLabel !== undefined) {
+    const bl = typeof body.blockLabel === 'string' && body.blockLabel.trim() ? body.blockLabel.trim() : null
+    data.blockLabel = bl
+    detail = `${pg.name} — بخش ${bl ?? 'بدون بخش'}`
+  }
 
   if (body.layout !== undefined) {
     const flat = flatCells(body.layout)

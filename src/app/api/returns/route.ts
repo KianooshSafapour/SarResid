@@ -10,10 +10,13 @@ export const dynamic = 'force-dynamic'
 /** roles allowed to register a return (cashier-side flow) */
 const RETURN_CREATE_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC', 'CASHIER']
 
-/** live settlement-type rule (chunk lib): (total, exchange, transfer) */
+/** live settlement-type rule (chunk lib): (total, exchange, transfer)
+ *  «exchange» فقط وقتی درست است که کالای جایگزین به‌تنهایی کل مبلغ را بپوشاند و
+ *  هیچ واریزی به کارت در کار نباشد؛ حالت ترکیبی (کالا + واریز به کارت) = «full»
+ *  چون وجهی به کارت مشتری برمی‌گردد و شماره کارت لازم است. */
 export function computeSettlementType(total: number, exchange: number, transfer: number): string {
   if (exchange > total) return 'debt'
-  if (exchange > 0 && Math.abs(transfer + exchange - total) <= 1) return 'exchange'
+  if (exchange > 0 && Math.abs(transfer + exchange - total) <= 1) return transfer > 1 ? 'full' : 'exchange'
   if (transfer + exchange < total - 1) return 'partial'
   return 'full'
 }
@@ -167,7 +170,8 @@ export async function POST(req: NextRequest) {
   if (!reason) return fail('علت مرجوعی را انتخاب کنید')
   const note = String(body.note ?? '').trim() || null
 
-  // resolve items (qty: int ≥ 1)
+  // resolve items — R7: کالای وزنی (کیلوگرم/گرم/…) مقدار اعشاری می‌پذیرد (۰٫۷۲ کیلو)؛ عددی must be integer ≥ 1
+  const WEIGHT_UNITS = ['کیلوگرم', 'گرم', 'کیلو', 'لیتر', 'متر']
   type RawItem = Record<string, unknown>
   const productIds = rawItems.map((i: RawItem) => String(i?.productId ?? '')).filter(Boolean)
   const products = productIds.length ? await db.product.findMany({ where: { id: { in: productIds } } }) : []
@@ -177,12 +181,17 @@ export async function POST(req: NextRequest) {
   for (const it of rawItems) {
     const name = String(it?.name ?? '').trim()
     if (!name) return fail('نام همه اقلام را وارد کنید')
-    const qty = Math.trunc(Number(it?.qty) || 0)
-    if (qty < 1) return fail('تعداد هر قلم باید بیشتر از صفر باشد')
+    const unit = (it?.unit ? String(it.unit) : '') || prodById.get(String(it?.productId ?? ''))?.unit || 'عدد'
+    const rawQty = Number(it?.qty) || 0
+    const qty = WEIGHT_UNITS.includes(unit) ? Math.round(rawQty * 1000) / 1000 : Math.trunc(rawQty)
+    if (!(qty > 0)) return fail('مقدار هر قلم باید بیشتر از صفر باشد')
+    if (!WEIGHT_UNITS.includes(unit) && Math.abs(rawQty - Math.round(rawQty)) > 1e-9) {
+      return fail(`«${name}» به ${unit} است — مقدار باید عدد صحیح باشد (اعشار فقط برای کالای وزنی)`)
+    }
     const unitPrice = Math.max(0, Math.round(Number(it?.unitPrice) || 0))
     const prod = it?.productId ? prodById.get(String(it.productId)) : undefined
     const barcode = it?.barcode == null ? null : String(it.barcode).replace(/\D/g, '') || null
-    items.push({ name, barcode, qty, unit: prod?.unit || 'عدد', unitPrice, lineTotal: qty * unitPrice })
+    items.push({ name, barcode, qty, unit: prod?.unit || unit, unitPrice, lineTotal: Math.round(qty * unitPrice) })
   }
 
   const totalAmount = items.reduce((s, i) => s + i.lineTotal, 0)

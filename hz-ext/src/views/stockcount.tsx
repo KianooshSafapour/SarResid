@@ -271,7 +271,8 @@ export default function StockCountView() {
 
   async function onScanEnter() {
     const q = toEnDigits(query.trim())
-    if (/^\d{8,}$/.test(q)) {
+    /* بارکد داخلی فروشگاه می‌تواند ۴ رقمی باشد (مثلاً ۱۵۵۰) */
+    if (/^\d{4,}$/.test(q)) {
       const r = await api(`/api/products/search${qs({ barcode: q })}`)
       if (r.ok) { void addProduct(r.data); return }
       toast.error(r.error || 'کالایی با این بارکد یافت نشد')

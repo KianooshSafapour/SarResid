@@ -93,9 +93,9 @@ function canAccess(role: string): boolean {
 /**
  * GET /api/date-checks?month=1405-07&date=1405-07-27
  * → {lines, todayLines, results, todayPlan}
- * B3: each line additionally carries its block's active ZoneColumns,
- *     lastColumns (latest check's column names) and the rotation nextStart;
- *     todayPlan = per-block column plan for today (startFrom + suggested count).
+ * B3: each line additionally carries its block's active ZoneColumns (ردیف‌ها),
+ *     lastColumns (latest check's lane names) and the rotation nextStart;
+ *     todayPlan = per-block lane plan for today (startFrom + suggested count).
  */
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
@@ -257,7 +257,7 @@ export async function POST(req: NextRequest) {
     category: 'store',
     detail: `${line.label} — ${date}${status === 'issues' ? ' (موجود مشکل)' : ' (سالم)'}${
       data.expiredCount ? ` — منقضی: ${data.expiredCount}` : ''
-    }${columnsJson !== undefined ? ` — ستون‌ها: ${JSON.parse(columnsJson).length}` : ''}`,
+    }${columnsJson !== undefined ? ` — ردیف‌ها: ${JSON.parse(columnsJson).length}` : ''}`,
     entityId: check.id,
   })
 

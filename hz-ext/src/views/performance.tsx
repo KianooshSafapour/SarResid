@@ -1,19 +1,23 @@
-import { useState, useEffect, useMemo, api, qs, useShell, toast, cn, Button, Input, Card, CardContent, CardHeader, CardTitle, Badge, Textarea, Tabs, TabsContent, TabsList, TabsTrigger, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, fa, todayJalali, toEnDigits, Icon, I } from '../lib/hz'
+import { useState, useEffect, useMemo, api, qs, useShell, toast, cn, Button, Input, Card, CardContent, CardHeader, CardTitle, Badge, Textarea, Tabs, TabsContent, TabsList, TabsTrigger, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, fa, todayJalali, toEnDigits, faSlash, Icon, I } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
-   hr/performance — کارنامه عملکرد کارکنان (ترکیب وزن‌دار ۶ شاخص)
-   وظایف ۳۵٪ · چیدمان ۲۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۱۰٪ · تشویقی ۵٪
-   + ارزیابی ماهانه مدیر شیفت عصر (۱۱ شاخص شرح وظایف)
-   نمایش همهٔ شاخص‌ها «از ۱۰۰»؛ ورودی معیارهای انسانی ۱ تا ۵ (R1)
+   hr/performance — کارنامه عملکرد کارکنان (ترکیب وزن‌دار ۷ شاخص — R7-PERF)
+   وظایف ۳۰٪ · چیدمان ۲۰٪ · بازرسی روزانه ۱۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۵٪ · تشویقی ۵٪
+   (وزن‌ها از KV تنظیمات perf.weights خوانده می‌شوند — قابل تنظیم توسط مالک)
+   مؤلفهٔ بدون داده از ترکیب حذف و وزنش بین بقیه بازتوزیع می‌شود؛ بدون هیچ داده → «بدون دادهٔ کافی»
+   + ارزیابی ماهانه مدیر شیفت عصر (۱۱ شاخص شرح وظایف با لنگرهای رفتاری BARS سبک + توضیح شاهد الزامی نمرهٔ حدی)
+   نمایش همهٔ شاخص‌ها «از ۱۰۰»؛ ورودی معیارهای انسانی ۱ تا ۵ و روزانه ۳ سطح (R1 + R7)
    ───────────────────────────────────────────────────────────── */
 
+/* مؤلفه‌های کارنامه — wk = کلید وزن در موتور /api/performance؛ wFa = برچسب پیش‌فرض وزن */
 const COMPONENTS = [
-  { key: 'taskScore', label: 'وظایف', weight: '۳۵٪' },
-  { key: 'sectionScore', label: 'چیدمان', weight: '۲۵٪' },
-  { key: 'checklistScore', label: 'چک‌لیست', weight: '۱۵٪' },
-  { key: 'attendanceScore', label: 'حضور', weight: '۱۰٪' },
-  { key: 'zoneCountScore', label: 'شمارش', weight: '۱۰٪' },
-  { key: 'extraScore', label: 'تشویقی', weight: '۵٪' },
+  { key: 'taskScore', wk: 'task', label: 'وظایف', wFa: '۳۰٪' },
+  { key: 'sectionScore', wk: 'section', label: 'چیدمان', wFa: '۲۰٪' },
+  { key: 'dailyCheckScore', wk: 'dailyCheck', label: 'بازرسی روزانه', wFa: '۱۵٪' },
+  { key: 'checklistScore', wk: 'checklist', label: 'چک‌لیست', wFa: '۱۵٪' },
+  { key: 'attendanceScore', wk: 'attendance', label: 'حضور', wFa: '۱۰٪' },
+  { key: 'zoneCountScore', wk: 'zoneCount', label: 'شمارش', wFa: '۵٪' },
+  { key: 'extraScore', wk: 'extra', label: 'تشویقی', wFa: '۵٪' },
 ] as const
 
 const GRADES: Record<string, { label: string; text: string; chip: string; bar: string }> = {
@@ -64,6 +68,11 @@ function faScore1(v: number): string {
   const n = Math.max(0, Math.min(100, Math.round((Number(v) || 0) * 10) / 10))
   return fa(n.toFixed(1)).replace('.', '٫')
 }
+/** وزن اعشاری (0.15) → درصد فارسی (۱۵٪) — ارقام فارسی با جداکنندهٔ ٬ برای مقادیر بزرگ */
+function faPct(w: number): string {
+  const p = Math.round((Number(w) || 0) * 1000) / 10
+  return (Number.isInteger(p) ? fa(p) : fa(p.toFixed(1)).replace('.', '٫')) + '٪'
+}
 
 /* لنگرهای توصیفی مقیاس ۱-۵ ارزیابی مدیران (BARS کوچک) */
 const M_ANCHORS = [
@@ -73,6 +82,24 @@ const M_ANCHORS = [
   { v: 4, label: 'خوب' },
   { v: 5, label: 'عالی' },
 ]
+
+/* لنگرهای رفتاری BARS سبک (R7-PERF — پژوهش R7 بخش ۶.۶): سطوح ۱ / ۳ / ۵ هر شاخص.
+   سطوح ۲ و ۴ بینابین‌اند. متن‌ها عمداً کوتاه نگه داشته شده‌اند تا زیر اسلایدر جا شوند. */
+const M_BARS: Record<string, [string, string, string]> = {
+  staffMgmt: ['تقسیم کار نامشخص؛ نیاز به دخالت مداوم', 'وظایف روزانه به هر نفر اعلام می‌شود', 'تقسیم کار شفاف؛ تیم خودران پیش می‌رود'],
+  hallControl: ['واکنشی؛ سالن بی‌نظم می‌شود', 'سالن دورادور چک و نقص‌ها رفع می‌شود', 'پیش‌دستانه؛ رفع نقص قبل از دیده‌شدن'],
+  layoutQuality: ['چیدمان ناقص یا مخلوط می‌ماند', 'چیدمان طبق نقشه و ثبت‌شده', 'چیدمان نمونه با پیشنهاد بهبود'],
+  cleanliness: ['گرد و کثیفی دیده می‌شود', 'نظافت روزانه انجام می‌شود', 'سالن همیشه آمادهٔ بازدید'],
+  labelsControl: ['جاافتادگی برچسب/قیمت زیاد', 'برچسب‌ها روزانه چک می‌شود', 'صفر جاافتادگی؛ اصلاح سریع قیمت'],
+  datesControl: ['کالای منقضی روی قفسه یافت می‌شود', 'چرخهٔ تاریخ‌خوانی طبق برنامه', 'چرخهٔ کامل + گزارش FEFO نمونه'],
+  customerService: ['شکایت حل‌نشده؛ برخورد نامناسب', 'پاسخ‌گویی در حد استاندارد', 'حل مسئلهٔ مثال‌زدنی؛ تعریف مشتری'],
+  problemSolving: ['مشکلات بلاحل می‌مانند', 'پیگیری مشکلات در همان روز', 'حل ریشه‌ای و جلوگیری از تکرار'],
+  reporting: ['گزارش ناقص و ناخوانا', 'گزارش تحویل شیفت کامل است', 'گزارش شفاف و قابل‌اقدام'],
+  discipline: ['تأخیر/غیبت یا بی‌نظمی تیم', 'حضور به‌موقع؛ ثبت‌ها مرتب', 'الگوی نظم برای کل تیم'],
+  salesGrowth: ['بی‌توجه به فروش و حاشیه', 'گزارش نکات فروش و فاسدشدنی‌ها', 'پیشنهاد مؤثر فروش با نتیجه'],
+}
+/* حداقل طول «توضیح شاهد» برای نمرهٔ حدی (۱، ۲ یا ۵) — هم‌راستا با اعتبارسنجی سرور */
+const WITNESS_MIN = 8
 
 function parseScores(v: any): Record<string, number> {
   if (!v) return {}
@@ -87,6 +114,8 @@ export default function PerformanceView() {
   const [period, setPeriod] = useState(monthOf(todayJalali()) || '1405-07')
   const [periodType, setPeriodType] = useState<'MONTHLY' | 'WEEKLY'>('MONTHLY')
   const [scores, setScores] = useState<any[]>([])
+  /* وزن‌های مؤثر از موتور (KV perf.weights) — برای نمایش برچسب وزن هر مؤلفه */
+  const [weights, setWeights] = useState<Record<string, number> | null>(null)
 
   /* دیالوگ امتیاز تشویقی */
   const [extraOpen, setExtraOpen] = useState(false)
@@ -113,8 +142,9 @@ export default function PerformanceView() {
     setLoading(true)
     const r = await api(`/api/performance${qs({ period, periodType })}`)
     setLoading(false)
-    if (!r.ok) { toast.error(r.error || 'خطا در دریافت کارنامه‌ها'); setScores([]); return }
+    if (!r.ok) { toast.error(r.error || 'خطا در دریافت کارنامه‌ها'); setScores([]); setWeights(null); return }
     setScores(r.data.scores || [])
+    if (r.data.weights && typeof r.data.weights === 'object') setWeights(r.data.weights)
   }
 
   async function loadManagers() {
@@ -172,6 +202,12 @@ export default function PerformanceView() {
     return Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 20)
   }, [mScores, indicators])
 
+  /* شاخص‌های دارای نمرهٔ حدی (۱، ۲ یا ۵) — توضیح شاهد برایشان الزامی است (R7-PERF) */
+  const mExtremes = useMemo(
+    () => indicators.filter((i) => { const v = Number(mScores[i.key] ?? 3); return v <= 2 || v === 5 }),
+    [mScores, indicators],
+  )
+
   async function saveManagerReview() {
     if (!mManager) return toast.error('اطلاعات مدیر شیفت عصر یافت نشد')
     const body: Record<string, number> = {}
@@ -179,6 +215,9 @@ export default function PerformanceView() {
       const v = Number(mScores[i.key] ?? 3)
       if (v < 1 || v > 5) return toast.error(`امتیاز «${i.label}» باید بین ۱ تا ۵ باشد`)
       body[i.key] = v
+    }
+    if (mExtremes.length && mNote.trim().length < WITNESS_MIN) {
+      return toast.error(`نمرهٔ حدی (۱، ۲ یا ۵) در «${mExtremes[0].label}» ثبت شده — توضیح شاهد (حداقل ${fa(WITNESS_MIN)} نویسه) الزامی است`)
     }
     setMSaving(true)
     const r = await api('/api/manager-reviews', {
@@ -208,12 +247,12 @@ export default function PerformanceView() {
               {tab === 'staff' ? (
                 <>
                   <div>
-                    <label className="mb-1 block text-xs text-stone-500">دوره ({periodType === 'MONTHLY' ? 'ماهانه — مثل ۱۴۰۵-۰۷' : 'هفتگی — مثل ۱۴۰۵-W30'})</label>
+                    <label className="mb-1 block text-xs text-stone-500">دوره ({periodType === 'MONTHLY' ? 'ماهانه — مثل ۱۴۰۵/۰۷' : 'هفتگی — مثل ۱۴۰۵/W۳۰'})</label>
                     <Input
-                      className="w-44"
-                      value={period}
-                      onChange={(e: any) => setPeriod(toEnDigits(e.target.value.trim()))}
-                      placeholder={periodType === 'MONTHLY' ? '۱۴۰۵-۰۷' : '۱۴۰۵-W30'}
+                      className="num w-44 text-center"
+                      value={faSlash(period)}
+                      onChange={(e: any) => setPeriod(toEnDigits(e.target.value.trim()).replace(/\//g, '-'))}
+                      placeholder={periodType === 'MONTHLY' ? '۱۴۰۵/۰۷' : '۱۴۰۵/W30'}
                     />
                   </div>
                   <div className="flex overflow-hidden rounded-lg border border-stone-200">
@@ -223,7 +262,7 @@ export default function PerformanceView() {
                   <Button variant="outline" size="sm" onClick={() => void loadScores()} className="gap-1.5"><I.refresh size={14} /> به‌روزرسانی</Button>
                 </>
               ) : (
-                <div className="text-xs text-stone-500">دوره ارزیابی مدیر: <span className="font-bold">{monthKey}</span> (ماهانه)</div>
+                <div className="text-xs text-stone-500">دوره ارزیابی مدیر: <span className="num font-bold">{faSlash(monthKey)}</span> (ماهانه)</div>
               )}
             </div>
 
@@ -237,6 +276,8 @@ export default function PerformanceView() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {scores.map((s) => {
                     const g = GRADES[s.grade] || GRADES.D
+                    /* R7-PERF: total=null یعنی هیچ مؤلفه‌ای در این دوره داده ندارد */
+                    const noData = s.total === null || s.total === undefined
                     const total = Number(s.total || 0)
                     return (
                       <Card key={s.userId} className="border-stone-200">
@@ -245,22 +286,36 @@ export default function PerformanceView() {
                             <div className="min-w-0">
                               <div className="truncate text-sm font-bold">{s.userName}</div>
                               <div className="text-[11px] text-stone-400">{s.title || ROLE_FA[s.role] || s.role || ''}</div>
-                              <div className={cn('mt-1.5 inline-block rounded-md px-2 py-0.5 text-[11px] font-bold', g.chip)}>
-                                کارنامه {GRADE_FA[s.grade] || s.grade || '—'} · {g.label}
-                              </div>
+                              {noData ? (
+                                <div className="mt-1.5 inline-block rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-bold text-stone-500">بدون دادهٔ کافی</div>
+                              ) : (
+                                <div className={cn('mt-1.5 inline-block rounded-md px-2 py-0.5 text-[11px] font-bold', g.chip)}>
+                                  کارنامه {GRADE_FA[s.grade] || s.grade || '—'} · {g.label}
+                                </div>
+                              )}
                             </div>
                             <div className="shrink-0 text-center">
-                              <div className={cn('text-4xl font-black leading-none', g.text)}>{faScore1(total)}</div>
-                              <div className="mt-1 text-[10px] text-stone-400">از ۱۰۰</div>
+                              {noData ? (
+                                <>
+                                  <div className="text-4xl font-black leading-none text-stone-300">—</div>
+                                  <div className="mt-1 text-[10px] text-stone-400">کارنامه صادر نمی‌شود</div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className={cn('text-4xl font-black leading-none', g.text)}>{faScore1(total)}</div>
+                                  <div className="mt-1 text-[10px] text-stone-400">از ۱۰۰</div>
+                                </>
+                              )}
                             </div>
                           </div>
 
                           <div className="space-y-1.5">
                             {COMPONENTS.map((c) => {
                               const v = Math.max(0, Math.min(100, Number((s as any)[c.key] || 0)))
+                              const wLabel = weights && Number.isFinite(Number(weights[c.wk])) ? faPct(Number(weights[c.wk])) : c.wFa
                               return (
                                 <div key={c.key} className="flex items-center gap-2">
-                                  <div className="w-24 shrink-0 text-[11px] text-stone-500">{c.label} <span className="text-stone-400">{c.weight}</span></div>
+                                  <div className="w-24 shrink-0 text-[11px] text-stone-500">{c.label} <span className="text-stone-400">{wLabel}</span></div>
                                   <div className="h-1.5 grow overflow-hidden rounded-full bg-stone-100">
                                     <div className={cn('h-full rounded-full transition-all duration-300', c.key === 'extraScore' ? 'bg-amber-500' : barColor(v))} style={{ width: `${v}%` }} />
                                   </div>
@@ -303,7 +358,7 @@ export default function PerformanceView() {
                   ))}
                 </div>
                 <p className="mt-3 text-[10px] leading-4 text-stone-400">
-                  کارنامه هر دوره به‌صورت خودکار از ۶ شاخص محاسبه می‌شود: وظایف ۳۵٪ · چیدمان ۲۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۱۰٪ · تشویقی ۵٪. امتیاز تشویقی/جریمه تنها بخش قابل‌ویرایش مدیر است.
+                  کارنامه هر دوره به‌صورت خودکار از ۷ شاخص محاسبه می‌شود: وظایف ۳۰٪ · چیدمان ۲۰٪ · بازرسی روزانه ۱۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۵٪ · تشویقی ۵٪. شاخصی که در آن دوره داده نداشته باشد (مثلاً بدون دستورکار سیستمی) از ترکیب حذف و وزنش بین شاخص‌های دارای داده بازتوزیع می‌شود؛ اگر هیچ داده‌ای نباشد کارنامه‌ای صادر نمی‌شود («بدون دادهٔ کافی»). وزن‌ها برای مالک از تنظیمات (کلید perf.weights) قابل تغییر است. امتیاز تشویقی/جریمه تنها بخش قابل‌ویرایش مدیر است.
                 </p>
               </div>
 
@@ -314,9 +369,10 @@ export default function PerformanceView() {
                     <I.bookOpen size={15} /> چرا این مقیاس؟
                   </div>
                   <ul className="space-y-1.5 text-xs leading-5 text-stone-600">
-                    <li>• معیارهای سیستمی — وظایف، چک‌لیست، حضور و شمارش — به‌صورت خودکار و مستقیماً از ۱۰۰ محاسبه می‌شوند و دخالت ارزیاب ندارند.</li>
-                    <li>• معیارهای انسانی (ارزیابی چیدمان و ارزیابی مدیران) با مقیاس ۱ تا ۵ ثبت می‌شوند تا دقت قضاوت ارزیاب حفظ شود (ورودی ۰ تا ۱۰۰ برای قضاوت انسانی، دقتِ کاذب می‌سازد)؛ در نمایش به معادل «از ۱۰۰» تبدیل می‌شوند تا مقایسه با شاخص‌های سیستمی ساده باشد.</li>
-                    <li>• کارنامه نهایی به‌صورت وزن‌دار ترکیب می‌شود: وظایف ۳۵٪ · چیدمان ۲۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۱۰٪ · امتیاز ویژه ۵٪.</li>
+                    <li>• معیارهای سیستمی — وظایف، بازرسی روزانه، چک‌لیست، حضور و شمارش — به‌صورت خودکار و مستقیماً از ۱۰۰ محاسبه می‌شوند و دخالت ارزیاب ندارند.</li>
+                    <li>• معیارهای انسانی با مقیاس لنگردار ثبت می‌شوند تا دقت قضاوت ارزیاب حفظ شود (ورودی ۰ تا ۱۰۰ برای قضاوت انسانی، دقتِ کاذب می‌سازد): ارزیابی چیدمان و ارزیابی مدیران ۱ تا ۵ و بررسی روزانهٔ تیم ۳ سطح (مناسب / نقص جزئی / نامناسب)؛ در نمایش به معادل «از ۱۰۰» تبدیل می‌شوند تا مقایسه با شاخص‌های سیستمی ساده باشد.</li>
+                    <li>• بازرسی روزانه (۳ سطح × ۴ معیار × هر دو شیفت) مستمرترین مشاهدهٔ مستقیم هر نفر است و با نگاشت مناسب=۱ · نقص جزئی=۰٫۵ · نامناسب=۰ وارد کارنامه می‌شود — فقط روزهای حضور واقعی (بدون جریمهٔ دوگانه با شاخص حضور).</li>
+                    <li>• کارنامه نهایی به‌صورت وزن‌دار ترکیب می‌شود: وظایف ۳۰٪ · چیدمان ۲۰٪ · بازرسی روزانه ۱۵٪ · چک‌لیست ۱۵٪ · حضور ۱۰٪ · شمارش ۵٪ · تشویقی ۵٪؛ شاخصِ بدون داده از ترکیب حذف و وزنش بین بقیه بازتوزیع می‌شود.</li>
                     <li>• ارزیابی مطلق است؛ هر کارمند با استاندارد خودش سنجیده می‌شود، نه با توزیع اجباری بین همکاران.</li>
                   </ul>
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-stone-200 pt-2.5 text-[11px]">
@@ -345,8 +401,8 @@ export default function PerformanceView() {
                   <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="text-sm font-bold">{mManager ? mManager.name : 'عبدالله ملايی'} <span className="text-[11px] font-normal text-stone-400">({mManager?.title || 'مدیر اجرایی و مدیر شیفت عصر'})</span></div>
-                        <div className="mt-0.5 text-[11px] text-stone-400">ارزیاب: خانم لطفی (مدیر کل) · دوره {monthKey}</div>
+                        <div className="text-sm font-bold">{mManager ? mManager.name : 'عبدالله ملایی'} <span className="text-[11px] font-normal text-stone-400">({mManager?.title || 'مدیر اجرایی و مدیر شیفت عصر'})</span></div>
+                        <div className="mt-0.5 text-[11px] text-stone-400">ارزیاب: خانم لطفی (مدیر کل) · دوره {faSlash(monthKey)}</div>
                       </div>
                       <div className="text-center">
                         <div className={cn('text-3xl font-black leading-none', mTotal >= 90 ? 'text-emerald-600' : mTotal >= 80 ? 'text-teal-600' : mTotal >= 70 ? 'text-amber-600' : 'text-rose-600')}>{fa(mTotal)}</div>
@@ -358,10 +414,17 @@ export default function PerformanceView() {
                   <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                     {indicators.map((ind) => {
                       const v = Number(mScores[ind.key] ?? 3)
+                      const bars = M_BARS[ind.key]
+                      /* لنگرِ سطحِ به‌دست‌آمده: ۱و۲ → ضعیف · ۳و۴ → استاندارد · ۵ → عالی (۲ و ۴ بینابین) */
+                      const ai = v <= 2 ? 0 : v <= 4 ? 1 : 2
+                      const extreme = v <= 2 || v === 5
                       return (
-                        <div key={ind.key} className="rounded-lg border border-stone-200 bg-white p-3">
+                        <div key={ind.key} className={cn('rounded-lg border bg-white p-3', extreme ? 'border-amber-300' : 'border-stone-200')}>
                           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-                            <span className="text-xs font-medium text-stone-700">{ind.label}</span>
+                            <span className="flex items-baseline gap-1.5 text-xs font-medium text-stone-700">
+                              {ind.label}
+                              {extreme && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800" title="برای نمرهٔ حدی، توضیح شاهد الزامی است">توضیح شاهد لازم</span>}
+                            </span>
                             <span className="flex items-baseline gap-2">
                               <span className={cn('text-lg font-bold', v >= 4 ? 'text-emerald-600' : v === 3 ? 'text-teal-600' : 'text-rose-600')}>
                                 {fa(v)} <span className="text-[10px] font-normal text-stone-400">از ۵</span>
@@ -383,6 +446,19 @@ export default function PerformanceView() {
                               </span>
                             ))}
                           </div>
+                          {/* لنگرهای رفتاری BARS سبک — سطوح ۱/۳/۵ (پژوهش R7 بخش ۶.۶) */}
+                          {bars && (
+                            <div className="mt-1.5 grid grid-cols-3 gap-1 text-[9px] leading-4">
+                              {bars.map((txt, i) => (
+                                <span key={i} className={cn('rounded px-1 py-0.5 transition-colors',
+                                  i === ai
+                                    ? i === 0 ? 'bg-rose-50 font-bold text-rose-700' : i === 1 ? 'bg-teal-50 font-bold text-teal-700' : 'bg-emerald-50 font-bold text-emerald-700'
+                                    : 'bg-stone-50 text-stone-400')}>
+                                  {fa([1, 3, 5][i])} · {txt}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -390,11 +466,20 @@ export default function PerformanceView() {
 
                   <div className="flex flex-wrap items-end gap-2">
                     <div className="min-w-64 grow">
-                      <label className="mb-1 block text-xs text-stone-500">یادداشت ارزیاب (اختیاری)</label>
-                      <Textarea rows={2} value={mNote} onChange={(e: any) => setMNote(e.target.value)} placeholder="نقاط قوت و موارد نیازمند بهبود مدیر شیفت عصر…" />
+                      <label className="mb-1 block text-xs text-stone-500">
+                        یادداشت ارزیاب / توضیح شاهد{mExtremes.length > 0 ? ' (برای نمرهٔ حدی الزامی — حداقل ۸ نویسه)' : ' (اختیاری)'}
+                      </label>
+                      <Textarea rows={2} value={mNote} onChange={(e: any) => setMNote(e.target.value)} placeholder="نقاط قوت و موارد نیازمند بهبود مدیر شیفت عصر… برای نمره‌های حدی (۱، ۲ یا ۵) رویداد شاهد را همین‌جا بنویسید…" />
+                      {mExtremes.length > 0 && (
+                        <p className={cn('mt-1 text-[11px] font-bold', mNote.trim().length >= WITNESS_MIN ? 'text-emerald-700' : 'text-amber-700')}>
+                          {mNote.trim().length >= WITNESS_MIN
+                            ? `✓ توضیح شاهد ثبت شد (${fa(mExtremes.length)} شاخص نمرهٔ حدی دارد)`
+                            : `${fa(mExtremes.length)} شاخص نمرهٔ حدی (۱، ۲ یا ۵) دارد — ثبت توضیح شاهد (حداقل ${fa(WITNESS_MIN)} نویسه) برای ذخیره الزامی است`}
+                        </p>
+                      )}
                     </div>
                     <Button disabled={mSaving} onClick={() => void saveManagerReview()} className="gap-1.5">
-                      {mSaving ? <I.loader size={15} className="animate-spin" /> : <I.save size={15} />} ثبت ارزیابی دوره {monthKey}
+                      {mSaving ? <I.loader size={15} className="animate-spin" /> : <I.save size={15} />} ثبت ارزیابی دوره {faSlash(monthKey)}
                     </Button>
                   </div>
 
@@ -406,7 +491,7 @@ export default function PerformanceView() {
                           <div key={r.id} className={cn('flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2', r.periodKey === monthKey ? 'border-emerald-300 bg-emerald-50' : 'border-stone-200 bg-white')}>
                             <span className="text-xs">
                               <span className="font-bold">{r.managerName}</span>
-                              <span className="text-stone-400"> · {r.periodKey}{r.reviewerName ? ` · ارزیاب: ${r.reviewerName}` : ''}</span>
+                              <span className="text-stone-400"> · <span className="num">{faSlash(r.periodKey)}</span>{r.reviewerName ? ` · ارزیاب: ${r.reviewerName}` : ''}</span>
                             </span>
                             <span className={cn('rounded px-2 py-0.5 text-[11px] font-bold', r.total >= 90 ? 'bg-emerald-100 text-emerald-700' : r.total >= 80 ? 'bg-teal-50 text-teal-700' : r.total >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')}>
                               {fa(Math.round(Number(r.total || 0)))} از ۱۰۰
@@ -429,7 +514,7 @@ export default function PerformanceView() {
           <DialogHeader>
             <DialogTitle>امتیاز تشویقی / جریمه</DialogTitle>
             <DialogDescription>
-              {extraTarget ? `${extraTarget.userName} — دوره ${period} (${periodType === 'MONTHLY' ? 'ماهانه' : 'هفتگی'})` : ''}
+              {extraTarget ? `${extraTarget.userName} — دوره ${faSlash(period)} (${periodType === 'MONTHLY' ? 'ماهانه' : 'هفتگی'})` : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

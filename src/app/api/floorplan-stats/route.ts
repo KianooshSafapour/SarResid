@@ -5,8 +5,8 @@ import { getLowStockSettings, computeThreshold } from '@/lib/lowstock'
 
 export const dynamic = 'force-dynamic'
 
-/** live board: all managers + PM + SK */
-const BOARD_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK']
+/** live board: all managers + PM + SK + MERCH (نیروی چیدمان — تابلوی شارژ ردیف‌ها، R5-E) */
+const BOARD_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'MERCH']
 
 /** pick the planogram representing a block label: prefer PUBLISHED, then latest update */
 function pickPlanogram<T extends { id: string; status: string; updatedAt: Date }>(list: T[]): T | null {

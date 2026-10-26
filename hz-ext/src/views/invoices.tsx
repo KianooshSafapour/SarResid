@@ -222,7 +222,7 @@ export default function InvoicesView() {
   async function act(id: string, body: Record<string, unknown>, okMsg: string): Promise<boolean> {
     setBusy(true)
     try {
-      const r = await api('/api/margin/' + id, { method: 'PATCH', body: JSON.stringify(body) })
+      const r = await api('/api/margin/' + id, { method: 'PATCH', body }) /* پل api خودش JSON می‌کند — body شیء است */
       if (r.ok) {
         toast.success(okMsg)
         if (refreshBadges) refreshBadges()
@@ -693,13 +693,18 @@ export default function InvoicesView() {
                 <div className="rounded-lg border border-stone-200 bg-stone-50/60 p-3">
                   <div className="text-[11px] font-bold text-stone-600 mb-2">ردپای گردش‌کار</div>
                   <div className="space-y-1.5">
-                    {[...detail.history].reverse().map((h, i) => (
+                    {[...detail.history].reverse().map((h, i) => {
+                      /* تاریخ ردپا ISO است — formatJalali فقط Date می‌گیرد (درس‌آموختهٔ کارنامهٔ hz.d.ts) */
+                      const hdt = h.at ? new Date(h.at) : null
+                      const hdate = hdt && !isNaN(hdt.getTime()) ? fa(formatJalali(hdt).replace(/-/g, '/')) : ''
+                      return (
                       <div key={i} className="flex gap-2 text-[11px] leading-5">
-                        <span className="text-stone-400 whitespace-nowrap">{h.at ? fa(formatJalali(h.at)) : ''}</span>
+                        <span className="text-stone-400 whitespace-nowrap">{hdate}</span>
                         <span className="font-medium text-stone-700 whitespace-nowrap">{h.label || h.action}:</span>
                         <span className="text-stone-600">{h.by}{h.detail ? ` — ${h.detail}` : ''}</span>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ) : null}

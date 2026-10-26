@@ -212,7 +212,7 @@ async function suiteMarginWorkflow() {
   check('margin', 'ردپای گردش‌کار کامل است', ['create', 'deliver', 'review-save', 'finalize', 'archive'].every((a) => inv.history.some((h) => h.action === a)))
   /* جستجوی سند از آرشیو (کاغذ در یک ثانیه) */
   const search = await gm.req('/api/archive?q=' + encodeURIComponent('بات تست'))
-  check('margin', 'سند از جستجوی آرشیو پیدا می‌شود', search.ok && search.data.items.some((d) => d.title.includes('فاتور خرید')))
+  check('margin', 'سند از جستجوی آرشیو پیدا می‌شود', search.ok === true && (search.data?.items ?? []).some((d) => d.title.includes('فاکتور خرید')), JSON.stringify({ ok: search.ok, status: search._status, err: search.error, total: search.data?.total, n: (search.data?.items ?? []).length }))
   const reArchive = await acc.req(`/api/margin/${invId}`, 'PATCH', { action: 'archive', binderId: binder.id })
   check('margin', 'بایگانی دوباره رد می‌شود', reArchive.ok === false)
   const accUnarchive = await acc.req(`/api/margin/${invId}`, 'PATCH', { action: 'unarchive' })
@@ -308,7 +308,7 @@ async function suiteReturns() {
   const good = await cashier.req('/api/returns', 'POST', {
     customerName: 'زهرا محمدی', customerPhone: '09153456789',
     customerCardNumber: '6104337812345671',
-    items: [{ name: 'سوسیس کوکتل ۵۰۰گ', barcode: '1550', qty: 0.75, unitPrice: 11505000, reason: 'کیفیت نامطلوب' }],
+    items: [{ name: 'سوسیس کوکتل ۵۰۰گ', barcode: '1550', unit: 'کیلوگرم', qty: 0.75, unitPrice: 11505000, reason: 'کیفیت نامطلوب' }],
     reason: 'کیفیت نامطلوب',
   })
   check('returns', 'مرجوعی وزنی اعشاری (۰٫۷۵kg) ثبت شد', good.ok, good.error || '')
@@ -342,7 +342,7 @@ async function suiteArchive() {
   const bigScan = await acc.req('/api/archive', 'POST', { kind: 'OTHER', title: 'اسکن غول', scan: { dataUrl: 'data:image/png;base64,' + 'A'.repeat(500000), name: 'big.png' } })
   check('archive', 'اسکن بزرگ‌تر از ۳۰۰KB رد می‌شود', bigScan.ok === false)
   if (cab.ok) {
-    const del = await acc.req('/api/archive/structure?id=' + cab.data.cabinet.id, 'DELETE')
+    const del = await acc.req('/api/archive/structure?type=cabinet&id=' + cab.data.node.id, 'DELETE')
     check('archive', 'کابینت خالی حذف شد', del.ok, del.error || '')
   }
 }
@@ -351,14 +351,20 @@ async function suiteArchive() {
 async function suiteR811() {
   console.log('── مجموعهٔ ۶: کنترل انقضا، ضایعات، الگوی پیام، دریافت‌ها ──')
   const merch = bots.merch, sk = bots.sk, gm = bots.gm, acc = bots.acc
-  const lc = await merch.req('/api/lane-checks', 'POST', { dateJalali: '1405-08-05', sectionLabel: 'G1', lane: 'طبقهٔ ۲', status: 'needs_attention', expiredFound: 3, note: 'بات تست' })
-  check('r811', 'بازرسی انقضای ردیف ثبت شد', lc.ok, lc.error || '')
-  const lcBad = await merch.req('/api/lane-checks', 'POST', { dateJalali: 'غلط', sectionLabel: '', lane: '' })
-  check('r811', 'بازرسی با تاریخ/بخش نامعتبر رد می‌شود', lcBad.ok === false)
+  const lcInfo = await gm.req('/api/lane-checks')
+  const sec = (lcInfo.data?.sections ?? [])[0]
+  const secLabel = sec?.label || sec?.sectionLabel || 'G1'
+  const laneName = (sec?.lanes ?? [])[0] || 'طبقهٔ ۲'
+  const lc = await gm.req('/api/lane-checks', 'POST', { dateJalali: '1405-08-05', merchandiserId: byRole.MERCH?.id, merchandiserName: byRole.MERCH?.fullName ?? 'بازرس تست', sectionLabel: secLabel, lane: laneName, status: 'needs_attention', expiredFound: 3, note: 'بات تست' })
+  check('r811', `بازرسی انقضای ردیف ثبت شد (بخش ${secLabel})`, lc.ok, lc.error || '')
+  const lcBad = await merch.req('/api/lane-checks', 'POST', { dateJalali: '1405-08-05', sectionLabel: 'G1', lane: 'طبقهٔ ۱' })
+  check('r811', 'چیدمان‌گر اجازهٔ ثبت بازرسی ندارد (فقط مدیران — ۴۰۳)', lcBad.ok === false && lcBad._status === 403)
+  const lcBadDate = await gm.req('/api/lane-checks', 'POST', { dateJalali: 'غلط', sectionLabel: '', lane: '' })
+  check('r811', 'بازرسی با تاریخ/بخش نامعتبر رد می‌شود', lcBadDate.ok === false)
   const waste = await sk.req('/api/store/waste', 'POST', { name: 'ماست تاریخ‌گذشته', qty: 4, unit: 'عدد', reason: 'EXPIRED', estValue: 260000, supplierName: 'بات تست — لبنیات' })
   check('r811', 'ضایعات تأمین‌کننده ثبت شد', waste.ok, waste.error || '')
   const tpl = await gm.req('/api/return-templates', 'GET')
-  check('r811', 'الگوهای پیام مرجوعی در دسترس‌اند', tpl.ok && Array.isArray(tpl.data?.templates || tpl.data))
+  check('r811', 'الگوهای پیام مرجوعی در دسترس‌اند', tpl.ok && Array.isArray(tpl.data?.items) && tpl.data.items.length > 0, 'items:' + (tpl.data?.items?.length ?? 'ERR'))
   const recSet = await gm.req('/api/settings/receiving', 'PUT', { showHistory: true })
   check('r811', 'تنظیم نمایش دریافت کالا توسط مدیر', recSet.ok)
   const recSetAcc = await acc.req('/api/settings/receiving', 'PUT', { showHistory: false })

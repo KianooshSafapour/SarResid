@@ -138,9 +138,22 @@ export async function POST(req: NextRequest) {
   const res = await sanitizeDocBody(body as Record<string, unknown>, { partial: false })
   if (!res.ok) return fail(res.error)
 
+  /* R12: اسکن در لحظهٔ ثبت هم پذیرفته می‌شود (قبلاً بی‌صدا نادیده گرفته می‌شد و
+     داده گم می‌شد) — همان اعتبارسنجی PATCH: PNG/JPG/WebP تا ~۳۰۰KB */
+  let scanDataUrl: string | null = null
+  let scanName: string | null = null
+  if (body.scan !== undefined && body.scan !== null) {
+    const dataUrl = String((body.scan as { dataUrl?: string })?.dataUrl ?? body.scan)
+    if (!/^data:image\/(png|jpe?g|webp);base64,/.test(dataUrl)) return fail('قالب اسکن باید PNG/JPG/WebP باشد')
+    if (dataUrl.length > 420_000) return fail('حجم اسکن بیش از حد مجاز است (حداکثر ~۳۰۰ کیلوبایت)')
+    scanDataUrl = dataUrl
+    scanName = String((body.scan as { name?: string })?.name ?? '').slice(0, 120) || 'اسکن سند'
+  }
+
   const created = await db.archiveDocument.create({
     data: {
       ...res.data,
+      ...(scanDataUrl ? { scanDataUrl, scanName } : {}),
       createdById: me.id,
       createdByName: me.fullName,
     } as Prisma.ArchiveDocumentUncheckedCreateInput,

@@ -556,7 +556,7 @@ export default function ProfitView() {
 
   useEffect(() => { void load() }, [])
 
-  /* ─── «بازکردن در فاکتورنویس» — hash ‏#/profit/builder?id=… از دفتر فاکتورها/آمار ─── */
+  /* ─── «بازکردن در فاکتورنویس» — hash ‏#/finance/builder?id=… از دفتر فاکتورها/آمار (R12: سودسنج زیر بخش مالی) ─── */
   function invoiceIdFromHash(): string | null {
     const m = String(typeof location !== 'undefined' ? location.hash || '' : '').match(/#\/profit\/builder\?id=([A-Za-z0-9_-]+)/)
     return m ? m[1] : null
@@ -994,7 +994,7 @@ export default function ProfitView() {
     })
     setSaving(false)
     if (!r.ok) return toast.error(r.error || 'ثبت فاکتور ناموفق بود')
-    toast.success(`فاکتور شماره ${toFaDigits(String(r.data?.number ?? ''))} با ${fa(items.length)} قلم ثبت شد`)
+    toast.success(`پیش‌نویس شماره ${toFaDigits(String(r.data?.number ?? ''))} با ${fa(items.length)} قلم ثبت شد — پس از رسیدن کالا، از «دفتر فاکتورها» (بخش مالی) تأیید تحویل و بررسی حسابداری را ادامه دهید`)
     newInvoice()
   }
 

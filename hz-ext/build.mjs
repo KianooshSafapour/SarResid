@@ -142,6 +142,7 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
   //     regenerate the live chunks (radix RTL default + registry term/defaultPage)
   await import('./patch-radix-dir.mjs')
   await import('./patch-registry-fixes.mjs')
+  await import('./patch-profit-to-finance.mjs')
 
   // ---- loader patch: append async entries before the final "]);"
   let loader = readFileSync(join(ORIG, '2fb9e5ced3d1b0e6.js'), 'utf8')

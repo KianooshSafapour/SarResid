@@ -42,7 +42,7 @@
    "replaces": true
   },
   {
-   "key": "profit/builder",
+   "key": "finance/builder",
    "src": "profit",
    "section": "profit",
    "title": "سودسنج پیشرفته",
@@ -103,6 +103,20 @@
     "ACC"
    ],
    "replaces": false
+  },
+  {
+   "key": "finance/invoices",
+   "src": "invoices",
+   "section": "finance",
+   "title": "دفتر فاکتورها",
+   "roles": [
+    "OWNER",
+    "GM",
+    "ADMIN",
+    "EXEC",
+    "ACC"
+   ],
+   "replaces": true
   },
   {
    "key": "returns/new",

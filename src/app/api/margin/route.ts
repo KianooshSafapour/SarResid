@@ -104,7 +104,7 @@ export function invoiceDateKey(inv: { dateJalali: string | null; createdAt: Date
   return inv.dateJalali || formatJalaliDash(inv.createdAt)
 }
 
-/** list row (live margin.json shape + R5-B fields) */
+/** list row (live margin.json shape + R5-B fields + R12 workflow) */
 export function invoiceListOut(inv: {
   id: string
   number: number
@@ -113,11 +113,13 @@ export function invoiceListOut(inv: {
   note: string | null
   status: string
   archivedAt: Date | null
+  archived?: boolean
   createdAt: Date
   dateJalali: string | null
   providerDocNumber?: string | null
   purchaseOrderId?: string | null
-  items: { quantity: number; totalCost: number; printedPrice: number; salePrice?: number }[]
+  finalizedAt?: Date | null
+  items: { quantity: number; totalCost: number; printedPrice: number; salePrice?: number; accepted?: boolean }[]
 }) {
   const itemCount = inv.items.length
   const totalQty = inv.items.reduce((s, i) => s + i.quantity, 0)
@@ -125,6 +127,8 @@ export function invoiceListOut(inv: {
   const revenue = inv.items.reduce((s, i) => s + (i.salePrice || i.printedPrice) * i.quantity, 0)
   const profit = revenue - totalCost
   const margin = totalCost > 0 ? (profit / totalCost) * 100 : null
+  const acceptedCount = inv.items.filter((i) => i.accepted !== false).length
+  const rejectedCount = itemCount - acceptedCount
   return {
     id: inv.id,
     number: inv.number,
@@ -132,11 +136,15 @@ export function invoiceListOut(inv: {
     supplierName: inv.supplierName,
     note: inv.note,
     status: inv.status,
+    state: inv.archived || inv.status === 'archived' ? 'archived' : inv.status,
     providerDocNumber: inv.providerDocNumber ?? null,
     purchaseOrderId: inv.purchaseOrderId ?? null,
     archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : null,
+    finalizedAt: inv.finalizedAt ? inv.finalizedAt.toISOString() : null,
     createdAt: inv.createdAt.toISOString(),
     itemCount,
+    acceptedCount,
+    rejectedCount,
     totalQty,
     totalCost,
     revenue,
@@ -146,7 +154,8 @@ export function invoiceListOut(inv: {
   }
 }
 
-/** GET /api/margin?q=&from=&to=&archived=active|archived|all → {invoices:[…]} */
+/** GET /api/margin?q=&from=&to=&archived=active|archived|all&status=draft|delivered|reviewing|final|archived|cancelled|active → {invoices:[…]}
+ *  R12: پارامتر status روی «وضعیت مؤثر» (بایگانی = archived) کار می‌کند؛ active = همهٔ بازها */
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
@@ -156,20 +165,29 @@ export async function GET(req: NextRequest) {
   const from = (url.searchParams.get('from') || '').trim().replace(/\//g, '-')
   const to = (url.searchParams.get('to') || '').trim().replace(/\//g, '-')
   const archived = (url.searchParams.get('archived') || 'active').trim()
+  const statusFilter = (url.searchParams.get('status') || '').trim()
 
   const rows = await db.marginInvoice.findMany({
     where: archived === 'archived' ? { archived: true } : archived === 'all' ? {} : { archived: false },
     orderBy: { createdAt: 'desc' },
-    include: { items: { select: { quantity: true, totalCost: true, printedPrice: true, salePrice: true } } },
+    include: { items: { select: { quantity: true, totalCost: true, printedPrice: true, salePrice: true, accepted: true } } },
   })
 
   let list = rows
+  if (statusFilter) {
+    list = list.filter((r) => {
+      const state = r.archived || r.status === 'archived' ? 'archived' : r.status
+      if (statusFilter === 'active') return state !== 'archived' && state !== 'cancelled'
+      return state === statusFilter
+    })
+  }
   if (q) {
     list = list.filter(
       (r) =>
         (r.supplierName ?? '').includes(q) ||
         String(r.number).includes(q) ||
-        (r.note ?? '').includes(q),
+        (r.note ?? '').includes(q) ||
+        (r.providerDocNumber ?? '').includes(q),
     )
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(from) || /^\d{4}-\d{2}-\d{2}$/.test(to)) {
@@ -246,6 +264,14 @@ export async function POST(req: NextRequest) {
       status: 'draft',
       providerDocNumber,
       dateJalali: (typeof body?.dateJalali === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dateJalali.trim())) ? body.dateJalali.trim() : todayJalaliDash(),
+      historyJson: JSON.stringify([
+        {
+          at: new Date().toISOString(),
+          by: me.fullName,
+          action: 'create',
+          detail: `پیش‌نویس پیش‌فاکتور — ${items.length} قلم${supplierName ? ` · ${supplierName}` : ''} — پس از تحویل کالا، از دفتر فاکتورها (بخش مالی) ادامه دهید`,
+        },
+      ]),
       items: { create: items },
     },
   })

@@ -461,7 +461,9 @@ model MarginInvoice {
   supplierId        String?
   supplierName      String?
   note              String?
-  status            String    @default("draft") // draft | final
+  // R12 گردش‌کار دفتر فاکتورها: draft (پیش‌نویس) | delivered (تحویل‌شده) |
+  // reviewing (در بررسی حسابداری) | final (فاکتور خرید) | archived (بایگانی‌شده) | cancelled
+  status            String    @default("draft")
   archived          Boolean   @default(false)
   archivedAt        DateTime?
   dateJalali        String?
@@ -469,6 +471,23 @@ model MarginInvoice {
   providerDocNumber String?
   // R5-B: شناسهٔ سفارش خرید (Order) که از «ثبت تحویل و خرید» ساخته شده
   purchaseOrderId   String?
+  // ── R12: ردپای گردش‌کار چندمرحله‌ای پیش‌فاکتور → فاکتور خرید → بایگانی ──
+  deliveredAt       DateTime? // گام ۲: کارمند، تحویل فیزیکی را تأیید کرد
+  deliveredById     String?
+  deliveredByName   String?
+  reviewedAt        DateTime? // گام ۳: حسابدار/مدیر بررسی را شروع/انجام داد
+  reviewedById      String?
+  reviewedByName    String?
+  finalizedAt       DateTime? // گام ۴: فاکتور خرید نهایی شد (سند خرید + موجودی + هلو)
+  finalizedById     String?
+  finalizedByName   String?
+  cancelledAt       DateTime?
+  cancelledByName   String?
+  cancelReason      String?
+  holooInvoiceNo    String? // شماره فاکتور خرید هلو (پس از انتقال/ثبت)
+  holooReceiptNo    String? // شماره رسید پرداخت هلو
+  archiveDocId      String? // سند بایگانی (ArchiveDocument) ساخته‌شده از این فاکتور
+  historyJson       String    @default("[]") // [{at,by,action,detail}] ردپای گردش‌کار
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -496,6 +515,9 @@ model MarginItem {
   marginPct     Float   @default(0) // درصد سود ۴ رقمی روی بهای خرید (همان عددی که حسابدار می‌بیند)
   free100       Boolean @default(false) // تخفیف ۱۰۰٪ / رایگان — بدون قیمت چاپی
   baseCost      Float   @default(0) // مبنای محاسبهٔ فروش کالای رایگان (قیمت عادی تأمین‌کننده)
+  // ─── R12: بررسی حسابداری — پذیرش/رد هر قلم (مرجوعی به تأمین‌کننده) ───
+  accepted      Boolean @default(true) // مورد تأیید حسابداری (وارد انبار/هلو می‌شود)
+  rejectReason  String? // علت مرجوعی: قیمت چاپی متفاوت · تاریخ‌گذشته · شکسته · …
 
   invoice MarginInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }

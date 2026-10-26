@@ -62,6 +62,10 @@ export function safeJson<T>(raw: string | null | undefined, fallback: T): T {
 }
 
 export function clampInt(v: unknown, min: number, max: number, dflt = 0): number {
+  /* R12: Number(null) === 0 و محدود است — پارامتر غایب (null از sp.get) قبلاً به
+     به Math.min می‌رسید و مثلاً pageSize بی‌پارامتر می‌شد ۱ (سند: آرشیو فقط یک سند در
+     صفحه برمی‌گرداند). غایب/خالی/ناعدد → مقدار پیش‌فرض. */
+  if (v === null || v === undefined || v === '') return dflt
   const n = Number(v)
   if (!Number.isFinite(n)) return dflt
   return Math.max(min, Math.min(max, Math.round(n)))

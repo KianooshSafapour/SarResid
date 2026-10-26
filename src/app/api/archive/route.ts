@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
     take: pageSize,
     include: BINDER_INCLUDE,
   })
+  try { (await import('fs')).appendFileSync('archive-debug.log', JSON.stringify({ q, page, pageSize, total, rows: rows.length, where }) + '\n') } catch {}
 
   /* آمار کل دفتر آرشیو (مستقل از فیلترها — چیپ‌های سربرگ) */
   const all = await db.archiveDocument.findMany({ select: { kind: true, status: true, amount: true, binderId: true } })

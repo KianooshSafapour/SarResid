@@ -216,11 +216,11 @@ export const SECTION_TOURS: TourDef[] = [
     section: 'سودسنج',
     desc: 'محاسبهٔ سود پیش از خرید: ساخت فاکتور خرید، گیج سودِ زنده، هشدارهای قیمت و ذخیرهٔ فاکتور.',
     min: 2,
-    go: 'profit/builder',
+    go: 'finance/builder',
     roles: ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'],
     steps: [
       {
-        go: 'profit/builder',
+        go: 'finance/builder',
         target: '[data-tour="sidebar"]',
         title: 'به بخش سودسنج خوش آمدید',
         body: 'این صفحه برای محاسبهٔ سود «قبل از خرید» است: فاکتور خرید را می‌سازید و گیج سود به‌صورت زنده حرکت می‌کند. 💡 نکته: فرم در سمت راست است و گیج سود کنار آن.',

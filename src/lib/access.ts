@@ -69,7 +69,7 @@ export const SECTION_DEFAULTS: Record<string, string[]> = {
   store: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'MERCH', 'SALES'],
   supply: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM', 'SK', 'HC'],
   returns: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
-  profit: ['OWNER', 'GM', 'ADMIN', 'ACC'],
+  // R12: بخش «سودسنج» حذف شد — صفحاتش (سودسنج، دفتر فاکتورها، آمار) زیر «مالی» رفتند
   finance: ['OWNER', 'GM', 'ADMIN', 'ACC'],
   hr: ['*'],
   crm: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'SALES', 'HC'],
@@ -87,7 +87,7 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'returns/approvals': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
   'returns/payments': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
   'returns/customers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC'],
-  'profit/stats': ['OWNER', 'GM', 'ADMIN', 'ACC'],
+  'finance/stats': ['OWNER', 'GM', 'ADMIN', 'ACC'], // R12: از profit/stats به مالی منتقل شد
   'finance/cheques': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'finance/payments': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'hr/payroll': ['OWNER', 'GM', 'ADMIN'],
@@ -124,8 +124,8 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'tasks/wall': ['*'],
   'returns/new': ['*'],
   'returns/history': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
-  'profit/builder': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'],
-  'profit/history': ['OWNER', 'GM', 'ADMIN', 'ACC'],
+  'finance/builder': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'], // R12: سودسنج پیشرفته — از profit/builder به مالی منتقل شد
+  'finance/invoices': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC'], // R12: دفتر فاکتورها — گردش‌کار تحویل/بررسی/فاکتور خرید/بایگانی
   'reports/briefing': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM'],
   'reports/overview': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM'],
   'reports/exports': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM'],

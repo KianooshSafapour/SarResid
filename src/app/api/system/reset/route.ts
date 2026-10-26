@@ -39,8 +39,9 @@ export async function POST(req: NextRequest) {
   const done: Record<string, number> = {}
 
   if (scopes.includes('tours')) {
-    const r = await db.user.updateMany({ data: { tourDone: false } })
-    done['تورهای راهنما'] = r.count
+    /* ستون tourDone در این نسخهٔ اسکیمای دیتابیس وجود ندارد (تورهای دیده‌شده در
+       localStorage مرورگر هر کاربر نگه داشته می‌شوند) — فقط کلیدهای KV سرور پاک می‌شوند؛
+       برای مرورگرها دکمهٔ «شروع دوبارهٔ تور» در منوی کاربر است. */
     const kv = await db.setting.deleteMany({ where: { key: { startsWith: 'tour:' } } })
     done['کلیدهای تور'] = kv.count
   }

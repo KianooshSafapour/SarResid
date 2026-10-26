@@ -528,7 +528,7 @@ export default function ReceivingView() {
     if (!r.ok) return toast.error(r.error || 'ساخت پیش‌فاکتور ناموفق بود')
     const inv = r.data?.invoice ?? r.data
     toast.success(`پیش‌فاکتور سودسنج شمارهٔ ${fa(inv?.number ?? '')} ساخته شد — برای بازبینی به سودسنج می‌روید`)
-    if (inv?.id) go(`profit/builder?id=${inv.id}`)
+    if (inv?.id) go(`finance/builder?id=${inv.id}`)
   }
 
   /* ── بستن سفارش (مرحلهٔ ۵) ── */

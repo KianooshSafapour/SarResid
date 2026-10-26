@@ -79,6 +79,23 @@ document.addEventListener('keydown', function (e) {
   }
 }, true);
 </script><script>
+/* ── R12: بازهدایش مسیرهای قدیمی سودسنج — بخش «سودسنج» زیر «مالی» رفت ──
+   #/profit/builder → #/finance/builder · #/profit/history → #/finance/invoices
+   #/profit/stats   → #/finance/stats   (کوئری‌استرینگ حفظ می‌شود) */
+(function () {
+  var MAP = { builder: 'finance/builder', history: 'finance/invoices', stats: 'finance/stats' };
+  function fix() {
+    var m = (location.hash || '').match(/^#\/profit\/([a-z]+)(\?.*)?$/);
+    if (!m) return;
+    var to = MAP[m[1]];
+    if (!to) return;
+    var next = '#/' + to + (m[2] || '');
+    try { location.replace(next); } catch (e) { location.hash = next; }
+  }
+  window.addEventListener('hashchange', fix);
+  fix();
+})();
+</script><script>
 /* ── تاریخ‌گیر شمسی سراسری — همهٔ ورودی‌های تاریخ اپ (حتی صفحات قدیمی) ──
    ورودی‌هایی که placeholder یا مقدارشان الگوی تاریخ شمسی دارد (۱۴۰۴/۱۰/۲۰ …)
    با کلیک، تقویم شمسی برایشان باز می‌شود. مقدار با رویداد input واقعی ست می‌شود

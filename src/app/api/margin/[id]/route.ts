@@ -1,20 +1,63 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
-import { getSessionUser } from '@/lib/auth'
-import { toFaDigits } from '@/lib/jalali'
+import { getSessionUser, type SessionUser } from '@/lib/auth'
+import { toFaDigits, todayJalaliDash } from '@/lib/jalali'
 import { deriveItem, invoiceListOut, MARGIN_ROLES, getMarginThresholds, type MarginItemInput } from '../route'
+import { createPurchaseOrder, pushOrderToHoloo, faMoney, type PurchaseDerivedItem } from '@/lib/margin-purchase'
 
 export const dynamic = 'force-dynamic'
 
 type RouteContext = { params: Promise<{ id: string }> }
+
+/* R12 — نقش‌های گردش‌کار دفتر فاکتورها:
+   • تأیید تحویل (deliver): هر کاربرِ واردشده (همان اصل R11 دریافت کالا — همه باید بتوانند تأیید کنند)
+   • بررسی حسابداری و نهایی‌سازی (review/finalize): حسابدار یا مدیران (اگر حسابدار در دسترس نبود)
+   • بایگانی سند: حسابدار یا مدیران
+   • لغو/بازکردن بایگانی: مدیران ارشد */
+const REVIEW_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC']
+const MANAGER_ROLES = ['OWNER', 'GM', 'ADMIN']
+
+const REJECT_REASONS = [
+  'قیمت چاپی متفاوت',
+  'تاریخ انقضا گذشته/نزدیک',
+  'شکسته/مخدوش',
+  'کالای اشتباه',
+  'کیفیت نامطلوب',
+  'سفارش نبود',
+  'دیگر',
+]
 
 function firstBarcodeOf(p: { barcodesJson: string; code: string | null }): string | null {
   const list = safeJson<string[]>(p.barcodesJson, [])
   return list[0] ?? p.code ?? null
 }
 
-/** GET /api/margin/[id] — {invoice:{…, archived, dateJalali, items:[… with product memory]}} */
+/** ردپای گردش‌کار — الحاق رویداد به historyJson */
+type HistoryEvent = { at: string; by: string; action: string; detail?: string }
+function readHistory(raw: string | null): HistoryEvent[] {
+  const list = safeJson<HistoryEvent[]>(raw, [])
+  return Array.isArray(list) ? list : []
+}
+function withEvent(raw: string | null, ev: HistoryEvent): string {
+  const list = readHistory(raw)
+  list.push({ at: ev.at || new Date().toISOString(), by: ev.by, action: ev.action, ...(ev.detail ? { detail: ev.detail } : {}) })
+  return JSON.stringify(list.slice(-80))
+}
+
+const HISTORY_LABEL: Record<string, string> = {
+  create: 'ثبت پیش‌نویس',
+  edit: 'ویرایش',
+  deliver: 'تأیید تحویل کالا',
+  'start-review': 'شروع بررسی حسابداری',
+  'review-save': 'ذخیرهٔ بررسی',
+  finalize: 'ثبت فاکتور خرید',
+  archive: 'بایگانی سند',
+  unarchive: 'بازکردن بایگانی',
+  cancel: 'لغو فاکتور',
+}
+
+/** GET /api/margin/[id] — {invoice:{…, archived, dateJalali, items:[… with product memory], workflow…}} */
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
@@ -40,6 +83,34 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     const arr = byProduct.get(pid) ?? []
     arr.push(o)
     byProduct.set(pid, arr)
+  }
+
+  /* R12: سند بایگانی پیوسته + زنجیرهٔ محل فیزیکی کاغذ */
+  const archiveDoc = inv.archiveDocId
+    ? await db.archiveDocument
+        .findUnique({
+          where: { id: inv.archiveDocId },
+          include: { binder: { include: { shelf: { include: { cabinet: true } } } } },
+        })
+        .catch(() => null)
+    : null
+  let archiveOut: Record<string, unknown> | null = null
+  if (archiveDoc) {
+    const b = archiveDoc.binder
+    const sh = b?.shelf ?? null
+    const cab = sh?.cabinet ?? null
+    archiveOut = {
+      id: archiveDoc.id,
+      title: archiveDoc.title,
+      status: archiveDoc.status,
+      folio: archiveDoc.folio,
+      holooInvoiceNo: archiveDoc.holooInvoiceNo,
+      holooReceiptNo: archiveDoc.holooReceiptNo,
+      hasScan: !!archiveDoc.scanDataUrl,
+      scanName: archiveDoc.scanName,
+      amount: archiveDoc.amount,
+      location: b ? { binder: b.name, binderCode: b.code, shelf: sh?.name ?? null, cabinet: cab?.name ?? null } : null,
+    }
   }
 
   const items = inv.items.map((it) => {
@@ -86,10 +157,16 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       note: it.note,
       level: it.level,
       alerts: safeJson<unknown[]>(it.alertsJson, []),
+      accepted: it.accepted,
+      rejectReason: it.rejectReason,
       product,
       lastUnitCost,
     }
   })
+
+  const order = inv.purchaseOrderId
+    ? await db.order.findUnique({ where: { id: inv.purchaseOrderId }, select: { id: true, code: true, status: true, holooErp: true, payMethod: true } })
+    : null
 
   return ok({
     invoice: {
@@ -105,12 +182,26 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       dateJalali: inv.dateJalali,
       providerDocNumber: inv.providerDocNumber,
       purchaseOrderId: inv.purchaseOrderId,
+      order: order ? { code: order.code, status: order.status, holooErp: order.holooErp, payMethod: order.payMethod } : null,
+      deliveredAt: inv.deliveredAt?.toISOString() ?? null,
+      deliveredByName: inv.deliveredByName,
+      reviewedAt: inv.reviewedAt?.toISOString() ?? null,
+      reviewedByName: inv.reviewedByName,
+      finalizedAt: inv.finalizedAt?.toISOString() ?? null,
+      finalizedByName: inv.finalizedByName,
+      cancelledAt: inv.cancelledAt?.toISOString() ?? null,
+      cancelledByName: inv.cancelledByName,
+      cancelReason: inv.cancelReason,
+      holooInvoiceNo: inv.holooInvoiceNo,
+      holooReceiptNo: inv.holooReceiptNo,
+      history: readHistory(inv.historyJson).map((h) => ({ ...h, label: HISTORY_LABEL[h.action] ?? h.action })),
+      archive: archiveOut,
       items,
     },
   })
 }
 
-/** PUT /api/margin/[id] — full replace (builder «ذخیره»); archived invoices are locked */
+/** PUT /api/margin/[id] — full replace (builder «ذخیره»); فقط پیش‌نویس/فاکتور نهاییِ باز */
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
@@ -120,6 +211,9 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   const inv = await db.marginInvoice.findUnique({ where: { id } })
   if (!inv) return fail('فاکتور یافت نشد', 404)
   if (inv.archived) return fail('فاکتور بایگانی‌شده قابل ویرایش نیست؛ ابتدا بایگانی را باز کنید')
+  if (inv.status === 'delivered' || inv.status === 'reviewing')
+    return fail('این فاکتور تحویل شده و در گردش‌کار بررسی است — ویرایش اقلام از «بررسی حسابداری» در دفتر فاکتورها انجام می‌شود')
+  if (inv.status === 'cancelled') return fail('فاکتور لغوشده قابل ویرایش نیست')
 
   const body = await req.json().catch(() => null)
   if (!body) return fail('درخواست نامعتبر است')
@@ -168,6 +262,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       supplierName,
       note,
       ...(body?.providerDocNumber !== undefined ? { providerDocNumber: String(body.providerDocNumber ?? '').trim() || null } : {}),
+      historyJson: withEvent(inv.historyJson, { at: new Date().toISOString(), by: me.fullName, action: 'edit', detail: 'ویرایش کامل اقلام از فاکتورنویس' }),
       items: { create: items },
     },
   })
@@ -185,35 +280,391 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   return ok({ id: updated.id, number: updated.number })
 }
 
-/** PATCH /api/margin/[id] — {action:'finalize'|'archive'} or {note, items} updates */
+/* ────────────────────────────────────────────────────────────────
+   R12 — گردش‌کار دفتر فاکتورها (PATCH actions)
+   draft →(deliver)→ delivered →(start-review/review-save)→ reviewing
+        →(finalize)→ final →(archive)→ archived
+   draft|delivered →(cancel)→ cancelled      archived →(unarchive)→ final
+   ──────────────────────────────────────────────────────────────── */
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  if (!MARGIN_ROLES.includes(me.role)) return fail('شما مجاز به ویرایش فاکتور سودسنج نیستید', 403)
 
   const { id } = await ctx.params
-  const inv = await db.marginInvoice.findUnique({ where: { id } })
+  const inv = await db.marginInvoice.findUnique({ where: { id }, include: { items: true } })
   if (!inv) return fail('فاکتور یافت نشد', 404)
 
   const body = await req.json().catch(() => ({}))
   const action = String(body?.action ?? '')
+  const now = new Date()
+  const nowIso = now.toISOString()
+  const numFa = toFaDigits(String(inv.number))
 
-  if (action === 'finalize') {
-    if (inv.archived) return fail('فاکتور بایگانی‌شده قابل تغییر نیست')
-    const updated = await db.marginInvoice.update({ where: { id }, data: { status: 'final' } })
-    return ok({ id, number: updated.number, status: updated.status })
-  }
-  if (action === 'archive') {
-    if (inv.archived) return fail('فاکتور قبلاً بایگانی شده است')
+  /* ── گام ۲: تأیید تحویل کالا — هر کاربرِ واردشده ── */
+  if (action === 'deliver') {
+    if (inv.status !== 'draft') return fail('تأیید تحویل فقط برای فاکتور در وضعیت «پیش‌نویس» ممکن است')
+    const note = body?.note ? ` — ${String(body.note).trim().slice(0, 200)}` : ''
     const updated = await db.marginInvoice.update({
       where: { id },
-      data: { archived: true, archivedAt: new Date() },
+      data: {
+        status: 'delivered',
+        deliveredAt: now,
+        deliveredById: me.id,
+        deliveredByName: me.fullName,
+        historyJson: withEvent(inv.historyJson, {
+          at: nowIso,
+          by: me.fullName,
+          action: 'deliver',
+          detail: `تحویل فیزیکی کالا تأیید شد؛ آمادهٔ بررسی حسابداری${note}`,
+        }),
+      },
     })
-    return ok({ id, archived: updated.archived, archivedAt: updated.archivedAt?.toISOString() ?? null })
+    await notifyRoles(['ACC', 'OWNER', 'GM', 'ADMIN', 'EXEC'], {
+      kind: `margin:deliver:${inv.id}`,
+      severity: 'info',
+      title: 'پیش‌فاکتور تحویل‌شده در انتظار بررسی حسابداری',
+      body: `فاکتور #${numFa} (${inv.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${me.fullName} تحویل تأیید شد — بررسی قیمت‌ها و حاشیهٔ سود نوبت حسابداری است.`,
+      go: `#/finance/invoices?open=${inv.id}`,
+    })
+    await logActivity({
+      userId: me.id, userName: me.fullName,
+      action: 'margin.deliver', actionLabel: 'تأیید تحویل پیش‌فاکتور',
+      category: 'profit', detail: `#${numFa} — ${inv.supplierName ?? ''}`, entityId: id,
+    })
+    return ok({ id, status: updated.status, deliveredAt: nowIso })
   }
 
+  /* ── گام ۳: شروع بررسی حسابداری ── */
+  if (action === 'start-review') {
+    if (!REVIEW_ROLES.includes(me.role)) return fail('بررسی حسابداری فقط برای حسابدار یا مدیران ممکن است', 403)
+    if (inv.status !== 'delivered' && inv.status !== 'reviewing') return fail('بررسی فقط برای فاکتور «تحویل‌شده» ممکن است — ابتدا تأیید تحویل')
+    const updated = await db.marginInvoice.update({
+      where: { id },
+      data: {
+        status: 'reviewing',
+        reviewedAt: now,
+        reviewedById: me.id,
+        reviewedByName: me.fullName,
+        historyJson: withEvent(inv.historyJson, { at: nowIso, by: me.fullName, action: 'start-review', detail: 'بررسی قیمت‌ها و حاشیهٔ سود آغاز شد' }),
+      },
+    })
+    return ok({ id, status: updated.status })
+  }
+
+  /* ── گام ۳ (ادامه): ذخیرهٔ بررسی — ویرایش قیمت‌ها + پذیرش/رد اقلام (مرجوعی) ── */
+  if (action === 'review-save') {
+    if (!REVIEW_ROLES.includes(me.role)) return fail('بررسی حسابداری فقط برای حسابدار یا مدیران ممکن است', 403)
+    if (inv.status !== 'delivered' && inv.status !== 'reviewing') return fail('ذخیرهٔ بررسی فقط برای فاکتور «تحویل‌شده» ممکن است — ابتدا تأیید تحویل')
+
+    const rawItems: Record<string, unknown>[] = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : []
+    if (rawItems.length === 0) return fail('فهرست اقلام را بفرستید')
+    const byId = new Map(rawItems.map((r) => [String(r?.id ?? ''), r]))
+
+    const thresholds = await getMarginThresholds()
+    let acceptedCount = 0
+    let rejectedCount = 0
+    const rejectSummary: string[] = []
+
+    for (const it of inv.items) {
+      const raw = byId.get(it.id)
+      if (!raw) continue
+      const accepted = raw?.accepted === false ? false : true
+      let rejectReason: string | null = null
+      if (!accepted) {
+        rejectReason = String(raw?.rejectReason ?? '').trim() || 'دیگر'
+        if (!REJECT_REASONS.includes(rejectReason) && rejectReason !== 'دیگر') rejectReason = rejectReason.slice(0, 120)
+        rejectedCount++
+        rejectSummary.push(`${it.productName} (${rejectReason})`)
+      } else {
+        acceptedCount++
+      }
+      /* ویرایش قیمت‌ها توسط حسابدار (تورم روزانه) — فقط اقلام پذیرفته‌ده ویرایش می‌شوند */
+      const edits: Record<string, unknown> = { accepted, rejectReason }
+      if (accepted && (raw?.totalCost !== undefined || raw?.printedPrice !== undefined || raw?.salePrice !== undefined)) {
+        const merged = deriveItem(
+          {
+            productId: it.productId,
+            barcode: it.barcode,
+            productName: it.productName,
+            unit: it.unit,
+            quantity: it.quantity,
+            totalCost: raw?.totalCost !== undefined ? Number(raw.totalCost) || 0 : it.totalCost,
+            printedPrice: raw?.printedPrice !== undefined ? Number(raw.printedPrice) || 0 : it.printedPrice,
+            note: it.note,
+            salePrice: raw?.salePrice !== undefined ? Number(raw.salePrice) || 0 : it.salePrice,
+            marginPct: it.marginPct,
+            free100: it.free100,
+            baseCost: it.baseCost,
+          },
+          thresholds,
+        )
+        edits.totalCost = merged.totalCost
+        edits.unitCost = merged.unitCost
+        edits.printedPrice = merged.printedPrice
+        edits.salePrice = merged.salePrice
+        edits.margin = merged.margin
+        edits.profitPerUnit = merged.profitPerUnit
+        edits.marginPct = merged.marginPct
+        edits.level = merged.level
+      }
+      await db.marginItem.update({ where: { id: it.id }, data: edits })
+    }
+
+    const detail = rejectedCount
+      ? `${toFaDigits(String(acceptedCount))} قلم پذیرفته شد · ${toFaDigits(String(rejectedCount))} قلم مرجوعی: ${rejectSummary.slice(0, 6).join('، ')}${rejectSummary.length > 6 ? ' و…' : ''}`
+      : `${toFaDigits(String(acceptedCount))} قلم پذیرفته شد`
+    const updated = await db.marginInvoice.update({
+      where: { id },
+      data: {
+        status: 'reviewing',
+        reviewedAt: now,
+        reviewedById: me.id,
+        reviewedByName: me.fullName,
+        historyJson: withEvent(inv.historyJson, { at: nowIso, by: me.fullName, action: 'review-save', detail }),
+      },
+    })
+    return ok({ id, status: updated.status, acceptedCount, rejectedCount })
+  }
+
+  /* ── گام ۴: ثبت فاکتور خرید (نهایی) — سند خرید + موجودی/قیمت کالا + هلو ── */
+  if (action === 'finalize') {
+    if (!REVIEW_ROLES.includes(me.role)) return fail('ثبت فاکتور خرید فقط برای حسابدار یا مدیران ممکن است', 403)
+    if (inv.status !== 'delivered' && inv.status !== 'reviewing' && inv.status !== 'draft')
+      return fail('ثبت فاکتور خرید فقط برای پیش‌فاکتورِ تحویل‌شده (یا پیش‌نویس) ممکن است')
+    if (inv.purchaseOrderId) return fail('برای این فاکتور قبلاً سند خرید ثبت شده است')
+    if (inv.items.length === 0) return fail('فاکتور قلمی ندارد')
+
+    const acceptedItems = inv.items.filter((it) => it.accepted !== false)
+    const rejectedItems = inv.items.filter((it) => it.accepted === false)
+    if (acceptedItems.length === 0) return fail('حداقل یک قلم باید پذیرفته شود — اگر کل محموله مرجوع است، فاکتور را لغو کنید')
+
+    const payMethod = ['CASH', 'CHEQUE', 'POS'].includes(String(body.payMethod)) ? String(body.payMethod) : 'CASH'
+    const pushToHoloo = body.pushToHoloo === true
+
+    const { order, totalAmount, stockUpdated } = await createPurchaseOrder({
+      items: acceptedItems as unknown as PurchaseDerivedItem[],
+      supplierId: inv.supplierId,
+      supplierName: inv.supplierName,
+      note: inv.note,
+      providerDocNumber: inv.providerDocNumber,
+      dateJalali: inv.dateJalali || todayJalaliDash(),
+      payMethod,
+      actor: { id: me.id, fullName: me.fullName },
+      marginInvoiceNumber: inv.number,
+      sourceLabel: 'ثبت فاکتور خرید از دفتر فاکتورها (پس از بررسی حسابداری)',
+      receivedDetail: rejectedItems.length
+        ? `پس از بررسی حسابداری — ${toFaDigits(String(acceptedItems.length))} قلم پذیرفته و ${toFaDigits(String(rejectedItems.length))} قلم مرجوع تأمین‌کننده شد`
+        : 'پس از بررسی حسابداری — همهٔ اقلام پذیرفته شد',
+    })
+
+    let holoo: { pushed: boolean; pending?: boolean; reason?: string; invoiceNo?: string } | null = null
+    if (pushToHoloo) {
+      holoo = await pushOrderToHoloo({
+        orderId: order.id,
+        orderCode: order.code,
+        marginInvoiceNumber: inv.number,
+        cookie: req.headers.get('cookie'),
+        origin: `http://127.0.0.1:${process.env.PORT || 3000}`,
+      })
+    }
+
+    await db.marginInvoice.update({
+      where: { id },
+      data: {
+        status: 'final',
+        purchaseOrderId: order.id,
+        finalizedAt: now,
+        finalizedById: me.id,
+        finalizedByName: me.fullName,
+        ...(holoo?.pushed && holoo.invoiceNo ? { holooInvoiceNo: holoo.invoiceNo } : {}),
+        historyJson: withEvent(inv.historyJson, {
+          at: nowIso,
+          by: me.fullName,
+          action: 'finalize',
+          detail: `فاکتور خرید نهایی شد — سند خرید ${order.code} · ${toFaDigits(String(acceptedItems.length))} قلم پذیرفته، ${toFaDigits(String(rejectedItems.length))} قلم مرجوعی · جمع پذیرفته ${faMoney(totalAmount)} ریال${holoo ? (holoo.pushed ? ' · ثبت شد در هلو' : ' · هلو: در صف ارسال') : ''}`,
+        }),
+      },
+    })
+
+    await notifyRoles(['GM', 'OWNER', 'ADMIN', 'PM'], {
+      kind: `margin:finalize:${inv.id}`,
+      severity: 'success',
+      title: 'فاکتور خرید ثبت شد',
+      body: `فاکتور #${numFa} (${inv.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${me.fullName} نهایی شد — سند خرید ${order.code} تشکیل و موجودی به‌روز شد. پس از بایگانی کاغذی، سند را در «دفتر فاکتورها» بایگانی کنید.`,
+      go: `#/finance/invoices?open=${inv.id}`,
+    })
+
+    await logActivity({
+      userId: me.id, userName: me.fullName,
+      action: 'margin.finalize', actionLabel: 'ثبت فاکتور خرید',
+      category: 'profit',
+      detail: `#${numFa} + سند خرید ${order.code} — ${inv.supplierName ?? ''} — ${toFaDigits(String(acceptedItems.length))} قلم پذیرفته / ${toFaDigits(String(rejectedItems.length))} مرجوعی`,
+      entityId: id,
+    })
+
+    return ok({
+      id,
+      status: 'final',
+      order: { id: order.id, code: order.code, status: order.status },
+      totalAmount,
+      stockUpdated,
+      acceptedCount: acceptedItems.length,
+      rejectedCount: rejectedItems.length,
+      holoo,
+    })
+  }
+
+  /* ── گام ۵: بایگانی سند — ثبت در نظام آرشیو + زون‌بند/برگه ── */
+  if (action === 'archive') {
+    if (!REVIEW_ROLES.includes(me.role)) return fail('بایگانی سند فقط برای حسابدار یا مدیران ممکن است', 403)
+    if (inv.status !== 'final') return fail('بایگانی فقط برای «فاکتور خرید» نهایی‌شده ممکن است')
+    if (inv.archived || inv.archiveDocId) return fail('این فاکتور قبلاً بایگانی شده است')
+
+    const binderId = String(body?.binderId ?? '').trim() || null
+    if (!binderId) return fail('زون‌بند (جایگاه فیزیکی سند کاغذی) را انتخاب کنید')
+    const binder = await db.archiveBinder.findUnique({
+      where: { id: binderId },
+      include: { shelf: { include: { cabinet: true } } },
+    })
+    if (!binder) return fail('زون‌بند یافت نشد')
+
+    const folio = String(body?.folio ?? '').trim().slice(0, 60) || null
+    const holooInvoiceNo = String(body?.holooInvoiceNo ?? '').trim().slice(0, 60) || null
+    const holooReceiptNo = String(body?.holooReceiptNo ?? '').trim().slice(0, 60) || null
+
+    let scanDataUrl: string | null = null
+    let scanName: string | null = null
+    if (body?.scan != null && body.scan !== '') {
+      const dataUrl = String((body.scan as { dataUrl?: string })?.dataUrl ?? body.scan)
+      const name = String((body.scan as { name?: string })?.name ?? '').slice(0, 120)
+      if (!/^data:image\/(png|jpe?g|webp);base64,/.test(dataUrl)) return fail('قالب اسکن باید PNG/JPG/WebP باشد')
+      if (dataUrl.length > 420_000) return fail('حجم اسکن بیش از حد مجاز است (حداکثر ~۳۰۰ کیلوبایت)')
+      scanDataUrl = dataUrl
+      scanName = name || 'اسکن فاکتور خرید'
+    }
+
+    /* اقلام مرجوعی — در سند آرشیو قرمز می‌شوند */
+    const rejected = inv.items.filter((it) => it.accepted === false)
+    const returnedJson = JSON.stringify(
+      rejected.map((it) => ({ name: it.productName, qty: it.quantity, reason: it.rejectReason ?? 'دیگر' })),
+    )
+    const totalAccepted = inv.items.filter((it) => it.accepted !== false).reduce((s, it) => s + it.totalCost, 0)
+
+    const doc = await db.archiveDocument.create({
+      data: {
+        kind: 'INVOICE',
+        title: `فاکتور خرید #${numFa}${inv.supplierName ? ` — ${inv.supplierName}` : ''}`,
+        dateJalali: inv.dateJalali || todayJalaliDash(),
+        supplierId: inv.supplierId,
+        supplierName: inv.supplierName,
+        holooInvoiceNo: holooInvoiceNo || inv.holooInvoiceNo,
+        holooReceiptNo: holooReceiptNo || inv.holooReceiptNo,
+        binderId,
+        folio,
+        amount: totalAccepted,
+        status: 'ARCHIVED',
+        returnedJson,
+        note: [
+          inv.providerDocNumber ? `سند تأمین‌کننده: ${inv.providerDocNumber}` : null,
+          inv.purchaseOrderId ? 'سند خرید این فاکتور در «انبار و سفارش» ثبت شده است' : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || null,
+        scanDataUrl,
+        scanName,
+        createdById: me.id,
+        createdByName: me.fullName,
+      },
+    })
+
+    await db.marginInvoice.update({
+      where: { id },
+      data: {
+        status: 'archived',
+        archived: true,
+        archivedAt: now,
+        archiveDocId: doc.id,
+        holooInvoiceNo: holooInvoiceNo || inv.holooInvoiceNo,
+        holooReceiptNo: holooReceiptNo || inv.holooReceiptNo,
+        historyJson: withEvent(inv.historyJson, {
+          at: nowIso,
+          by: me.fullName,
+          action: 'archive',
+          detail: `سند کاغذی بایگانی شد — ${binder.shelf?.cabinet?.name ?? 'کابینت؟'} ‹ ${binder.shelf?.name ?? 'قفسه؟'} ‹ زون‌بند «${binder.name}»${folio ? ` · برگه ${toFaDigits(folio)}` : ''}${holooInvoiceNo ? ` · هلو فاکتور ${toFaDigits(holooInvoiceNo)}` : ''}${holooReceiptNo ? ` · هلو رسید ${toFaDigits(holooReceiptNo)}` : ''}`,
+        }),
+      },
+    })
+
+    await logActivity({
+      userId: me.id, userName: me.fullName,
+      action: 'margin.archive', actionLabel: 'بایگانی فاکتور خرید',
+      category: 'profit',
+      detail: `#${numFa} → سند آرشیو ${doc.id.slice(-6)} — زون‌بند «${binder.name}»`,
+      entityId: id,
+    })
+
+    return ok({ id, status: 'archived', archivedAt: nowIso, archiveDocId: doc.id, docId: doc.id })
+  }
+
+  /* ── بازکردن بایگانی (در صورت اشتباه) — مدیران ارشد ── */
+  if (action === 'unarchive') {
+    if (!MANAGER_ROLES.includes(me.role)) return fail('بازکردن بایگانی فقط برای مدیران ارشد ممکن است', 403)
+    if (!inv.archived) return fail('این فاکتور بایگانی نشده است')
+    if (inv.archiveDocId) {
+      await db.archiveDocument.deleteMany({ where: { id: inv.archiveDocId } }).catch(() => {})
+    }
+    const updated = await db.marginInvoice.update({
+      where: { id },
+      data: {
+        status: 'final',
+        archived: false,
+        archivedAt: null,
+        archiveDocId: null,
+        historyJson: withEvent(inv.historyJson, { at: nowIso, by: me.fullName, action: 'unarchive', detail: 'بایگانی باز شد — سند آرشیو مرتبط حذف شد؛ پس از اصلاح، دوباره بایگانی کنید' }),
+      },
+    })
+    await logActivity({
+      userId: me.id, userName: me.fullName,
+      action: 'margin.unarchive', actionLabel: 'بازکردن بایگانی فاکتور',
+      category: 'profit', detail: `#${numFa}`, entityId: id,
+    })
+    return ok({ id, status: updated.status, archived: false })
+  }
+
+  /* ── لغو فاکتور (کل محموله مرجوع/ابطال) ── */
+  if (action === 'cancel') {
+    if (!MANAGER_ROLES.includes(me.role)) return fail('لغو فاکتور فقط برای مدیران ارشد ممکن است', 403)
+    if (inv.status !== 'draft' && inv.status !== 'delivered')
+      return fail('لغو فقط برای پیش‌نویس یا فاکتور تحویل‌شده (پیش از ثبت خرید) ممکن است')
+    if (inv.purchaseOrderId) return fail('برای این فاکتور سند خرید ثبت شده — از مسیر سفارش‌ها پیگیری کنید')
+    const reason = String(body?.reason ?? '').trim()
+    if (reason.length < 3) return fail('علت لغو را حداقل با ۳ حرف بنویسید')
+    const updated = await db.marginInvoice.update({
+      where: { id },
+      data: {
+        status: 'cancelled',
+        cancelledAt: now,
+        cancelledByName: me.fullName,
+        cancelReason: reason.slice(0, 300),
+        historyJson: withEvent(inv.historyJson, { at: nowIso, by: me.fullName, action: 'cancel', detail: `لغو شد — علت: ${reason.slice(0, 200)}` }),
+      },
+    })
+    await logActivity({
+      userId: me.id, userName: me.fullName,
+      action: 'margin.cancel', actionLabel: 'لغو فاکتور سودسنج',
+      category: 'profit', detail: `#${numFa} — ${reason.slice(0, 120)}`, entityId: id,
+    })
+    return ok({ id, status: updated.status })
+  }
+
+  /* سازگار با گذشته: action:'archive' قدیمی (قفل بدون سند) دیگر پشتیبانی نمی‌شود؛
+     بایگانی واقعی از مسیر بالا با زون‌بند انجام می‌شود. */
+
   // plain field update (note / items) — archived stays locked
+  if (!MARGIN_ROLES.includes(me.role)) return fail('شما مجاز به ویرایش فاکتور سودسنج نیستید', 403)
   if (inv.archived) return fail('فاکتور بایگانی‌شده قابل ویرایش نیست؛ ابتدا بایگانی را باز کنید')
+  if (inv.status !== 'draft' && inv.status !== 'final')
+    return fail('در این وضعیت، ویرایش مستقیم مجاز نیست — از بررسی حسابداری در دفتر فاکتورها استفاده کنید')
   const thresholds = await getMarginThresholds()
   const data: Record<string, unknown> = {}
   if (body?.note !== undefined) data.note = String(body.note ?? '').trim() || null
@@ -240,13 +691,14 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       ) as MarginItemInput & { alertsJson: string },
     )
     data.items = { create: items }
+    data.historyJson = withEvent(inv.historyJson, { at: nowIso, by: me.fullName, action: 'edit', detail: 'ویرایش اقلام' })
   }
   await db.marginInvoice.update({ where: { id }, data })
   const refreshed = await db.marginInvoice.findUnique({ where: { id }, include: { items: { select: { quantity: true, totalCost: true, printedPrice: true, salePrice: true } } } })
   return ok(refreshed ? invoiceListOut(refreshed) : { id })
 }
 
-/** DELETE /api/margin/[id] — archived invoices are locked */
+/** DELETE /api/margin/[id] — بایگانی‌شده و فاکتورهای ثبت‌شده قابل حذف نیستند */
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
@@ -256,6 +708,9 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   const inv = await db.marginInvoice.findUnique({ where: { id } })
   if (!inv) return fail('فاکتور یافت نشد', 404)
   if (inv.archived) return fail('فاکتور بایگانی‌شده قابل حذف نیست؛ ابتدا بایگانی را باز کنید')
+  if (inv.purchaseOrderId) return fail('برای این فاکتور سند خرید ثبت شده — ابتدا از مسیر سفارش‌ها اصلاح کنید')
+  if (inv.status === 'delivered' || inv.status === 'reviewing')
+    return fail('فاکتورِ در گردش‌کار (تحویل‌شده/در بررسی) قابل حذف نیست — ابتدا لغوش کنید')
 
   await db.marginInvoice.delete({ where: { id } })
   await logActivity({
@@ -268,4 +723,22 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     entityId: id,
   })
   return ok({ id })
+}
+
+/** اعلان درون‌برنامه‌ای برای نقش‌ها — مثل R10 سفارش‌ها */
+async function notifyRoles(roles: string[], data: { kind: string; severity: string; title: string; body: string; go: string }) {
+  for (const role of roles) {
+    await db.notification
+      .create({
+        data: {
+          role,
+          kind: data.kind,
+          severity: data.severity,
+          title: data.title,
+          body: data.body,
+          go: data.go,
+        },
+      })
+      .catch(() => {})
+  }
 }

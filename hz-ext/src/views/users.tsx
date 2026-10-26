@@ -59,7 +59,6 @@ const SECTION_DEFAULTS: Record<string, string[]> = {
   store: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'MERCH', 'SALES'],
   supply: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM', 'SK', 'HC'],
   returns: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
-  profit: ['OWNER', 'GM', 'ADMIN', 'ACC'],
   finance: ['OWNER', 'GM', 'ADMIN', 'ACC'],
   hr: ['*'],
   crm: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'SALES', 'HC'],
@@ -90,9 +89,9 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   'returns/customers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC'],
   'returns/new': ['*'],
   'returns/history': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
-  'profit/builder': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'],
-  'profit/history': ['OWNER', 'GM', 'ADMIN', 'ACC'],
-  'profit/stats': ['OWNER', 'GM', 'ADMIN', 'ACC'],
+  'finance/builder': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'],
+  'finance/invoices': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC'],
+  'finance/stats': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'finance/cheques': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'finance/payments': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'hr/payroll': ['OWNER', 'GM', 'ADMIN'],
@@ -185,18 +184,14 @@ const SECTIONS: SectionDef[] = [
     ],
   },
   {
-    key: 'profit', label: 'سود', icon: 'trendingUp',
-    pages: [
-      { key: 'profit/builder', label: 'فاکتور و محاسبه سود' },
-      { key: 'profit/history', label: 'دفتر فاکتورها' },
-      { key: 'profit/stats', label: 'آمار' },
-    ],
-  },
-  {
     key: 'finance', label: 'مالی', icon: 'banknote',
     pages: [
+      { key: 'finance/builder', label: 'سودسنج پیشرفته' },
+      { key: 'finance/invoices', label: 'دفتر فاکتورها' },
+      { key: 'finance/stats', label: 'آمار سود' },
       { key: 'finance/cheques', label: 'چک‌ها' },
       { key: 'finance/payments', label: 'پرداخت‌ها' },
+      { key: 'finance/archive', label: 'آرشیو اسناد' },
     ],
   },
   {

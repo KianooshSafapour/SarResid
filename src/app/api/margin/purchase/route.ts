@@ -3,23 +3,25 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { todayJalaliDash, toFaDigits } from '@/lib/jalali'
-import { getHolooConfig } from '@/lib/holoo'
 import { MARGIN_ROLES, deriveItem, getMarginThresholds } from '../route'
+import { createPurchaseOrder, pushOrderToHoloo, faMoney, type PurchaseDerivedItem } from '@/lib/margin-purchase'
 
 export const dynamic = 'force-dynamic'
 
-/** «ثبت تحویل و خرید» — R5-B req#5
+/** «ثبت تحویل و خرید» — R5-B req#5 (مسیر سریع)
  *  POST /api/margin/purchase
  *  یک فاکتور سودسنج (status=final) + یک سند خرید (Order RECEIVED با اقلام دریافت‌شده)
  *  می‌سازد؛ موجودی و بهای آخرین خرید و قیمت فروش کالاها هم مثل فرایند «دریافت» به‌روز می‌شود.
  *  بدنه: {supplierId?, supplierName, note?, providerDocNumber?, dateJalali?, payMethod?, pushToHoloo?, items:[…]}
  *  pushToHoloo=true → تلاش برای ثبت سفارش خرید در هلو (Apex) با همان انتگراسیون /api/holoo/sync؛
  *  اگر در دسترس نبود، ردیف HolooSyncLog با وضعیت FAIL/در انتظار ثبت می‌شود (الگوی موجود).
+ *
+ *  R12: مسیر گام‌به‌گام (پیش‌نویس → تحویل → بررسی → فاکتور خرید → بایگانی) از
+ *  PATCH /api/margin/[id] action=finalize می‌گذرد و همان منطق مشترک
+ *  src/lib/margin-purchase.ts را استفاده می‌کند. این ENDPOINT برای ثبت یک‌ضربهٔ
+ *  تحویلِ بی‌مشکل باقی مانده (سازگار با گذشته). پس از ثبت، فاکتور در دفتر
+ *  فاکتورها با وضعیت «فاکتور خرید» می‌نشیند و بایگانی سند کاغذی همان‌جا انجام می‌شود.
  */
-
-function faMoney(n: number): string {
-  return toFaDigits(Math.round(n).toLocaleString('en-US')).replace(/,/g, '٬')
-}
 
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
@@ -54,8 +56,7 @@ export async function POST(req: NextRequest) {
 
   const thresholds = await getMarginThresholds()
 
-  type DerivedItem = ReturnType<typeof deriveItem>
-  const items: DerivedItem[] = []
+  const items: (ReturnType<typeof deriveItem>)[] = []
   for (const raw of rawItems) {
     const name = String(raw?.productName ?? '').trim()
     if (!name) return fail('نام کالا را وارد کنید')
@@ -82,54 +83,9 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const totalAmount = items.reduce((s, it) => s + it.totalCost, 0)
-
   /* شمارهٔ بعدی فاکتور سودسنج */
   const maxNumber = await db.marginInvoice.aggregate({ _max: { number: true } })
   const number = (maxNumber._max.number ?? 0) + 1
-
-  /* کد بعدی سند خرید: HZ-ORD-NNN (همان الگوی /api/orders) */
-  const last = await db.order.findFirst({ orderBy: { code: 'desc' } })
-  let next = 1
-  if (last) {
-    const m = last.code.match(/HZ-ORD-(\d+)$/)
-    if (m) next = Math.max(1, parseInt(m[1], 10) + 1)
-  }
-  const code = `HZ-ORD-${String(next).padStart(3, '0')}`
-
-  const now = new Date()
-  const nowIso = now.toISOString()
-  const extras = {
-    note,
-    paymentRef: null,
-    marginInvoiceNumber: number,
-    providerDocNumber,
-    source: 'margin' as const,
-    history: [
-      { at: nowIso, by: me.fullName, action: 'create', detail: `ثبت تحویل و خرید از سودسنج — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال` },
-      { at: nowIso, by: me.fullName, action: 'receive', detail: 'تحویل در لحظهٔ ثبت سودسنج — همهٔ اقلام کامل دریافت شد' },
-    ],
-  }
-
-  /* اقلام سند خرید — qty ستون عددی است؛ عدد اعشاری در یادداشت خط می‌ماند */
-  const orderItems = items.map((it) => {
-    const qtyInt = Math.max(1, Math.round(it.quantity))
-    const fractional = Math.abs(it.quantity - qtyInt) > 1e-9
-    return {
-      productId: it.productId,
-      name: it.productName,
-      barcode: it.barcode,
-      qty: qtyInt,
-      unitBuyPrice: Math.max(0, Math.round(it.unitCost)),
-      printedPrice: Math.max(0, Math.round(it.salePrice || it.printedPrice)),
-      receivedQty: qtyInt,
-      status: 'OK',
-      lineTotal: Math.round(it.totalCost),
-      note: fractional
-        ? `تعداد دقیق سودسنج: ${toFaDigits(String(it.quantity))} ${it.unit}${providerDocNumber ? ` · سند تأمین‌کننده ${toFaDigits(providerDocNumber)}` : ''}`
-        : null,
-    }
-  })
 
   const invoice = await db.marginInvoice.create({
     data: {
@@ -140,52 +96,32 @@ export async function POST(req: NextRequest) {
       status: 'final',
       providerDocNumber,
       dateJalali,
+      finalizedAt: new Date(),
+      finalizedById: me.id,
+      finalizedByName: me.fullName,
+      historyJson: JSON.stringify([
+        { at: new Date().toISOString(), by: me.fullName, action: 'create', detail: 'ثبت یک‌ضربهٔ تحویل و خرید از فاکتورنویس سودسنج' },
+        { at: new Date().toISOString(), by: me.fullName, action: 'finalize', detail: 'فاکتور خرید نهایی شد (مسیر سریع) — پس از بایگانی کاغذی، از دفتر فاکتورها سند را بایگانی کنید' },
+      ]),
       items: { create: items },
     },
   })
 
-  const order = await db.order.create({
-    data: {
-      code,
-      status: 'RECEIVED',
-      supplierId,
-      supplierName,
-      deliveryDate: dateJalali,
-      payMethod,
-      notes: JSON.stringify(extras),
-      totalAmount,
-      createdById: me.id,
-      createdByName: me.fullName,
-      receivedAt: now,
-      items: { create: orderItems },
-    },
+  const { order, totalAmount, stockUpdated } = await createPurchaseOrder({
+    items: items as unknown as PurchaseDerivedItem[],
+    supplierId,
+    supplierName,
+    note,
+    providerDocNumber,
+    dateJalali,
+    payMethod,
+    actor: { id: me.id, fullName: me.fullName },
+    marginInvoiceNumber: number,
+    sourceLabel: 'ثبت تحویل و خرید از سودسنج',
   })
 
   /* پیوند دو سند */
   await db.marginInvoice.update({ where: { id: invoice.id }, data: { purchaseOrderId: order.id } })
-
-  /* موجودی و بهای آخرین خرید و قیمت فروش — مثل پایان «دریافت» در سفارش‌ها
-     قیمت فروش (فروشگاهی) کالا = قیمت نهایی سودسنج (printedPrice سند = salePrice || چاپی) */
-  let stockUpdated = 0
-  for (const it of orderItems) {
-    if (!it.productId) continue
-    const qty = it.receivedQty ?? it.qty
-    if (qty > 0) {
-      await db.product
-        .update({
-          where: { id: it.productId },
-          data: {
-            stock: { increment: qty },
-            /* بهای خرید واقعی این تحویل → حافظهٔ کالا برای سودسنج بعدی */
-            ...(it.unitBuyPrice > 0 ? { lastBuyPrice: it.unitBuyPrice } : {}),
-            /* قیمت فروش نهایی تعیین‌شده در سودسنج → قیمت فروشگاهی کالا */
-            ...(it.printedPrice > 0 ? { sellPrice: it.printedPrice } : {}),
-          },
-        })
-        .catch(() => {})
-      stockUpdated++
-    }
-  }
 
   await logActivity({
     userId: me.id,
@@ -193,7 +129,7 @@ export async function POST(req: NextRequest) {
     action: 'margin.purchase',
     actionLabel: 'ثبت تحویل و خرید',
     category: 'profit',
-    detail: `فاکتور #${toFaDigits(String(number))} + سند خرید ${code} — ${supplierName} — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال`,
+    detail: `فاکتور #${toFaDigits(String(number))} + سند خرید ${order.code} — ${supplierName} — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال`,
     entityId: invoice.id,
   })
 
@@ -202,61 +138,13 @@ export async function POST(req: NextRequest) {
      سفارش با holooErp=null در صف «ارسال گروهی سفارش‌ها» بخش هلو می‌ماند. */
   let holoo: { pushed: boolean; pending?: boolean; reason?: string; invoiceNo?: string } | null = null
   if (pushToHoloo) {
-    try {
-      const cfg = await getHolooConfig()
-      if (!cfg.enabled) {
-        holoo = { pushed: false, pending: true, reason: 'اتصال هلو غیرفعال است' }
-        await db.holooSyncLog
-          .create({
-            data: {
-              kind: 'PUSH_ORDER',
-              status: 'FAIL',
-              statsJson: JSON.stringify({ orderCode: code, source: 'margin', pending: true, invoiceNumber: number }),
-              error: 'اتصال هلو غیرفعال است — سفارش خرید در انتظار ارسال',
-            },
-          })
-          .catch(() => {})
-      } else {
-        /* فراخوانی درون‌سروری همان مسیر موجود — بدون کپی‌کردن منطق pushOrder
-           R9: حلقهٔ محلی مستقیم (درخواست https از خودِ سرور به EPROTO می‌افتد) */
-        const origin = `http://127.0.0.1:${process.env.PORT || 3000}`
-        const hres = await fetch(`${origin}/api/holoo/sync`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', cookie: req.headers.get('cookie') || '' },
-          body: JSON.stringify({ what: 'order', mode: 'push', orderId: order.id }),
-        })
-        const hj = (await hres.json().catch(() => null)) as { ok?: boolean; data?: Record<string, unknown>; error?: string } | null
-        if (hres.ok && hj?.ok) {
-          holoo = { pushed: true, invoiceNo: String(hj.data?.invoiceNo ?? '') || undefined }
-        } else {
-          const reason = String(hj?.error ?? `خطای ${hres.status}`)
-          holoo = { pushed: false, pending: true, reason }
-          await db.holooSyncLog
-            .create({
-              data: {
-                kind: 'PUSH_ORDER',
-                status: 'FAIL',
-                statsJson: JSON.stringify({ orderCode: code, source: 'margin', pending: true, invoiceNumber: number }),
-                error: `تلاش از سودسنج ناموفق — ${reason}`,
-              },
-            })
-            .catch(() => {})
-        }
-      }
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : 'خطای نامشخص'
-      holoo = { pushed: false, pending: true, reason }
-      await db.holooSyncLog
-        .create({
-          data: {
-            kind: 'PUSH_ORDER',
-            status: 'FAIL',
-            statsJson: JSON.stringify({ orderCode: code, source: 'margin', pending: true, invoiceNumber: number }),
-            error: `تلاش از سودسنج ناموفق — ${reason}`,
-          },
-        })
-        .catch(() => {})
-    }
+    holoo = await pushOrderToHoloo({
+      orderId: order.id,
+      orderCode: order.code,
+      marginInvoiceNumber: number,
+      cookie: req.headers.get('cookie'),
+      origin: `http://127.0.0.1:${process.env.PORT || 3000}`,
+    })
   }
 
   return ok({

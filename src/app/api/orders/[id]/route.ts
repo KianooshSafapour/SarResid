@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 import { canApproveOrdersUser } from '@/lib/access'
-import { toFaDigits } from '@/lib/jalali'
+import { toFaDigits, addDaysJalaliDash, todayJalaliDash } from '@/lib/jalali'
 
 const MANAGERS = ['OWNER', 'GM', 'ADMIN', 'EXEC']
 
@@ -28,6 +28,10 @@ type OrderExtras = {
   receivedByName?: string | null
   verifiedById?: string | null
   verifiedByName?: string | null
+  marginInvoiceNumber?: number | null
+  /* R11: مامور پخشی که اقلام ضایعاتِ برگشتی به او سپرده شد (الزامی هنگام پایان دریافتِ سفارشِ دارای ضایعات) */
+  wasteRepName?: string | null
+  wasteRepPhone?: string | null
 }
 
 function parseOrderExtras(raw: string | null): OrderExtras {
@@ -44,9 +48,24 @@ function toNumber(v: unknown, dflt = 0): number {
   return Number.isFinite(n) ? n : dflt
 }
 
-/** frontend mismatch formula: receivedQty ≠ qty or status outside {PENDING, RECEIVED} */
-function mismatchCount(items: { qty: number; receivedQty: number | null; status: string }[]): number {
-  return items.filter((it) => (it.receivedQty ?? 0) !== it.qty || (it.status !== 'PENDING' && it.status !== 'RECEIVED')).length
+/** frontend mismatch formula (R8): accepted (received − returned) ≠ qty or status outside {PENDING, OK} */
+function mismatchCount(
+  items: { qty: number; receivedQty: number | null; returnedQty?: number | null; status: string }[],
+): number {
+  return items.filter((it) => {
+    const accepted = Math.max(0, (it.receivedQty ?? 0) - (it.returnedQty ?? 0))
+    return accepted !== it.qty || (it.status !== 'PENDING' && it.status !== 'OK')
+  }).length
+}
+
+/** R8: وضعیت هر قلم پس از دریافت — مرجوعی/نرسیدن/کامل
+ *  MISSING (هیچ نرسید) ← RETURNED (همه مرجوع) ← PARTIAL_RETURN (مرجوعی جزئی) ← OK ← PARTIAL (کسری بدون مرجوعی) */
+function computeReceiveStatus(qty: number, receivedQty: number, returnedQty: number): string {
+  if (receivedQty <= 0) return 'MISSING'
+  if (qty > 0 && returnedQty >= qty) return 'RETURNED'
+  if (returnedQty > 0) return 'PARTIAL_RETURN'
+  if (receivedQty >= qty) return 'OK'
+  return 'PARTIAL'
 }
 
 async function loadOrder(id: string) {
@@ -62,6 +81,13 @@ async function detail(id: string) {
   const supplier = o.supplierId
     ? await db.supplier.findUnique({ where: { id: o.supplierId }, select: { id: true, name: true, code: true, phone: true } })
     : null
+
+  /* R8: قیمت فروش جاری کالا برای هر قلم — شرط چیپ «قیمت چاپی متفاوت» در فرم دریافت */
+  const productIds = [...new Set(o.items.map((it) => it.productId).filter((v): v is string => !!v))]
+  const productRows = productIds.length
+    ? await db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, sellPrice: true } })
+    : []
+  const sellBy = new Map(productRows.map((p) => [p.id, p.sellPrice]))
 
   const userIds = [
     o.createdById,
@@ -80,6 +106,12 @@ async function detail(id: string) {
     return uid || fullName ? { id: uid ?? null, fullName } : null
   }
 
+  /* R9: اقلام ضایعات برگشتیِ این سفارش (SELECTED یا RETURNED) — برای فرم دریافت و چاپ فاکتور */
+  const wasteRows = await db.wasteRecord.findMany({
+    where: { orderId: o.id, status: { in: ['SELECTED', 'RETURNED'] } },
+    orderBy: { date: 'asc' },
+  })
+
   const historyJson = JSON.stringify(history)
   return {
     id: o.id,
@@ -89,6 +121,7 @@ async function detail(id: string) {
     supplierName: o.supplierName,
     deliveryDate: o.deliveryDate,
     payMethod: o.payMethod,
+    chequeDays: o.chequeDays,
     paymentRef: extras.paymentRef ?? null,
     totalAmount: o.totalAmount,
     note: extras.note ?? null,
@@ -109,10 +142,35 @@ async function detail(id: string) {
       unitBuyPrice: it.unitBuyPrice,
       printedPrice: it.printedPrice,
       receivedQty: it.receivedQty,
+      returnedQty: it.returnedQty,
+      returnReason: it.returnReason,
+      cartonQty: it.cartonQty,
+      unitsPerCarton: it.unitsPerCarton,
+      lineTotal: it.lineTotal,
+      productSellPrice: it.productId ? (sellBy.get(it.productId) ?? null) : null,
       status: it.status,
       expiryDate: it.expiryDate,
       note: it.note,
     })),
+    /* R9: اقلام ضایعاتِ برگشتی این سفارش — چیزی که باید به مامور پخش بدهیم */
+    wasteReturns: wasteRows.map((w) => ({
+      id: w.id,
+      name: w.name,
+      qty: w.qty,
+      unit: w.unit,
+      reason: w.reason,
+      reasonLabel: w.reason === 'EXPIRED' ? 'منقضی' : w.reason === 'DAMAGED' ? 'آسیب‌دیده' : w.reason === 'SPOILED' ? 'فاسد' : w.reason === 'THEFT' ? 'سرقت' : 'سایر',
+      estValue: w.estValue,
+      status: w.status,
+      selectedAtJalali: w.selectedAtJalali,
+      selectedByName: w.selectedByName,
+      returnedAtJalali: w.returnedAtJalali,
+      /* R11: مامور پخشی که اقلام به او سپرده شد */
+      repName: w.repName ?? null,
+      repPhone: w.repPhone ?? null,
+    })),
+    /* R11: مامور پخشِ ثبت‌شده برای برگشت ضایعات — برای گام‌های بعدی و پرونده */
+    wasteRep: extras.wasteRepName ? { name: extras.wasteRepName, phone: extras.wasteRepPhone ?? null } : null,
     supplier: supplier ? { id: supplier.id, name: supplier.name, code: supplier.code, phone: supplier.phone } : null,
     createdBy: person(o.createdById, o.createdByName),
     approvedBy: person(extras.approvedById, extras.approvedByName),
@@ -238,6 +296,87 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         detail: `ارسال سفارش ${o.code} برای تأیید`,
         entityId: o.id,
       })
+      /* R10: اعلان به مدیران — سفارشی در انتظار تأیید هست */
+      for (const role of ['OWNER', 'GM', 'ADMIN', 'EXEC']) {
+        await db.notification.create({
+          data: {
+            role,
+            kind: `order:submit:${o.id}`,
+            severity: 'warning',
+            title: 'سفارش جدید در انتظار تأیید',
+            body: `سفارش ${o.code} (${o.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${by} ارسال شد و نیازمند تأیید است.`,
+            go: '#/supply/orders',
+          },
+        }).catch(() => {})
+      }
+      break
+    }
+
+    case 'edit-submitted': {
+      /* R8: ویرایش کامل پیش از تأیید نهایی — مدیر می‌تواند اقلام/قیمت/طرف‌حساب را اصلاح کند */
+      if (o.status !== 'SUBMITTED' && o.status !== 'APPROVED') return fail('ویرایش فقط تا پیش از شروع دریافت امکان‌پذیر است')
+      if (!(await canApproveOrdersUser(user))) return fail('ویرایش پیش از تأیید فقط با دسترسی مدیران ممکن است', 403)
+      const rawItems = Array.isArray(body.items) ? body.items : []
+      if (rawItems.length === 0) return fail('اقلام سفارش الزامی است')
+      let supplierId: string | null = o.supplierId
+      let supplierName: string | null = o.supplierName
+      if (body.supplierId !== undefined) {
+        if (body.supplierId && body.supplierId !== 'none') {
+          const sup = await db.supplier.findUnique({ where: { id: String(body.supplierId) } })
+          if (!sup) return fail('تأمین‌کننده یافت نشد')
+          supplierId = sup.id
+          supplierName = sup.name
+        } else {
+          supplierId = null
+          supplierName = body.supplierName ? String(body.supplierName) : null
+        }
+      }
+      const items = rawItems.map((it: Record<string, unknown>) => ({
+        orderId: o.id,
+        productId: it.productId ? String(it.productId) : null,
+        name: String(it.name ?? '').trim() || 'کالا',
+        barcode: it.barcode ? String(it.barcode) : null,
+        qty: Math.max(1, Math.round(toNumber(it.qty, 1)) || 1),
+        unitBuyPrice: Math.max(0, toNumber(it.unitBuyPrice, 0)),
+        printedPrice: Math.max(0, toNumber(it.printedPrice, 0)),
+        cartonQty: Math.max(0, Math.round(toNumber(it.cartonQty, 0)) || 0),
+        unitsPerCarton: Math.max(0, Math.round(toNumber(it.unitsPerCarton, 0)) || 0),
+        lineTotal: Math.max(0, toNumber(it.lineTotal, 0)),
+      }))
+      const totalAmount = items.reduce((s, it) => s + it.qty * it.unitBuyPrice, 0)
+      const payMethod = ['CASH', 'CHEQUE', 'POS'].includes(String(body.payMethod)) ? String(body.payMethod) : o.payMethod
+      const chequeDays =
+        payMethod === 'CHEQUE' ? Math.max(0, Math.min(365, Math.round(toNumber(body.chequeDays, o.chequeDays)) || 0)) : 0
+      if (body.note !== undefined) extras.note = body.note ? String(body.note) : null
+      await pushHistory(extras, {
+        at: now,
+        by,
+        action: 'edit-submitted',
+        detail: `ویرایش پیش از تأیید توسط ${by} — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال`,
+      })
+      await db.order.update({
+        where: { id: o.id },
+        data: {
+          supplierId,
+          supplierName,
+          deliveryDate: body.deliveryDate !== undefined ? (body.deliveryDate ? String(body.deliveryDate) : null) : o.deliveryDate,
+          payMethod,
+          chequeDays,
+          notes: JSON.stringify(extras),
+          totalAmount,
+        },
+      })
+      await db.orderItem.deleteMany({ where: { orderId: o.id } })
+      await db.orderItem.createMany({ data: items.map((it) => ({ ...it, status: 'PENDING' })) })
+      await logActivity({
+        userId: user.id,
+        userName: by,
+        action: 'order_edit_submitted',
+        actionLabel: 'ویرایش پیش از تأیید',
+        category: 'orders',
+        detail: `ویرایش سفارش ${o.code} پیش از تأیید توسط ${by}`,
+        entityId: o.id,
+      })
       break
     }
 
@@ -263,7 +402,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     case 'start-receive': {
       if (o.status !== 'APPROVED') return fail('این سفارش در وضعیت دریافت نیست')
-      if (user.role !== 'SK' && !manager) return fail('شروع دریافت فقط برای انباردار/مدیران ممکن است', 403)
+      /* R10: دریافت کالا برای همهٔ کارکنان باز است (مالک: «همه باید بتوانند دریافت کنند») —
+         فقط کاربر لاگین‌شده لازم است؛ کنترل دو‌نفره در مرحلهٔ راستی‌آزمایی اعمال می‌شود. */
       await pushHistory(extras, { at: now, by, action: 'start-receive', detail: 'شروع دریافت کالا در انبار' })
       await saveExtras(o.id, extras)
       await db.order.update({ where: { id: o.id }, data: { status: 'RECEIVING' } })
@@ -284,12 +424,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const incoming = Array.isArray(body.items) ? body.items : []
       for (const it of incoming) {
         if (!it?.id) continue
+        const spReturned =
+          it.returnedQty === undefined
+            ? undefined
+            : Math.min(it.receivedQty == null ? 0 : Math.max(0, it.receivedQty), Math.max(0, Math.round(toNumber(it.returnedQty, 0))))
         await db.orderItem
           .update({
             where: { id: String(it.id) },
             data: {
               receivedQty: it.receivedQty === null || it.receivedQty === undefined ? null : Math.max(0, Math.round(toNumber(it.receivedQty, 0))),
               status: it.status ? String(it.status) : undefined,
+              // R8: مرجوعی جزئی هم در ذخیرهٔ پیشرفت پایدار می‌شود
+              ...(spReturned !== undefined
+                ? { returnedQty: spReturned, returnReason: spReturned > 0 && it.returnReason ? String(it.returnReason) : null }
+                : {}),
               // column is non-nullable Float — null collapses to 0 (documented in worklog)
               printedPrice: it.printedPrice === undefined ? undefined : toNumber(it.printedPrice, 0) || 0,
               expiryDate: it.expiryDate === undefined ? undefined : it.expiryDate ? String(it.expiryDate) : null,
@@ -355,14 +503,38 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     case 'receive': {
       if (o.status !== 'RECEIVING') return fail('این سفارش در حال دریافت نیست')
       const incoming = Array.isArray(body.items) ? body.items : []
+      /* R11: اگر این سفارش اقلام ضایعاتِ برگشتی (SELECTED) دارد، ثبت «مامور پخش» الزامی است —
+         نام کامل و شمارهٔ موبایل نمایندهٔ تأمین‌کننده؛ بدون آن، پایان دریافت پذیرفته نمی‌شود */
+      const selectedWaste = await db.wasteRecord.count({ where: { orderId: o.id, status: 'SELECTED' } })
+      let wasteRepName = ''
+      let wasteRepPhone = ''
+      if (selectedWaste > 0) {
+        wasteRepName = String(body.wasteRepName ?? '').trim()
+        wasteRepPhone = String(body.wasteRepPhone ?? '').trim()
+        if (wasteRepName.length < 3) return fail('نام کامل مامور پخش (نمایندهٔ تأمین‌کننده) را وارد کنید — اقلام ضایعات به او سپرده می‌شود')
+        const phoneDigits = wasteRepPhone.replace(/[^0-9]/g, '')
+        if (phoneDigits.length < 10 || phoneDigits.length > 14) return fail('شمارهٔ موبایل مامور پخش را درست وارد کنید (۱۰ تا ۱۴ رقم)')
+      }
+      /* تعداد سفارش‌شدهٔ هر قلم از بانک (نه از کلاینت) — مبنای محاسبهٔ وضعیت */
+      const qtyById = new Map(o.items.map((i) => [i.id, i.qty]))
       for (const it of incoming) {
         if (!it?.id) continue
+        const receivedQty =
+          it.receivedQty === null || it.receivedQty === undefined ? null : Math.max(0, Math.round(toNumber(it.receivedQty, 0)))
+        /* R8: مرجوعی جزئی — هرگز بیشتر از دریافت‌شده */
+        const returnedQty = Math.min(
+          receivedQty ?? 0,
+          Math.max(0, Math.round(toNumber(it.returnedQty, 0))),
+        )
         await db.orderItem
           .update({
             where: { id: String(it.id) },
             data: {
-              receivedQty: it.receivedQty === null || it.receivedQty === undefined ? null : Math.max(0, Math.round(toNumber(it.receivedQty, 0))),
-              status: it.status ? String(it.status) : undefined,
+              receivedQty,
+              // R8: وضعیت هر قلم روی سرور محاسبه می‌شود (OK / PARTIAL / MISSING / PARTIAL_RETURN / RETURNED)
+              status: computeReceiveStatus(qtyById.get(String(it.id)) ?? 1, receivedQty ?? 0, returnedQty),
+              returnedQty,
+              returnReason: returnedQty > 0 && it.returnReason ? String(it.returnReason) : null,
               // column is non-nullable Float — null collapses to 0 (documented in worklog)
               printedPrice: it.printedPrice === undefined ? undefined : toNumber(it.printedPrice, 0) || 0,
               expiryDate: it.expiryDate === undefined ? undefined : it.expiryDate ? String(it.expiryDate) : null,
@@ -373,16 +545,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
       const items = await db.orderItem.findMany({ where: { orderId: o.id } })
       const mismatch = mismatchCount(
-        items.map((i) => ({ qty: i.qty, receivedQty: i.receivedQty, status: i.status })),
+        items.map((i) => ({ qty: i.qty, receivedQty: i.receivedQty, returnedQty: i.returnedQty, status: i.status })),
       )
-      // stock: received goods enter the inventory
+      // R8: خلاصهٔ دریافت — چند قلم کامل، چند مرجوعی، چند نرسید
+      const okCount = items.filter((i) => i.status === 'OK').length
+      const returnCount = items.filter((i) => i.status === 'PARTIAL_RETURN' || i.status === 'RETURNED').length
+      const missingCount = items.filter((i) => i.status === 'MISSING').length
+      // stock: فقط واحدهای پذیرفته‌شده (دریافت − مرجوعی) وارد انبار می‌شوند
       for (const it of items) {
-        if (it.productId && (it.receivedQty ?? 0) > 0) {
+        const accepted = Math.max(0, (it.receivedQty ?? 0) - (it.returnedQty ?? 0))
+        if (it.productId && accepted > 0) {
           await db.product
             .update({
               where: { id: it.productId },
               data: {
-                stock: { increment: it.receivedQty as number },
+                stock: { increment: accepted },
                 /* قیمت خرید اصلاح‌شدهٔ مدیر در فرم سفارش، به یاد کالا منتقل شود */
                 ...(it.unitBuyPrice > 0 ? { lastBuyPrice: it.unitBuyPrice } : {}),
               },
@@ -397,20 +574,101 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         at: now,
         by,
         action: 'receive',
-        detail: mismatch ? `پایان دریافت — ${toFaDigits(mismatch)} قلم مغایرت داشت` : 'پایان دریافت — همه اقلام کامل دریافت شد',
+        detail: `پایان دریافت — ${toFaDigits(okCount)} قلم کامل، ${toFaDigits(returnCount)} قلم مرجوعی جزئی، ${toFaDigits(missingCount)} قلم نرسید`,
       })
+      /* R8: چک خودکار — سفارش چکیِ دارای مهلت، هنگام پایان دریافت چک پیش‌نویس می‌سازد (idempotent) */
+      let chequeMade = false
+      if (o.payMethod === 'CHEQUE' && o.chequeDays > 0) {
+        const existingCheque = await db.cheque.findFirst({ where: { orderId: o.id }, select: { id: true } })
+        if (!existingCheque) {
+          const acceptedTotal = items.reduce(
+            (s, it) => s + Math.max(0, (it.receivedQty ?? 0) - (it.returnedQty ?? 0)) * it.unitBuyPrice,
+            0,
+          )
+          if (acceptedTotal > 0) {
+            /* R10: سررسید چک = تاریخ تحویل سفارش + مهلت — نه روز ثبت دریافت.
+               (اگر تاریخ تحویل معتبر نبود، همان روز جاری مبنا می‌ماند) */
+            const chequeBase = o.deliveryDate && /^\d{4}-\d{2}-\d{2}$/.test(o.deliveryDate) ? o.deliveryDate : todayJalaliDash()
+            const dueDate = addDaysJalaliDash(chequeBase, o.chequeDays)
+            const cheque = await db.cheque.create({
+              data: {
+                number: `AUTO-${o.code}`,
+                amount: acceptedTotal,
+                status: 'PENDING_OWNER',
+                recipient: o.supplierName,
+                selfIssued: false,
+                dueDate,
+                note: `چک خودکار سفارش ${o.code} — مهلت ${toFaDigits(o.chequeDays)} روز`,
+                orderId: o.id,
+                orderCode: o.code,
+                historyJson: JSON.stringify([
+                  {
+                    at: now,
+                    by: 'system',
+                    action: 'auto-create',
+                    detail: `ثبت خودکار هنگام پایان دریافت سفارش ${o.code}`,
+                  },
+                ]),
+              },
+            })
+            chequeMade = true
+            /* اعلان به مالک و مدیر کل — آمادهٔ نوشتن چک */
+            for (const role of ['OWNER', 'GM']) {
+              await db.notification.create({
+                data: {
+                  role,
+                  kind: `cheque:auto:${cheque.id}`,
+                  severity: 'info',
+                  title: 'چک خودکار سفارش ثبت شد',
+                  body: `چک ${faMoney(acceptedTotal)} ریالی برای سفارش ${o.code} ثبت شد — آمادهٔ نوشتن.`,
+                  go: '#/finance/cheques',
+                },
+              })
+            }
+            await pushHistory(extras, {
+              at: now,
+              by: 'سامانه',
+              action: 'cheque-auto',
+              detail: `چک ${toFaDigits(o.chequeDays)} روزه به مبلغ ${faMoney(acceptedTotal)} ریال (سررسید ${toFaDigits(dueDate)}) خودکار ثبت شد`,
+            })
+          }
+        }
+      }
       await saveExtras(o.id, extras)
       await db.order.update({
         where: { id: o.id },
         data: { status: 'RECEIVED', receivedAt: new Date(), totalAmount },
       })
+      /* R9: اقلام ضایعاتِ برگشتی این سفارش ← RETURNED (همراه مامور پخش به تأمین‌کننده برگشت)
+         R11: نام و موبایل مامور پخش روی رکوردها ثبت می‌شود */
+      const wasteReturned = await db.wasteRecord.updateMany({
+        where: { orderId: o.id, status: 'SELECTED' },
+        data: {
+          status: 'RETURNED',
+          returnedAtJalali: todayJalaliDash(),
+          ...(wasteRepName ? { repName: wasteRepName, repPhone: wasteRepPhone } : {}),
+        },
+      })
+      if (wasteReturned.count > 0) {
+        if (wasteRepName) {
+          extras.wasteRepName = wasteRepName
+          extras.wasteRepPhone = wasteRepPhone
+        }
+        await pushHistory(extras, {
+          at: now,
+          by: 'سامانه',
+          action: 'waste-returned',
+          detail: `${toFaDigits(wasteReturned.count)} قلم ضایعات به تأمین‌کننده برگشت خورد${wasteRepName ? ` — تحویل به مامور پخش «${wasteRepName}»${wasteRepPhone ? ` (${toFaDigits(wasteRepPhone)})` : ''}` : ''}`,
+        })
+        await saveExtras(o.id, extras)
+      }
       await logActivity({
         userId: user.id,
         userName: by,
         action: 'order_receive',
         actionLabel: 'پایان دریافت',
         category: 'orders',
-        detail: `پایان دریافت ${o.code}${mismatch ? ` با ${toFaDigits(mismatch)} قلم مغایرت` : ''}`,
+        detail: `پایان دریافت ${o.code}${mismatch ? ` با ${toFaDigits(mismatch)} قلم مغایرت` : ''}${chequeMade ? ' + چک خودکار ثبت شد' : ''}${wasteReturned.count ? ` + ${toFaDigits(wasteReturned.count)} قلم ضایعات برگشت` : ''}`,
         entityId: o.id,
       })
       const d = await detail(o.id)
@@ -419,9 +677,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     case 'verify': {
       if (o.status !== 'RECEIVED') return fail('فقط سفارش دریافت‌شده قابل راستی‌آزمایی است')
-      if (!MANAGERS.includes(user.role) && user.role !== 'SK') return fail('راستی‌آزمایی فقط با دسترسی مدیران/انباردار ممکن است', 403)
+      /* R11: راستی‌آزمایی برای همهٔ کارکنان باز است (هر کارمندِ دیگری غیر از دریافت‌کنندهٔ همان سفارش).
+         اصل دو‌نفره همچنان برقرار است: کسی که دریافت را ثبت کرده، راستی‌آزمایی همان سفارش را نمی‌تواند بکند. */
+      if (extras.receivedById && extras.receivedById === user.id) {
+        return fail('شما دریافتِ این سفارش را ثبت کرده‌اید — راستی‌آزمایی باید توسط نفر دیگری انجام شود (اصل دو‌نفره).', 403)
+      }
       const items = await db.orderItem.findMany({ where: { orderId: o.id } })
-      const mismatch = mismatchCount(items.map((i) => ({ qty: i.qty, receivedQty: i.receivedQty, status: i.status })))
+      const mismatch = mismatchCount(items.map((i) => ({ qty: i.qty, receivedQty: i.receivedQty, returnedQty: i.returnedQty, status: i.status })))
       extras.verifiedById = user.id
       extras.verifiedByName = by
       await pushHistory(extras, {
@@ -447,24 +709,183 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     case 'account': {
       if (o.status !== 'VERIFIED') return fail('فقط سفارش راستی‌آزمایی‌شده قابل ثبت در حسابداری است')
       if (!MANAGERS.includes(user.role) && user.role !== 'ACC') return fail('ثبت در حسابداری فقط با دسترسی مدیران/حسابداری ممکن است', 403)
+      /* R8: اصلاح قیمت‌های حسابدار (بهای خرید / قیمت چاپی) پیش از ثبت نهایی */
+      const adjustments = Array.isArray(body.items) ? body.items : []
+      const markedReturned = new Set(
+        adjustments.filter((it: Record<string, unknown>) => it?.id && it.markedReturned === true).map((it: Record<string, unknown>) => String(it.id)),
+      )
+      for (const it of adjustments) {
+        if (!it?.id) continue
+        const patch: Record<string, unknown> = {}
+        if (it.unitBuyPrice !== undefined) patch.unitBuyPrice = Math.max(0, toNumber(it.unitBuyPrice, 0))
+        if (it.printedPrice !== undefined) patch.printedPrice = Math.max(0, toNumber(it.printedPrice, 0))
+        if (Object.keys(patch).length > 0) {
+          await db.orderItem.update({ where: { id: String(it.id) }, data: patch }).catch(() => {})
+        }
+      }
+      const items = await db.orderItem.findMany({ where: { orderId: o.id } })
+      const totalAmount = items.reduce((s, it) => s + it.qty * it.unitBuyPrice, 0)
+      /* R8: سند آرشیو فاکتور خرید — به‌صورت خودکار (idempotent) با وضعیت «در انتظار بایگانی فیزیکی» */
+      let archiveDocId: string | null = null
+      const existingDoc = await db.archiveDocument.findFirst({
+        where: { orderId: o.id, kind: 'INVOICE' },
+        select: { id: true },
+      })
+      if (!existingDoc) {
+        const returnedItems = items
+          .filter((it) => (it.returnedQty ?? 0) > 0 || markedReturned.has(it.id))
+          .map((it) => ({ name: it.name, qty: it.returnedQty ?? 0, reason: it.returnReason ?? '' }))
+        const doc = await db.archiveDocument.create({
+          data: {
+            kind: 'INVOICE',
+            title: `فاکتور خرید ${o.code} — ${o.supplierName ?? 'بدون تأمین‌کننده'}`,
+            dateJalali: todayJalaliDash(),
+            supplierId: o.supplierId,
+            supplierName: o.supplierName,
+            orderId: o.id,
+            orderCode: o.code,
+            amount: totalAmount,
+            status: 'PENDING',
+            returnedJson: JSON.stringify(returnedItems),
+            note: `سند خودکارِ ثبت حسابداری سفارش ${o.code}`,
+            createdById: user.id,
+            createdByName: by,
+          },
+        })
+        archiveDocId = doc.id
+      }
+
+      /* ── R9: فاکتور سودسنج این تحویل — «بعد از دریافت، فاکتور در سامانهٔ سود ثبت شود» ──
+         اقلام پذیرفته‌شده (دریافت − مرجوعی) با قیمت‌های اصلاح‌شدهٔ حسابدار؛
+         marginPct از deriveItem سودسنج (آستانه‌ها هم). سند به سفارش پیوند می‌خورد. */
+      const { deriveItem, getMarginThresholds } = await import('../../margin/route')
+      const thresholds = await getMarginThresholds()
+      const sellRows = items.filter((it) => it.productId).length
+        ? await db.product.findMany({
+            where: { id: { in: items.filter((it) => it.productId).map((it) => it.productId as string) } },
+            select: { id: true, sellPrice: true, unit: true },
+          })
+        : []
+      const sellMap = new Map(sellRows.map((p) => [p.id, p]))
+      const marginItems = items
+        .map((it) => {
+          const accepted = Math.max(0, (it.receivedQty ?? 0) - (it.returnedQty ?? 0))
+          if (accepted <= 0) return null
+          const sell = it.productId ? (sellMap.get(it.productId)?.sellPrice ?? 0) : 0
+          const unit = it.productId ? (sellMap.get(it.productId)?.unit ?? 'عدد') : 'عدد'
+          return deriveItem(
+            {
+              productId: it.productId,
+              barcode: it.barcode,
+              productName: it.name,
+              unit,
+              quantity: accepted,
+              totalCost: Math.round(accepted * it.unitBuyPrice),
+              printedPrice: it.printedPrice,
+              salePrice: sell > 0 ? sell : it.printedPrice,
+              marginPct: 0,
+              free100: false,
+              baseCost: 0,
+              note: it.returnedQty ? `${toFaDigits(it.returnedQty)} مرجوعی` : null,
+            },
+            thresholds,
+          )
+        })
+        .filter((x): x is NonNullable<typeof x> => !!x)
+      let marginInvoiceId: string | null = null
+      let marginInvoiceNumber: number | null = null
+      if (marginItems.length) {
+        const maxNumber = await db.marginInvoice.aggregate({ _max: { number: true } })
+        const number = (maxNumber._max.number ?? 0) + 1
+        const inv = await db.marginInvoice.create({
+          data: {
+            number,
+            supplierId: o.supplierId,
+            supplierName: o.supplierName,
+            note: `فاکتور خودکارِ ثبت حسابداری سفارش ${o.code}`,
+            status: 'final',
+            providerDocNumber: body.providerDocNumber ? String(body.providerDocNumber) : null,
+            dateJalali: todayJalaliDash(),
+            purchaseOrderId: o.id,
+            items: { create: marginItems },
+          },
+        })
+        marginInvoiceId = inv.id
+        marginInvoiceNumber = inv.number
+        extras.marginInvoiceNumber = number
+      }
+
+      /* ── R9: ثبت سفارش خرید در هلو (Apex) — همان انتگراسیون /api/holoo/sync ──
+         pushToHoloo=true → تلاش درون‌سروری؛ در صورت عدم دسترسی HolooSyncLog FAIL و pending=true */
+      let holoo: { pushed: boolean; pending?: boolean; reason?: string; invoiceNo?: string } | null = null
+      if (body.pushToHoloo === true) {
+        try {
+          const { getHolooConfig } = await import('@/lib/holoo')
+          const cfg = await getHolooConfig()
+          if (!cfg.enabled) {
+            holoo = { pushed: false, pending: true, reason: 'اتصال هلو غیرفعال است' }
+            await db.holooSyncLog
+              .create({
+                data: {
+                  kind: 'PUSH_ORDER',
+                  status: 'FAIL',
+                  statsJson: JSON.stringify({ orderCode: o.code, source: 'account', pending: true }),
+                  error: 'اتصال هلو غیرفعال است — سفارش خرید در انتظار ارسال',
+                },
+              })
+              .catch(() => {})
+          } else {
+            /* R9: درون‌سروری مستقیم روی حلقهٔ محلی — درخواست https از خود سرور
+               (nginx/SNI) به EPROTO می‌افتد؛ 127.0.0.1:${PORT} در دمو و sandbox یکی است */
+            const origin = `http://127.0.0.1:${process.env.PORT || 3000}`
+            const hres = await fetch(`${origin}/api/holoo/sync`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', cookie: req.headers.get('cookie') || '' },
+              body: JSON.stringify({ what: 'order', mode: 'push', orderId: o.id }),
+            })
+            const hj = (await hres.json().catch(() => null)) as { ok?: boolean; data?: Record<string, unknown>; error?: string } | null
+            if (hres.ok && hj?.ok) {
+              holoo = { pushed: true, invoiceNo: String(hj.data?.invoiceNo ?? '') || undefined }
+            } else {
+              const rs = String(hj?.error ?? `خطای ${hres.status}`)
+              holoo = { pushed: false, pending: true, reason: rs }
+              await db.holooSyncLog
+                .create({
+                  data: {
+                    kind: 'PUSH_ORDER',
+                    status: 'FAIL',
+                    statsJson: JSON.stringify({ orderCode: o.code, source: 'account', pending: true }),
+                    error: `تلاش از ثبت حسابداری ناموفق — ${rs}`,
+                  },
+                })
+                .catch(() => {})
+            }
+          }
+        } catch (e) {
+          const rs = e instanceof Error ? e.message : 'خطای نامشخص'
+          holoo = { pushed: false, pending: true, reason: rs }
+        }
+      }
+
       await pushHistory(extras, {
         at: now,
         by,
         action: 'account',
-        detail: `ثبت در حسابداری توسط ${by}${extras.paymentRef ? ` — ارجاع: ${extras.paymentRef}` : ''}`,
+        detail: `ثبت در حسابداری توسط ${by} — جمع نهایی ${faMoney(totalAmount)} ریال${archiveDocId ? ' + سند آرشیو فاکتور ساخته شد' : ''}${marginInvoiceNumber ? ` + فاکتور سودسنج #${toFaDigits(String(marginInvoiceNumber))}` : ''}${holoo ? (holoo.pushed ? ' + در هلو ثبت شد' : ' + هلو: در انتظار ارسال') : ''}`,
       })
       await saveExtras(o.id, extras)
-      await db.order.update({ where: { id: o.id }, data: { status: 'ACCOUNTED' } })
+      await db.order.update({ where: { id: o.id }, data: { status: 'ACCOUNTED', totalAmount } })
       await logActivity({
         userId: user.id,
         userName: by,
         action: 'order_account',
         actionLabel: 'ثبت در حسابداری',
         category: 'orders',
-        detail: `ثبت ${o.code} در حسابداری`,
+        detail: `ثبت ${o.code} در حسابداری — جمع ${faMoney(totalAmount)} ریال${archiveDocId ? ' + سند آرشیو' : ''}`,
         entityId: o.id,
       })
-      break
+      const dAcc = await detail(o.id)
+      return ok(dAcc ? { ...dAcc, archiveDocId, marginInvoiceId, marginInvoiceNumber, holoo } : { archiveDocId, marginInvoiceId, marginInvoiceNumber, holoo })
     }
 
     case 'final-approve': {
@@ -492,6 +913,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       if (reason.length < 3) return fail('دلیل لغو الزامی است')
       await pushHistory(extras, { at: now, by, action: 'cancel', detail: reason })
       await saveExtras(o.id, extras)
+      /* R9: لغو سفارش ← ضایعاتِ SELECTED این سفارش به PENDING برمی‌گردند (برای سفارش بعدی) */
+      const wasteReverted = await db.wasteRecord.updateMany({
+        where: { orderId: o.id, status: 'SELECTED' },
+        data: { status: 'PENDING', orderId: null, orderCode: null, selectedAtJalali: null, selectedByName: null },
+      })
+      if (wasteReverted.count > 0) {
+        await pushHistory(extras, {
+          at: now,
+          by: 'سامانه',
+          action: 'waste-revert',
+          detail: `${toFaDigits(wasteReverted.count)} قلم ضایعات به حالت انتظار برگشت`,
+        })
+        await saveExtras(o.id, extras)
+      }
       await db.order.update({ where: { id: o.id }, data: { status: 'CANCELLED' } })
       await logActivity({
         userId: user.id,

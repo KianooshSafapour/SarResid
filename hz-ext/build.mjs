@@ -230,8 +230,11 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
   await import('./patch-checklists.mjs')
   await import('./patch-tour-acl.mjs')
   await import('./patch-notifications.mjs')
+  await import('./patch-title-badge.mjs')
   await import('./patch-login-roster.mjs')
   await import('./patch-returns-card.mjs')
+  await import('./patch-return-msg.mjs')
+  await import('./patch-radio-styles.mjs')
   // 5. Extend frozen CSS with arbitrary-value utilities used by our views
   //    (idempotent — regenerated from pristine original each build)
   const { patchCss } = await import('./gen-arb-css.mjs')

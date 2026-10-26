@@ -1,5 +1,5 @@
 import {
-  useState, useEffect, useMemo, api, toast, cn,
+  useState, useEffect, useMemo, api, toast, cn, useShell,
   Button, Input, Card, CardContent, CardHeader, CardTitle, Badge,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -168,9 +168,31 @@ const REASON_LABEL: Record<string, string> = {
   TEST: 'آزمایش پنل',
   PAYMENT_SUBMITTED: 'ثبت پرداخت',
   RETURN_PAYMENT: 'پرداخت مرجوعی',
+  RETURN_CUSTOMER: 'پیام مرجوعی به مشتری',
   STAFF_BROADCAST: 'اطلاع‌رسانی کارکنان',
   RETRY: 'ارسال مجدد',
   SYSTEM: 'سیستم',
+}
+
+/* ── R10-MSG: الگوهای پیام مرجوعی ── */
+const RT_REASONS = ['کالای معیوب', 'اشتباه در خرید', 'اختلاف قیمت', 'انقضای کالا', 'عدم رضایت از کیفیت', 'خطای کارت‌خوان', 'سایر']
+const RT_WILDCARD = '*'
+const RT_PLACEHOLDERS: { key: string; label: string }[] = [
+  { key: '{مشتری}', label: 'نام مشتری' },
+  { key: '{مبلغ}', label: 'مبلغ (ریال)' },
+  { key: '{کد}', label: 'کد پیگیری' },
+  { key: '{تاریخ}', label: 'تاریخ شمسی' },
+  { key: '{علت}', label: 'علت مرجوعی' },
+  { key: '{بانک}', label: 'بانک' },
+  { key: '{شماره‌پیگیری}', label: 'شماره پیگیری' },
+]
+
+type ReturnTpl = {
+  id: string
+  reason: string
+  title: string
+  body: string
+  enabled: boolean
 }
 
 const STATUS_META: Record<string, { label: string; cls: string; dot: string }> = {
@@ -230,6 +252,12 @@ function ModeToggle({ mode, onChange, disabled }: { mode: string; onChange: (m: 
 /* ═══════════════════════ نمای اصلی ═══════════════════════ */
 
 export default function SmsCenterView() {
+  /* ── R10-MSG: کاربر جاری برای گیتِ مدیران (پوستهٔ زنده؛ در نبودش /api/auth/me) ── */
+  const { user: shellUser } = useShell()
+  const [meUser, setMeUser] = useState<any>(null)
+  const user = shellUser || meUser
+  const isMgr = ['OWNER', 'GM', 'ADMIN', 'EXEC'].includes(String(user?.role ?? ''))
+
   /* ── داده‌ها ── */
   const [panels, setPanels] = useState<Panel[]>([])
   const [stats, setStats] = useState<Record<string, number>>({})
@@ -268,6 +296,16 @@ export default function SmsCenterView() {
   /* ── گزارش ── */
   const [statusF, setStatusF] = useState('all')
 
+  /* ── R10-MSG: الگوهای پیام مرجوعی ── */
+  const [rtList, setRtList] = useState<ReturnTpl[]>([])
+  const [rtOpen, setRtOpen] = useState(false)
+  const [rtEdit, setRtEdit] = useState<ReturnTpl | null>(null)
+  const [rtReason, setRtReason] = useState(RT_REASONS[0])
+  const [rtTitle, setRtTitle] = useState('')
+  const [rtBody, setRtBody] = useState('')
+  const [rtBusy, setRtBusy] = useState(false)
+  const [rtDel, setRtDel] = useState<ReturnTpl | null>(null)
+
   /* ═══ بارگذاری ═══ */
   async function loadPanels(silent = false) {
     const r = await api('/api/sms/panels')
@@ -294,12 +332,24 @@ export default function SmsCenterView() {
     if (r.ok) setOutbox(r.data.items || [])
   }
 
+  /* ── R10-MSG: الگوهای پیام مرجوعی ── */
+  async function loadRtpls() {
+    const r = await api('/api/return-templates')
+    if (r.ok) setRtList(r.data.items || [])
+  }
+
   useEffect(() => {
     void (async () => {
       setLoading(true)
-      await Promise.all([loadPanels(), loadTemplates(), loadOutbox()])
+      await Promise.all([loadPanels(), loadTemplates(), loadOutbox(), loadRtpls()])
       setLoading(false)
     })()
+  }, [])
+
+  useEffect(() => {
+    if (!shellUser) {
+      void api('/api/auth/me').then((r: any) => { if (r.ok) setMeUser(r.data?.user ?? null) })
+    }
   }, [])
 
   useEffect(() => { void loadOutbox() }, [statusF])
@@ -436,6 +486,61 @@ export default function SmsCenterView() {
     void loadTemplates()
   }
 
+  /* ═══ R10-MSG: الگوهای پیام مرجوعی ═══ */
+  function openRtNew() {
+    setRtEdit(null)
+    const left = RT_REASONS.filter((x) => !rtList.some((t) => t.reason === x))
+    setRtReason(left[0] ?? RT_WILDCARD)
+    setRtTitle(''); setRtBody('')
+    setRtOpen(true)
+  }
+
+  function openRtEdit(t: ReturnTpl) {
+    setRtEdit(t)
+    setRtReason(t.reason)
+    setRtTitle(t.title)
+    setRtBody(t.body)
+    setRtOpen(true)
+  }
+
+  async function saveRt() {
+    if (!rtTitle.trim() || !rtBody.trim()) return toast.error('عنوان و متن الگو را کامل کنید')
+    if (rtBody.trim().length > 700) return toast.error('متن الگو بیش از ۷۰۰ نویسه است')
+    setRtBusy(true)
+    const r = rtEdit
+      ? await api(`/api/return-templates/${rtEdit.id}`, {
+          method: 'PATCH',
+          body: { reason: rtReason, title: rtTitle.trim(), body: rtBody.trim() },
+        })
+      : await api('/api/return-templates', {
+          method: 'POST',
+          body: { reason: rtReason, title: rtTitle.trim(), body: rtBody.trim() },
+        })
+    setRtBusy(false)
+    if (!r.ok) return toast.error(r.error || 'ذخیره الگو ناموفق بود')
+    toast.success(rtEdit ? 'الگو ذخیره شد' : 'الگو ساخته شد')
+    setRtOpen(false)
+    void loadRtpls()
+  }
+
+  async function toggleRt(t: ReturnTpl, v: boolean) {
+    const r = await api(`/api/return-templates/${t.id}`, { method: 'PATCH', body: { enabled: v } })
+    if (!r.ok) return toast.error(r.error || 'تغییر وضعیت ناموفق بود')
+    toast.success(v ? 'الگو فعال شد' : 'الگو غیرفعال شد')
+    void loadRtpls()
+  }
+
+  async function removeRt() {
+    if (!rtDel) return
+    setRtBusy(true)
+    const r = await api(`/api/return-templates/${rtDel.id}`, { method: 'DELETE' })
+    setRtBusy(false)
+    if (!r.ok) return toast.error(r.error || 'حذف ناموفق بود')
+    toast.success('الگو حذف شد')
+    setRtDel(null)
+    void loadRtpls()
+  }
+
   /* ═══════════════════════ رندر ═══════════════════════ */
 
   const addDef = providerDef(addProvider)
@@ -501,6 +606,7 @@ export default function SmsCenterView() {
           {!cfgDenied && <TabsTrigger value="panels" className="gap-1.5"><I.settings size={15} /> پنل‌ها</TabsTrigger>}
           <TabsTrigger value="send" className="gap-1.5"><I.send size={15} /> ارسال پیام</TabsTrigger>
           {!cfgDenied && <TabsTrigger value="templates" className="gap-1.5"><I.clipboard size={15} /> قالب‌ها</TabsTrigger>}
+          {isMgr && <TabsTrigger value="rtpls" className="gap-1.5"><I.receipt size={15} /> الگوهای پیام مرجوعی</TabsTrigger>}
           {!cfgDenied && <TabsTrigger value="outbox" className="gap-1.5"><I.history size={15} /> گزارش ارسال</TabsTrigger>}
         </TabsList>
 
@@ -730,6 +836,83 @@ export default function SmsCenterView() {
         )}
 
         {/* ═══════════ زبانهٔ گزارش ارسال ═══════════ */}
+        {/* R10-MSG: tab of return-message templates */}
+        {isMgr && (
+        <TabsContent value="rtpls" className="space-y-3">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                <I.receipt size={18} /> الگوهای پیام مرجوعی
+                <Badge variant="secondary" className="text-[11px]">{fa(rtList.length)} الگو</Badge>
+                <Badge variant="secondary" className="text-[11px]">{fa(rtList.filter((t) => t.enabled).length)} فعال</Badge>
+                <Button size="sm" className="ms-auto gap-1.5" onClick={openRtNew}>
+                  <I.plus size={15} /> الگوی جدید
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-[11px] leading-6 text-stone-500">
+              در مودال «ثبت پرداخت» صفحهٔ در انتظار تایید و پرداخت، پیام مشتری بر اساس الگوی همان علتِ مرجوعی پیش‌نمایش و ارسال می‌شود؛ اگر علت، الگوی فعال نداشته باشد الگوی «*» استفاده می‌شود.
+            </CardContent>
+          </Card>
+
+          {rtList.length === 0 ? (
+            <Card><CardContent className="p-10 text-center text-sm text-stone-500">
+              <I.receipt size={26} className="mx-auto mb-3 text-stone-300" />
+              هنوز الگویی ثبت نشده — با «الگوی جدید» برای هر علت مرجوعی یک پیام آماده بسازید.
+            </CardContent></Card>
+          ) : (
+          <Card>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">علت مرجوعی</TableHead>
+                      <TableHead className="text-right">عنوان</TableHead>
+                      <TableHead className="text-right">متن پیام</TableHead>
+                      <TableHead className="text-right">وضعیت</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rtList.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell>
+                          <Badge className={cn('border text-[10px]', t.reason === RT_WILDCARD ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-stone-300 bg-stone-100 text-stone-700')}>
+                            {t.reason === RT_WILDCARD ? '★ پیش‌فرض (همهٔ علل)' : t.reason}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs font-bold">{t.title}</TableCell>
+                        <TableCell className="max-w-md">
+                          <div className="truncate text-xs leading-6 text-stone-600" title={t.body}>{t.body}</div>
+                        </TableCell>
+                        <TableCell>
+                          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-stone-600">
+                            <Checkbox checked={t.enabled} onCheckedChange={(v: boolean) => toggleRt(t, v === true)} />
+                            فعال
+                          </label>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button size="sm" variant="outline" className="gap-1 px-2 text-[11px]" onClick={() => openRtEdit(t)}>
+                              <I.pencil size={13} /> ویرایش
+                            </Button>
+                            <Button size="sm" variant="ghost" className="gap-1 px-2 text-[11px] text-rose-600" onClick={() => setRtDel(t)}>
+                              <I.trash size={13} /> حذف
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+          )}
+        </TabsContent>
+        )}
+
         {!cfgDenied && (
         <TabsContent value="outbox" className="space-y-3">
           <Card>
@@ -995,6 +1178,71 @@ export default function SmsCenterView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setTplOpen(false)}>انصراف</Button>
             <Button onClick={createTemplate}>ایجاد قالب</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ R10-MSG: دیالوگ الگوی پیام مرجوعی ═══ */}
+      <Dialog open={rtOpen} onOpenChange={setRtOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><I.receipt size={17} /> {rtEdit ? 'ویرایش الگوی پیام مرجوعی' : 'الگوی پیام مرجوعی جدید'}</DialogTitle>
+            <DialogDescription>پیام آمادهٔ مشتری برای این علتِ مرجوعی — جای‌نگردها با کلیک اضافه می‌شوند و هنگام پرداخت با مقادیر واقعی جایگزین می‌شوند.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-600">علت مرجوعی</label>
+                <Select value={rtReason} onValueChange={setRtReason}>
+                  <SelectTrigger aria-label="علت مرجوعی"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={RT_WILDCARD}>★ پیش‌فرض (همهٔ علل)</SelectItem>
+                    {RT_REASONS.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-stone-600">عنوان الگو</label>
+                <Input placeholder="مثلاً: تأیید مرجوعی — کالای معیوب" value={rtTitle} onChange={(e: any) => setRtTitle(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-stone-600">متن پیام (حداکثر ۷۰۰ نویسه — {fa(rtBody.length)})</label>
+              <Textarea rows={5} placeholder="متن پیام به مشتری…" value={rtBody} onChange={(e: any) => setRtBody(e.target.value)} />
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] font-bold text-stone-500">جای‌نگردها:</span>
+                {RT_PLACEHOLDERS.map((p) => (
+                  <button key={p.key} type="button" title={p.label}
+                    className="rounded-full border border-stone-300 bg-stone-50 px-2 py-0.5 font-mono text-[11px] text-stone-700 hover:bg-stone-100"
+                    onClick={() => setRtBody((prev) => `${prev} ${p.key}`.trim())}>
+                    {p.key}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRtOpen(false)}>انصراف</Button>
+            <Button disabled={rtBusy} onClick={saveRt} className="gap-1.5">
+              {rtBusy ? <I.loader size={15} className="animate-spin" /> : <I.save size={15} />}
+              {rtEdit ? 'ذخیره تغییرات' : 'ایجاد الگو'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ R10-MSG: دیالوگ حذف الگوی پیام مرجوعی ═══ */}
+      <Dialog open={!!rtDel} onOpenChange={(o: boolean) => !o && setRtDel(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700"><I.trash size={17} /> حذف الگوی پیام مرجوعی</DialogTitle>
+            <DialogDescription>
+              آیا از حذف الگوی «{rtDel?.title}» ({rtDel?.reason === RT_WILDCARD ? 'پیش‌فرض' : rtDel?.reason}) مطمئن هستید؟
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRtDel(null)}>انصراف</Button>
+            <Button variant="destructive" disabled={rtBusy} onClick={removeRt}>{rtBusy ? 'در حال حذف…' : 'حذف کن'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

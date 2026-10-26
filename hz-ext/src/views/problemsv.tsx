@@ -687,16 +687,16 @@ export default function ProblemsView() {
                   <button
                     type="button"
                     onClick={() => setNf((f) => ({ ...f, shift: 'MORNING' }))}
-                    className={cn('rounded-md py-1.5 text-xs font-medium transition-colors',
-                      nf.shift === 'MORNING' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500 hover:bg-stone-100')}
+                    className={cn('cursor-pointer rounded-md py-1.5 text-xs font-bold transition-colors',
+                      nf.shift === 'MORNING' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-600 hover:bg-stone-200/70 hover:text-stone-800')}
                   >
                     صبح
                   </button>
                   <button
                     type="button"
                     onClick={() => setNf((f) => ({ ...f, shift: 'EVENING' }))}
-                    className={cn('rounded-md py-1.5 text-xs font-medium transition-colors',
-                      nf.shift === 'EVENING' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500 hover:bg-stone-100')}
+                    className={cn('cursor-pointer rounded-md py-1.5 text-xs font-bold transition-colors',
+                      nf.shift === 'EVENING' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-600 hover:bg-stone-200/70 hover:text-stone-800')}
                   >
                     عصر
                   </button>

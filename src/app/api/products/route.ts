@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson, clampInt } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
@@ -108,16 +109,31 @@ function barcodeCountOf(barcodesJson: string, code: string | null): number {
   return code ? 1 : 0
 }
 
-/** lowStock condition used both for the filter and meta — mirrors live (stock ≤ 5, or ≤ reorderLevel) */
-function lowStockWhere() {
-  return {
-    OR: [
-      { stock: { lte: 5 } },
-      // Prisma cannot compare two columns; reorderLevel is null for the whole seeded catalog,
-      // so products with a manual reorderLevel are treated as low-stock (documented in worklog).
-      { reorderLevel: { not: null } },
-    ],
-  }
+/** R8: کم‌موجودی — آستانهٔ هر کالا: COALESCE(lowStockThreshold, reorderLevel, 5)
+ *  (میان‌بر: حد اختصاصی مدیر ← حد هلو ← ۵). فقط کالاهای فعال.
+ *  Prisma مقایسهٔ دو ستون را نمی‌تواند بنویسد ⇒ مسیر raw SQL (الگوی /api/trades). */
+const LOW_STOCK_SQL = Prisma.sql`stock <= COALESCE(lowStockThreshold, reorderLevel, 5)`
+
+interface ProductRow {
+  id: string
+  name: string
+  code: string | null
+  unit: string
+  lastCountDate: string | null
+  monthlySold: number
+  category: string | null
+  mainGroup: string | null
+  subGroup: string | null
+  sellPrice: number
+  sellPrice2: number
+  lastBuyPrice: number
+  stock: number
+  reorderLevel: number | null
+  shelfLifeDays: number | null
+  status: string
+  active: boolean | number
+  sectionLabel: string | null
+  barcodesJson: string
 }
 
 export async function GET(req: NextRequest) {
@@ -141,7 +157,7 @@ export async function GET(req: NextRequest) {
   // ---------- meta branch (GET /api/products?meta=1) ----------
   if (meta === '1') {
     const all = await db.product.findMany({
-      select: { mainGroup: true, subGroup: true, stock: true, reorderLevel: true },
+      select: { mainGroup: true, subGroup: true, stock: true, reorderLevel: true, lowStockThreshold: true, active: true },
     })
     const mg: Record<string, number> = {}
     const sg: Record<string, number> = {}
@@ -149,7 +165,8 @@ export async function GET(req: NextRequest) {
     for (const p of all) {
       if (p.mainGroup) mg[p.mainGroup] = (mg[p.mainGroup] ?? 0) + 1
       if (p.subGroup) sg[p.subGroup] = (sg[p.subGroup] ?? 0) + 1
-      if (p.stock <= 5 || (p.reorderLevel !== null && p.stock <= p.reorderLevel)) low++
+      // R8: همان زنجیرهٔ فیلتر کم‌موجودی (فقط فعال‌ها) تا چیپ سربرگ با نتیجهٔ فیلتر یکی باشد
+      if (p.active && p.stock <= (p.lowStockThreshold ?? p.reorderLevel ?? 5)) low++
     }
     const toList = (m: Record<string, number>) =>
       Object.entries(m)
@@ -183,23 +200,51 @@ export async function GET(req: NextRequest) {
   if (sg) and.push({ subGroup: sg })
   if (status) and.push({ status })
   if (unit) and.push({ unit }) // R4-8
-  if (lowStock) and.push(lowStockWhere())
   if (and.length) where.AND = and
 
-  const total = await db.product.count({ where })
-  const order: Record<string, 'asc' | 'desc'>[] =
-    sort === 'stock'
-      ? [{ stock: 'asc' }, { name: 'asc' }]
-      : lowStock && !sort
-        ? [{ stock: 'asc' }, { name: 'asc' }] // low-stock view: least stock first
-        : [{ name: 'asc' }, { id: 'asc' }] // default: name (matches live page 1)
+  let total: number
+  let rows: ProductRow[]
 
-  const rows = await db.product.findMany({
-    where,
-    orderBy: order,
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+  if (lowStock) {
+    /* R8: فیلتر کم‌موجود — سنجش دقیق ستون‌به‌ستون فقط با raw SQL ممکن است؛
+       فقط کالاهای فعال (کالاهای مُردهٔ غیرفعالِ موجودی‌صفر، فهرست را غرق نمی‌کنند). */
+    const like = `%${q}%`
+    const conds = [Prisma.sql`active = 1`, LOW_STOCK_SQL]
+    if (q) conds.push(Prisma.sql`(name LIKE ${like} OR code LIKE ${like} OR barcodesJson LIKE ${like})`)
+    if (mg) conds.push(Prisma.sql`mainGroup = ${mg}`)
+    if (sg) conds.push(Prisma.sql`subGroup = ${sg}`)
+    if (status) conds.push(Prisma.sql`status = ${status}`)
+    if (unit) conds.push(Prisma.sql`unit = ${unit}`)
+    const whereSql = Prisma.join(conds, ' AND ')
+    const cntRows = await db.$queryRaw<Array<{ cnt: number | bigint }>>(
+      Prisma.sql`SELECT COUNT(*) AS cnt FROM Product WHERE ${whereSql}`,
+    )
+    total = Number(cntRows[0]?.cnt ?? 0)
+    const orderSql =
+      sort === 'stock' || !sort
+        ? Prisma.sql`stock ASC, name ASC` // نمای کم‌موجود: کمترین موجودی اول
+        : Prisma.sql`name ASC, id ASC`
+    rows = await db.$queryRaw<ProductRow[]>(
+      Prisma.sql`SELECT id, name, code, unit, lastCountDate, monthlySold, category, mainGroup, subGroup,
+                        sellPrice, sellPrice2, lastBuyPrice, stock, reorderLevel, shelfLifeDays,
+                        status, active, sectionLabel, barcodesJson
+                 FROM Product WHERE ${whereSql}
+                 ORDER BY ${orderSql}
+                 LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
+    )
+  } else {
+    total = await db.product.count({ where })
+    const order: Record<string, 'asc' | 'desc'>[] =
+      sort === 'stock'
+        ? [{ stock: 'asc' }, { name: 'asc' }]
+        : [{ name: 'asc' }, { id: 'asc' }] // default: name (matches live page 1)
+    rows = (await db.product.findMany({
+      where,
+      orderBy: order,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    })) as ProductRow[]
+  }
 
   const items = rows.map((p) => ({
     id: p.id,
@@ -218,8 +263,8 @@ export async function GET(req: NextRequest) {
     reorderLevel: p.reorderLevel,
     shelfLifeDays: p.shelfLifeDays,
     status: p.status,
-    active: p.active,
     sectionLabel: p.sectionLabel, // R5-P4
+    active: !!p.active, // raw SQLite 0/1 → boolean
     barcodeCount: barcodeCountOf(p.barcodesJson, p.code),
   }))
 
@@ -309,6 +354,7 @@ export async function POST(req: NextRequest) {
       reorderLevel,
       defaultOrderQty: defaultOrderQty ?? 6,
       defaultCartonQty: defaultCartonQty ?? 1,
+      unitsPerCarton: Math.max(0, toInt(body.unitsPerCarton) ?? 0), // R9: اندازهٔ پیش‌فرض کارتن (۰ = نامشخص)
       shelfLifeDays: toInt(body.shelfLifeDays),
       status: active ? 'فعال' : 'غیر فعال',
       active,

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { ok, fail, logActivity, clampInt } from '@/lib/api'
+import { ok, fail, logActivity, clampInt, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { ARCHIVE_ROLES, astr } from '@/lib/archive'
 import { toEnDigits } from '@/lib/jalali'
@@ -11,6 +11,59 @@ export const dynamic = 'force-dynamic'
 function mobileOrNull(v: unknown): string | null {
   const s = toEnDigits(String(v ?? '')).replace(/[^\d+]/g, '').slice(0, 15)
   return s || null
+}
+
+/* ═══ R10: تأمین‌کنندگانِ مرتبط با نماینده (supplierIdsJson) ═══ */
+
+const REP_SUPPLIER_CAP = 40
+
+type SupBrief = { id: string; name: string; code: string | null }
+
+/** تجزیهٔ supplierIdsJson → فهرست شناسه‌های معتبر (رشته) */
+function parseSupplierIds(json: string | null | undefined): string[] {
+  const arr = safeJson<string[]>(json, [])
+  if (!Array.isArray(arr)) return []
+  return arr.filter((x) => typeof x === 'string' && !!x)
+}
+
+/** یک کوئری گروهی → نقشهٔ id به {id, name, code} برای همهٔ شناسه‌های داده‌شده */
+async function supplierMapFor(ids: string[]): Promise<Map<string, SupBrief>> {
+  const uniq = [...new Set(ids)].slice(0, 400)
+  if (!uniq.length) return new Map()
+  const rows = await db.supplier.findMany({
+    where: { id: { in: uniq } },
+    select: { id: true, name: true, code: true },
+  })
+  return new Map(rows.map((s) => [s.id, { id: s.id, name: s.name, code: s.code }]))
+}
+
+/** رزولو کامل: از رشتهٔ JSON ذخیره‌شده به [{id,name,code}] (ترتیب ذخیره حفظ می‌شود) */
+async function resolveSuppliers(json: string | null | undefined): Promise<SupBrief[]> {
+  const ids = parseSupplierIds(json)
+  if (!ids.length) return []
+  const map = await supplierMapFor(ids)
+  return ids.map((id) => map.get(id)).filter((s): s is SupBrief => !!s)
+}
+
+/**
+ * اعتبارسنجی supplierIds دریافتی از بدنه (POST/PUT):
+ * آرایهٔ رشته — حداکثر ۴۰؛ هر شناسه باید در جدول Supplier موجود باشد
+ * (نامعتبرها بی‌صدا حذف می‌شوند)؛ تکراری‌ها یکتا می‌شوند.
+ * خروجی: رشتهٔ JSON قابل ذخیره یا null (خالی).
+ */
+async function supplierIdsJsonOrNull(v: unknown): Promise<string | null> {
+  const raw = Array.isArray(v)
+    ? v.map((x) => toEnDigits(String(x ?? '')).trim()).filter((s) => !!s)
+    : []
+  const uniq = [...new Set(raw)].slice(0, REP_SUPPLIER_CAP)
+  if (!uniq.length) return null
+  const found = await db.supplier.findMany({
+    where: { id: { in: uniq } },
+    select: { id: true },
+  })
+  const valid = new Set(found.map((s) => s.id))
+  const keep = uniq.filter((id) => valid.has(id)).slice(0, REP_SUPPLIER_CAP)
+  return keep.length ? JSON.stringify(keep) : null
 }
 
 /** GET /api/archive/reps — نمایندگان فروش + تعداد اسناد (q: نام/موبایل/شرکت/سمت) */
@@ -39,9 +92,11 @@ export async function GET(req: NextRequest) {
   else if (active === '0') and.push({ active: false })
   const where = and.length ? { AND: and } : {}
 
-  const [rows, docCounts] = await Promise.all([
-    db.salesRep.findMany({ where, orderBy: [{ active: 'desc' }, { name: 'asc' }] }),
+  const rows = await db.salesRep.findMany({ where, orderBy: [{ active: 'desc' }, { name: 'asc' }] })
+  const [docCounts, supMap] = await Promise.all([
     db.archiveDocument.groupBy({ by: ['repId'], _count: { _all: true } }),
+    // R10: همهٔ تأمین‌کنندگانِ ارجاع‌شده در همهٔ نماینده‌ها با «یک» کوئری گروهی رزولو می‌شوند
+    supplierMapFor(rows.flatMap((r) => parseSupplierIds(r.supplierIdsJson))),
   ])
   const countMap = new Map(docCounts.map((d) => [d.repId, d._count._all]))
 
@@ -55,13 +110,17 @@ export async function GET(req: NextRequest) {
       note: r.note,
       active: r.active,
       documentsCount: countMap.get(r.id) ?? 0,
+      // R10: تأمین‌کنندگانِ مرتبط (نام/کد رزولو‌شده — ترتیب انتخاب حفظ می‌شود)
+      suppliers: parseSupplierIds(r.supplierIdsJson)
+        .map((id) => supMap.get(id))
+        .filter((s): s is SupBrief => !!s),
       createdAt: r.createdAt.toISOString(),
     })),
     total: rows.length,
   })
 }
 
-/** POST /api/archive/reps — ثبت نماینده {name, mobile?, company?, title?, note?, active?} */
+/** POST /api/archive/reps — ثبت نماینده {name, mobile?, company?, title?, note?, active?, supplierIds?} */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
@@ -76,6 +135,9 @@ export async function POST(req: NextRequest) {
   const dup = await db.salesRep.findFirst({ where: { name } })
   if (dup) return fail('نماینده‌ای با همین نام ثبت شده است')
 
+  // R10: تأمین‌کنندگان مرتبط — شناسه‌های ناموجود بی‌صدا حذف می‌شوند
+  const supplierIdsJson = await supplierIdsJsonOrNull(body.supplierIds)
+
   const created = await db.salesRep.create({
     data: {
       name,
@@ -84,6 +146,7 @@ export async function POST(req: NextRequest) {
       title: astr(body.title, 60),
       note: astr(body.note, 400),
       active: body.active === undefined ? true : !!body.active,
+      supplierIdsJson,
     },
   })
 
@@ -93,7 +156,7 @@ export async function POST(req: NextRequest) {
     category: 'archive', detail: `ثبت نمایندهٔ «${name}»`, entityId: created.id,
   })
 
-  return ok({ ...created, documentsCount: 0 })
+  return ok({ ...created, documentsCount: 0, suppliers: await resolveSuppliers(created.supplierIdsJson) })
 }
 
 /** PUT /api/archive/reps — ویرایش نماینده {id, ...} */
@@ -123,6 +186,8 @@ export async function PUT(req: NextRequest) {
   if (body.title !== undefined) data.title = astr(body.title, 60)
   if (body.note !== undefined) data.note = astr(body.note, 400)
   if (body.active !== undefined) data.active = !!body.active
+  // R10: تأمین‌کنندگان مرتبط — فقط هنگام ارسال صریح supplierIds (آرایه/null) تغییر می‌کند
+  if (body.supplierIds !== undefined) data.supplierIdsJson = await supplierIdsJsonOrNull(body.supplierIds)
 
   if (!Object.keys(data).length) return fail('فیلدی برای ویرایش ارسال نشده است')
 
@@ -132,7 +197,7 @@ export async function PUT(req: NextRequest) {
     action: 'archive.rep.update', actionLabel: 'نمایندهٔ فروش',
     category: 'archive', detail: `ویرایش نمایندهٔ «${updated.name}»`, entityId: id,
   })
-  return ok(updated)
+  return ok({ ...updated, suppliers: await resolveSuppliers(updated.supplierIdsJson) })
 }
 
 /** DELETE /api/archive/reps?id= — حذف نماینده؛ سندهای متصل فقط متنِ نام را نگه می‌دارند (repId=null) */

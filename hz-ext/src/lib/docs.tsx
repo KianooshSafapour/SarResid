@@ -128,6 +128,11 @@ function jalaliDash(date: Date): string {
   return `${j.jy}-${pad2(j.jm)}-${pad2(j.jd)}`
 }
 
+/** ۱۴۰۵.۰۷.۲۷ — سبک فاکتور Apex (نقطهٔ جداکننده) — R8-RECEIPT */
+function faDotDate(date: Date): string {
+  return toFa(jalaliDash(date).replace(/-/g, '.'))
+}
+
 /** نام روز هفته از رشتهٔ تاریخ جلالی */
 function weekdayOf(s?: string | null): string {
   const d = resolveDate(s)
@@ -152,10 +157,11 @@ function toFa(s: number | string | null | undefined): string {
 function toEn(s: string): string {
   return String(s).replace(/[۰-۹]/g, (c) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c))).replace(/[٠-٩]/g, (c) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)))
 }
-/** پول به ریال با جداکنندهٔ هزارگان (ارقام فارسی) */
+/** پول به ریال با جداکنندهٔ هزارگان (ارقام فارسی) — R8-RECEIPT: جداکنندهٔ ٬ فارسی (U+066C)، هم‌قالب fa() در lib/hz
+ *  (نسخهٔ قدیمی کامای ASCII چاپ می‌کرد که با قانون جداسازی R7 ناسازگار بود) */
 function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !isFinite(+n)) return '۰'
-  return toFa(Math.round(+n).toLocaleString('en-US'))
+  return toFa(Math.round(+n).toLocaleString('en-US')).replace(/,/g, '٬')
 }
 /** عدد صحیح/اعشاری فارسی (حداکثر یک رقم اعشار) */
 function faNum(n: number | null | undefined): string {
@@ -166,6 +172,15 @@ function faNum(n: number | null | undefined): string {
 }
 /** درصد فارسی: ۳۵٪ */
 function faPct(n: number): string { return toFa(String(Math.round(n * 100))) + '٪' }
+
+/** مقدار کمّی فارسی — تا ۳ رقم اعشاری بدون صفرِ اضافه (۰٫۷۲ کیلو — R7) */
+function faQty(n: number | null | undefined): string {
+  if (n === null || n === undefined || !isFinite(+n)) return '—'
+  const v = Math.round(+n * 1000) / 1000
+  let s = String(v)
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '')
+  return toFa(s.replace('.', '٫'))
+}
 
 const YEKAN = ['', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه']
 const DAHYEK = ['ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده']
@@ -279,6 +294,15 @@ const STORE = {
   name: 'هایپر زیتون',
   sub: 'فروشگاه زنجیره‌ای — رفسنجان',
   addr: 'نشانی: رفسنجان، بلوار ... — تلفن: ۰۳۴-۳۳ ...',
+}
+
+/* ═══ R8-RECEIPT: سربرگ فاکتور Apex — نام لاتین + شعار + آیکون‌های ریز سرراست ═══ */
+const LATIN_NAME = 'HYPER ZEYTOON'
+const SLOGAN = 'سالم غذای سالم، زندگی سالم'
+const RX_ICONS: Record<string, string> = {
+  hash: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
 }
 
 /* ═══ R7: هویت چاپی فروشگاه (لوگو + مشخصات از system/data) ═══
@@ -531,6 +555,28 @@ table.tbl{width:100%;border-collapse:collapse;font-size:10.8px}
 .sig .s-label{font-size:10px;font-weight:800;color:#57534e}
 .sig .s-name{font-size:11px;font-weight:600;color:#292524;margin-top:2px}
 .sig .s-hint{position:absolute;bottom:6px;right:12px;left:12px;text-align:center;font-size:8.4px;color:#a8a29e}
+/* ═══ رسید مرجوعی — سبک فاکتور Apex (R8-RECEIPT) ═══ */
+.rx-head{display:flex;flex-direction:column;align-items:center;text-align:center;padding:2px 0 4px}
+.rx-logo{width:62px;height:62px;border-radius:50%;object-fit:cover;border:2px solid #a7f3d0;background:#fff;padding:3px}
+.rx-emblem{width:62px;height:62px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:30px}
+.rx-name{font-size:25px;font-weight:800;color:#065f46;line-height:1.4}
+.rx-latin{direction:ltr;font-size:10px;font-weight:700;letter-spacing:5px;color:#78716c;margin-top:1px}
+.rx-slogan{font-size:11px;font-weight:600;color:#0f766e;margin-top:1px}
+.rx-title{display:inline-block;margin-top:7px;border:1.5px solid #a7f3d0;background:#ecfdf5;color:#065f46;font-size:12.5px;font-weight:800;border-radius:999px;padding:2px 18px 3px}
+.rx-bar{display:flex;border:1px solid #e7e5e4;border-radius:10px;overflow:hidden;margin-top:9px;background:#fafaf9}
+.rx-cell{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:7px 8px;border-left:1px solid #e7e5e4;min-width:0}
+.rx-cell:last-child{border-left:0}
+.rx-ic{color:#047857;display:inline-flex;flex:none}
+.rx-cl{display:block;font-size:9px;color:#78716c;line-height:1.6}
+.rx-cv{display:block;font-size:12px;font-weight:800;color:#1c1917;line-height:1.5}
+.rx-ctx{border:1px solid #e7e5e4;border-right:3.5px solid #14b8a6;border-radius:10px;margin-top:9px;background:#fff;overflow:hidden}
+.rx-ctx .cx1{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 12px;font-size:11.5px;border-bottom:1px dashed #e7e5e4}
+.rx-ctx .cx2{display:flex;flex-wrap:wrap;gap:3px 16px;padding:6px 12px;font-size:10.5px;color:#57534e;background:#fafaf9;line-height:1.9}
+.rx-ctx .cx2 b{color:#292524}
+table.tbl.rx-tbl{font-size:11px}
+.rx-tbl th{background:#1c1917;border-color:#1c1917;color:#fff;font-size:10.6px}
+.rx-tbl td{padding:4.5px 9px}
+.rx-foot{border:1.5px solid #e7e5e4;border-radius:12px;background:#fafaf9;padding:8px 14px;margin-top:12px;text-align:center;font-size:10.5px;line-height:2}
 /* پابرگ */
 .docfoot{margin-top:12px;border-top:1px solid #e7e5e4;padding-top:6px;display:flex;justify-content:space-between;gap:10px;font-size:8.6px;color:#78716c;flex-wrap:wrap}
 .pfoot{display:none}
@@ -583,6 +629,10 @@ interface ShellParams {
   time?: string | null
   watermark?: boolean
   body: string
+  /** R8-RECEIPT: سربرگ اختصاصی — کل هدر پیش‌فرض را جایگزین می‌کند */
+  header?: string
+  /** R8-RECEIPT: متن نوار پایین (پابرگ) — پیش‌فرض: یادداشت برند/سررسید */
+  credit?: string
 }
 
 /** اسکلت کامل سند: <!DOCTYPE html> … </html> */
@@ -616,7 +666,7 @@ function shell(p: ShellParams): string {
 <div class="sheet${thermal ? ' thermal' : ''}">
 ${wm}
 <div class="doc">
-<header class="lh">
+${p.header ? p.header : `<header class="lh">
   <div class="lh-brand">
     ${emblem}
     <div>
@@ -631,12 +681,12 @@ ${wm}
     <div class="doc-meta">تاریخ: ${dateLong}${thermal ? '' : ' — ساعت: ' + time}</div>
     ${thermal ? `<div class="doc-meta">ساعت: ${time}</div>` : ''}
   </div>
-</header>
+</header>`}
 <div class="rule"></div>
 ${p.body}
 <footer class="docfoot">
-  <span>${br.footerNote ? esc(br.footerNote) : `سند توسط سامانهٔ سررسید (SarResid) تولید شده${code ? ` — کد سند: <span class="num">${esc(code)}</span>` : ''}`}</span>
-  <span>تاریخ تولید: ${dateLong} — ساعت ${time}</span>
+  <span>${p.credit ? esc(p.credit) : (br.footerNote ? esc(br.footerNote) : `سند توسط سامانهٔ سررسید (SarResid) تولید شده${code ? ` — کد سند: <span class="num">${esc(code)}</span>` : ''}`)}</span>
+  <span>${p.credit && code ? `کد سند: <span class="num">${esc(code)}</span> — ` : ''}تاریخ تولید: ${dateLong} — ساعت ${time}</span>
 </footer>
 </div>
 <div class="pfoot">${esc(storeName)} — ${esc(p.title)}${code ? ` — کد سند: ${esc(code)}` : ''}</div>
@@ -873,82 +923,113 @@ export type AnyDocData = ReturnDocData | OrderDocData | ChequeDocData | Handover
  * ۶) سازنده‌های سند
  * ══════════════════════════════════════════════════════════════════ */
 
-/** ۱) رسید مرجوعی کالا — نسخهٔ A4 (رونوشت چاپی) */
+/** ۱) رسید مرجوعی کالا — نسخهٔ A4 رسمی به سبک فاکتور فروش Apex (R8-RECEIPT)
+ *  سربرگِ مرکزی (لوگو + نام + لاتین + شعار) → نوار اطلاعات (سند/تاریخ/ساعت)
+ *  → سطر زمینه (ثبت‌کننده + خریدار) → جدول با سرستون تیره → بلوک تسویه
+ *  + حروف‌خوانی → امضاها → جعبهٔ سیاست مرجوعی → نوار پایین «سر رسید». */
 export function returnDocHTML(data: ReturnDocData, opts?: DocOpts): string {
   const d = data || {}
   const items = Array.isArray(d.items) ? d.items : []
   const total = +(d.totalAmount ?? items.reduce((s, it) => s + (+((it && it.lineTotal) ?? 0) || 0), 0)) || 0
   const exchange = +d.exchangeValue || 0
   const transfer = +d.transferAmount || 0
+  const debt = exchange - total
+  const pay = transfer > 0 ? transfer : Math.max(0, total - exchange)
   const settle = SETTLE_LABEL[d.settleType || ''] || d.settleType || ''
   const st = RETURN_STATUS[d.status || ''] || { label: d.status || '', tone: 'stone' }
   const card = fullCard(d.customerCardNumber)
+  const cashier = d.cashierName || d.authorName || ''
+  const dt = resolveDate(opts?.date || d.date) || new Date()
+  const dateDot = faDotDate(dt)
+  const timeFa = toFa((opts?.time ?? d.time) || nowHM())
+  const br = brand()
+  const storeName = br.storeName || STORE.name
+  const phoneTxt = br.storePhone ? toFa(br.storePhone) : '—'
+  const addrTxt = br.storeAddress || STORE.addr.replace('نشانی: ', '')
+  const logo = br.logoUrl
+    ? `<img class="rx-logo" src="${esc(br.logoUrl)}" alt="لوگو" />`
+    : `<div class="rx-emblem">🫒</div>`
 
-  const rowsHtml = items.map((it, i) => {
-    const qty = +(it && it.qty) || 0
-    const price = +(it && it.unitPrice) || 0
-    const line = +((it && it.lineTotal) ?? qty * price) || 0
+  /* سربرگ مرکزی — مثل فاکتور Apex فروشگاه */
+  const header = `<header class="rx-head">
+  ${logo}
+  <div class="rx-name">${esc(storeName)}</div>
+  <div class="rx-latin">${LATIN_NAME}</div>
+  <div class="rx-slogan">«${SLOGAN}»</div>
+  <div class="rx-title">رسید مرجوعی کالا</div>
+</header>`
+
+  /* نوار اطلاعات — سه خانهٔ جدا شده با آیکون */
+  const infoBar = `<div class="rx-bar">
+  <div class="rx-cell"><span class="rx-ic">${RX_ICONS.hash}</span><span><span class="rx-cl">شماره سند</span><span class="rx-cv num" style="font-size:11px">${d.code ? esc(d.code) : '—'}</span></span></div>
+  <div class="rx-cell"><span class="rx-ic">${RX_ICONS.cal}</span><span><span class="rx-cl">تاریخ</span><span class="rx-cv">${dateDot}</span></span></div>
+  <div class="rx-cell"><span class="rx-ic">${RX_ICONS.clock}</span><span><span class="rx-cl">ساعت</span><span class="rx-cv">${timeFa}</span></span></div>
+</div>`
+
+  /* سطر زمینه — ثبت‌کننده + وضعیت + مشخصات خریدار */
+  const ctx = `<div class="rx-ctx">
+  <div class="cx1">
+    <span>مرجوعی فروش — ثبت‌شده توسط: <b>${esc(cashier || '—')}</b></span>
+    <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
+      ${st.label ? chipHtml('وضعیت: ' + st.label, st.tone as any) : ''}
+      ${settle ? chipHtml(settle, (d.settleType === 'exchange' || d.settleType === 'debt') ? 'amber' : 'emerald') : ''}
+    </span>
+  </div>
+  <div class="cx2">
+    <span>نام خریدار: <b>${orNA(d.customerName)}</b></span>
+    ${d.customerPhone ? `<span>موبایل: <b class="num">${toFa(d.customerPhone)}</b></span>` : ''}
+    ${card ? `<span>کارت: <b class="num">${card}</b></span>` : ''}
+    ${d.purchaseAt ? `<span>تاریخ خرید: <b>${toFa(faSlash(d.purchaseAt))}</b></span>` : ''}
+    ${d.reason ? `<span>علت مرجوعی: <b>${esc(d.reason)}</b></span>` : ''}
+  </div>
+</div>`
+
+  const rowsHtml = items.map((it) => {
+    const itd = it || {}
+    const qty = +(itd.qty) || 0
+    const price = +(itd.unitPrice) || 0
+    const line = +((itd.lineTotal) ?? qty * price) || 0
     return `<tr>
-<td class="c">${toFa(i + 1)}</td>
-<td><b>${orNA(it && it.name)}</b>${it && it.unit ? `<div style="font-size:9px;color:#78716c">واحد: ${esc(it.unit)}</div>` : ''}</td>
-<td class="c mono">${(it && it.barcode) ? esc(it.barcode) : NA}</td>
-<td class="num">${money(qty)}</td>
+<td><b>${orNA(itd.name)}</b>${itd.barcode ? `<div class="mono" style="font-size:8.8px;color:#a8a29e;direction:ltr;text-align:right">${esc(itd.barcode)}</div>` : ''}</td>
+<td class="c">${faQty(qty)}${itd.unit ? ` <span style="font-size:9px;color:#a8a29e">${esc(itd.unit)}</span>` : ''}</td>
 <td class="num">${money(price)}</td>
 <td class="num"><b>${money(line)}</b></td>
 </tr>`
   }).join('')
 
-  const body = `
-<div class="row2">
-  ${boxHtml('مشخصات مشتری', kvHtml([
-    { k: 'نام مشتری', v: orNA(d.customerName) },
-    { k: 'تلفن همراه', v: d.customerPhone ? `<span class="num">${toFa(d.customerPhone)}</span>` : NA },
-    { k: 'کارت بانکی', v: card ? `<span class="num">${card}</span>` : NA },
-    { k: 'تاریخ خرید', v: d.purchaseAt ? jalaliLong(resolveDate(d.purchaseAt) || new Date()) : NA },
-  ]))}
-  ${boxHtml('مشخصات سند', `<div style="display:flex;flex-direction:column;gap:7px;align-items:flex-start">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      ${chipHtml('نوع تسویه: ' + (settle || '—'), settle === 'exchange' || settle === 'بدهی مشتری' ? 'amber' : 'emerald')}
-      ${st.label ? chipHtml('وضعیت: ' + st.label, st.tone as any) : ''}
-    </div>
-    ${kvHtml([
-      { k: 'صندوکار', v: orNA(d.cashierName || d.authorName) },
-      { k: 'تعداد اقلام', v: toFa(items.length) + ' قلم' },
-      { k: 'کد پیگیری', v: d.code ? `<span class="num">${esc(d.code)}</span>` : NA },
-    ])}
-  </div>`)}
-</div>
+  /* بلوک تسویه — مجموع / کالا / کارت / مبلغ قابل پرداخت */
+  const totRows: { label: string; value: string; grand?: boolean }[] = [
+    { label: `مجموع کالاها (${toFa(items.length)} قلم)`, value: `${money(total)} ریال` },
+  ]
+  if (exchange > 0) totRows.push({ label: 'تسویه با کالای جایگزین', value: `${money(exchange)} ریال` })
+  if (transfer > 0) totRows.push({ label: 'بازپرداخت به کارت', value: `${money(transfer)} ریال` })
+  if (debt > 0) totRows.push({ label: 'بدهی مشتری', value: `${money(debt)} ریال` })
+  totRows.push({ label: 'مبلغ قابل پرداخت', value: `<b>${money(pay)} ریال</b>`, grand: true })
 
-<div class="sec-title">اقلام مرجوعی</div>
-<table class="tbl">
-<thead><tr><th class="c" style="width:34px">ردیف</th><th>نام کالا</th><th class="c" style="width:110px">بارکد</th><th class="c" style="width:64px">تعداد</th><th class="c" style="width:100px">فی (ریال)</th><th class="c" style="width:110px">جمع (ریال)</th></tr></thead>
-<tbody>${rowsHtml || `<tr><td colspan="6" class="c" style="color:#a8a29e">قلمی ثبت نشده است</td></tr>`}</tbody>
-<tfoot><tr><td colspan="5" style="text-align:right">جمع کل اقلام مرجوعی</td><td class="num">${money(total)}</td></tr></tfoot>
+  const body = `
+${infoBar}
+${ctx}
+<table class="tbl rx-tbl">
+<thead><tr><th>شرح کالا</th><th class="c" style="width:84px">تعداد</th><th class="c" style="width:112px">قیمت واحد (ریال)</th><th class="c" style="width:118px">مبلغ کل (ریال)</th></tr></thead>
+<tbody>${rowsHtml || `<tr><td colspan="4" class="c" style="color:#a8a29e">قلمی ثبت نشده است</td></tr>`}</tbody>
+<tfoot><tr><td colspan="3" style="text-align:right">جمع کل اقلام مرجوعی</td><td class="num">${money(total)}</td></tr></tfoot>
 </table>
 
-<div class="totwrap"><div class="totbox">
-  <div class="trow"><span class="lbl">ارزش کل اقلام مرجوعی</span><span class="val">${money(total)} ریال</span></div>
-  ${exchange > 0 ? `<div class="trow"><span class="lbl">ارزش کالای جایگزین</span><span class="val">${money(exchange)} ریال</span></div>` : ''}
-  <div class="grand"><span class="lbl">${transfer > 0 ? 'مبلغ بازگشت وجه به کارت' : 'مبلغ قابل تسویه'}</span><span class="val">${money(transfer > 0 ? transfer : total - exchange)} ریال</span></div>
-</div></div>
-${wordsBox(transfer > 0 ? transfer : total - exchange)}
-${d.transferNote ? `<div class="note">یادداشت بازگشت وجه: ${esc(d.transferNote)}</div>` : ''}
-${d.reason ? `<div class="note"><b>علت مرجوعی:</b> ${esc(d.reason)}</div>` : ''}
+${totBoxHtml(totRows)}
+${wordsBox(pay, true)}
+${d.transferNote ? `<div class="note"><b>توضیح تسویه:</b> ${esc(d.transferNote)}</div>` : ''}
 ${d.note ? `<div class="note"><b>یادداشت:</b> ${esc(d.note)}</div>` : ''}
 
-<div class="stamp-row">
-  <div class="tracking">
-    <div class="t-label">کد پیگیری مرجوعی</div>
-    <div class="t-code">${d.code ? esc(d.code) : '—'}</div>
-  </div>
-  <div class="stampbox">محل مهر و امضای فروشگاه</div>
-</div>
-
 ${sigsHtml([
-    { label: 'تنظیم‌کننده', name: d.cashierName || d.authorName, hint: 'صندوکار' },
-    { label: 'تأییدکننده', hint: 'مدیر فروشگاه' },
-    { label: 'امضای مشتری', hint: 'تحویل‌گیرندهٔ کالا/وجه' },
-  ])}`
+    { label: 'امضای صندوق', name: cashier, hint: 'صندوکار ثبت‌کننده' },
+    { label: 'امضای مدیر', hint: 'تأیید و مهر فروشگاه' },
+  ])}
+
+<div class="rx-foot">
+  <div style="font-weight:800;color:#065f46">مرجوعی مطابق سیاست‌های فروشگاه و پس از تأیید مدیریت انجام می‌شود؛ وجه قابل پرداخت به کارت خریدار واریز می‌گردد.</div>
+  <div>خدمات مشتریان: <b class="num">${phoneTxt}</b>${br.footerNote ? ` — ${esc(br.footerNote)}` : ''}</div>
+  <div style="color:#78716c">نشانی: ${esc(addrTxt)}</div>
+</div>`
 
   return shell({
     kind: 'return',
@@ -957,62 +1038,75 @@ ${sigsHtml([
     date: opts?.date || d.date,
     time: opts?.time ?? d.time,
     watermark: opts?.watermark ?? d.watermark ?? true,
+    credit: 'سر رسید — سامانه یکپارچه مدیریت هایپر زیتون',
+    header,
     body,
   })
 }
 
-/** ۱-ب) رسید مرجوعی — نسخهٔ حرارتی ۸۰ میلی‌متری */
+/** ۱-ب) رسید مرجوعی — نسخهٔ حرارتی ۸۰ میلی‌متری (هم‌ساخت با نسخهٔ A4 — R8-RECEIPT) */
 export function returnThermalHTML(data: ReturnDocData, opts?: DocOpts): string {
   const d = data || {}
   const items = Array.isArray(d.items) ? d.items : []
   const total = +(d.totalAmount ?? items.reduce((s, it) => s + (+((it && it.lineTotal) ?? 0) || 0), 0)) || 0
   const exchange = +d.exchangeValue || 0
   const transfer = +d.transferAmount || 0
+  const debt = exchange - total
+  const pay = transfer > 0 ? transfer : Math.max(0, total - exchange)
   const settle = SETTLE_LABEL[d.settleType || ''] || d.settleType || '—'
   const st = RETURN_STATUS[d.status || ''] || { label: d.status || '—', tone: 'stone' }
-  const pay = transfer > 0 ? transfer : total - exchange
+  const br = brand()
+  const phoneTxt = br.storePhone ? toFa(br.storePhone) : '—'
+  const addrTxt = br.storeAddress || STORE.addr.replace('نشانی: ', '')
 
   const rowsHtml = items.map((it) => {
-    const qty = +(it && it.qty) || 0
-    const price = +(it && it.unitPrice) || 0
-    const line = +((it && it.lineTotal) ?? qty * price) || 0
+    const itd = it || {}
+    const qty = +(itd.qty) || 0
+    const price = +(itd.unitPrice) || 0
+    const line = +((itd.lineTotal) ?? qty * price) || 0
     return `<tr>
-<td style="padding:2.5px 3px"><b>${orNA(it && it.name)}</b><div style="font-size:8.2px;color:#78716c">${money(qty)} × ${money(price)}</div></td>
+<td style="padding:2.5px 3px"><b>${orNA(itd.name)}</b><div style="font-size:8.2px;color:#78716c">${faQty(qty)} × ${money(price)}</div></td>
 <td class="num" style="padding:2.5px 3px"><b>${money(line)}</b></td>
 </tr>`
   }).join('')
 
   const body = `
-<div>${d.code ? `<div class="doc-code" style="font-size:13px">${esc(d.code)}</div>` : ''}</div>
 <div class="dash"></div>
 <div style="font-size:9.5px;line-height:1.9">
   ${d.customerName ? `<div>مشتری: <b>${esc(d.customerName)}</b></div>` : ''}
   ${d.customerPhone ? `<div>تلفن: <span class="num">${toFa(d.customerPhone)}</span></div>` : ''}
   ${d.customerCardNumber ? `<div>کارت: <span class="num">${fullCard(d.customerCardNumber)}</span></div>` : ''}
   <div>نوع تسویه: <b>${esc(settle)}</b> — وضعیت: <b>${esc(st.label)}</b></div>
-  ${d.purchaseAt ? `<div>تاریخ خرید: ${toFa(jalaliLong(resolveDate(d.purchaseAt) || new Date()))}</div>` : ''}
+  ${d.purchaseAt ? `<div>تاریخ خرید: ${toFa(faSlash(d.purchaseAt))}</div>` : ''}
 </div>
 <div class="dash"></div>
 <table class="tbl" style="font-size:9.6px">
-<thead><tr><th>شرح کالا</th><th style="width:86px">جمع (ریال)</th></tr></thead>
+<thead><tr><th>شرح کالا</th><th style="width:92px">مبلغ کل (ریال)</th></tr></thead>
 <tbody>${rowsHtml || `<tr><td colspan="2" class="c" style="color:#a8a29e">قلمی ثبت نشده است</td></tr>`}</tbody>
 </table>
 <div class="dash"></div>
-<div style="display:flex;justify-content:space-between;font-size:11px"><b>جمع اقلام:</b><b class="num">${money(total)} ریال</b></div>
-${exchange > 0 ? `<div style="display:flex;justify-content:space-between;font-size:10px"><span>کالای جایگزین:</span><span class="num">${money(exchange)} ریال</span></div>` : ''}
-<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-top:2px"><b style="color:#065f46">بازگشت وجه:</b><b class="num" style="color:#065f46">${money(pay)} ریال</b></div>
+<div style="display:flex;justify-content:space-between;font-size:11px"><b>جمع کل مرجوعی:</b><b class="num">${money(total)} ریال</b></div>
+${exchange > 0 ? `<div style="display:flex;justify-content:space-between;font-size:10px"><span>تسویه با کالا:</span><span class="num">${money(exchange)} ریال</span></div>` : ''}
+${transfer > 0 ? `<div style="display:flex;justify-content:space-between;font-size:10px"><span>بازپرداخت به کارت:</span><span class="num">${money(transfer)} ریال</span></div>` : ''}
+${debt > 0 ? `<div style="display:flex;justify-content:space-between;font-size:10px"><span>بدهی مشتری:</span><span class="num">${money(debt)} ریال</span></div>` : ''}
+<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-top:2px"><b style="color:#065f46">مبلغ قابل پرداخت:</b><b class="num" style="color:#065f46">${money(pay)} ریال</b></div>
 <div class="dash"></div>
 <div style="font-size:9px;line-height:1.9;color:#44403c">${esc(amountWords(pay).rial)}<br>معادل: ${esc(amountWords(pay).toman)}</div>
-${d.reason ? `<div class="dash"></div><div style="font-size:9px">علت: ${esc(d.reason)}</div>` : ''}
+${d.reason ? `<div class="dash"></div><div style="font-size:9px">علت مرجوعی: ${esc(d.reason)}</div>` : ''}
+${d.note ? `<div style="font-size:9px">یادداشت: ${esc(d.note)}</div>` : ''}
 <div class="dash"></div>
 <div style="font-size:9.5px;line-height:1.9">
   ${d.cashierName ? `<div>صندوکار: <b>${esc(d.cashierName)}</b></div>` : ''}
   <div>کد پیگیری: <b class="num">${d.code ? esc(d.code) : '—'}</b></div>
 </div>
 <div class="dash"></div>
-<div style="font-size:8.4px;color:#78716c;text-align:center;line-height:1.8">
-  این رسید توسط سامانهٔ سررسید (SarResid) صادر شده است.<br>
-  حسن شما، اعتمادِ ما — ${esc(STORE.name)}
+<div style="border:1px solid #e7e5e4;border-radius:8px;padding:5px 7px;font-size:8.4px;color:#78716c;text-align:center;line-height:1.8">
+  مرجوعی مطابق سیاست‌های فروشگاه و پس از تأیید مدیریت انجام می‌شود.<br>
+  خدمات مشتریان: <b class="num">${phoneTxt}</b> — ${esc(addrTxt)}
+</div>
+<div style="margin-top:6px;font-size:8.4px;color:#78716c;text-align:center;line-height:1.8">
+  حسن شما، اعتمادِ ما — ${esc(STORE.name)}<br>
+  سر رسید — سامانه یکپارچه مدیریت هایپر زیتون
 </div>`
 
   return shell({
@@ -1022,6 +1116,7 @@ ${d.reason ? `<div class="dash"></div><div style="font-size:9px">علت: ${esc(d
     date: opts?.date || d.date,
     time: opts?.time ?? d.time,
     watermark: false,
+    credit: 'سر رسید — سامانه یکپارچه مدیریت هایپر زیتون',
     body,
   })
 }

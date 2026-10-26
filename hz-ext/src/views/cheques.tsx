@@ -934,7 +934,7 @@ export default function ChequesView() {
           <Card>
             <CardContent className="flex flex-wrap items-center gap-2 p-4">
               {canFinance && (
-                <Button onClick={() => openCreate()} className="gap-2">
+                <Button onClick={() => openCreate()} data-tour="new-cheque" className="gap-2">
                   <I.plus size={16} /> چک جدید
                 </Button>
               )}

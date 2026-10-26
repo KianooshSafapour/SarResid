@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Textarea, Badge, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, money, toman, fa, toEnDigits, toFaDigits, todayJalali, formatJalali, formatJalaliLong, parseJalali, Icon, I, barcode128, amountWords, MoneyInput, NumInput, ensureBrand, brandNow } from '../lib/hz'
+import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Textarea, Badge, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, money, toman, fa, toEnDigits, toFaDigits, todayJalali, formatJalali, formatJalaliLong, parseJalali, Icon, I, barcode128, amountWords, MoneyInput, NumInput, ensureBrand, brandNow, DocPreview, printDoc } from '../lib/hz'
 
 /* ═══════════════════════════════════════════════════════════════
    returns/new — «ثبت مرجوعی جدید» هایپر زیتون
    چیدمان اصلی بازگردانده شد: اقلام در ستون بزرگ راست،
    اطلاعات مشتری و علت در ستون کنارِ فرم، تسویه در پایین.
    + چاپ رسید حرارتی Bixolon SRP-330II (Web Print SDK)
+   + R8-RECEIPT: دیالوگ دو‌نسخه‌ای — حرارتی ۸۰mm (canvas) و
+     رسید رسمی A4 به سبک فاکتور Apex (docs.tsx + DocPreview/printDoc)
    ═══════════════════════════════════════════════════════════════ */
 
 const REASONS = ['کالای معیوب', 'اشتباه در خرید', 'اختلاف قیمت', 'انقضای کالا', 'عدم رضایت از کیفیت', 'خطای کارت‌خوان', 'سایر']
@@ -155,6 +157,40 @@ function computeSettlement(total: number, exchange: number, transfer: number): S
   if (exchange > 0 && Math.abs(transfer + exchange - total) <= 1) return transfer > 1 ? 'full' : 'exchange'
   if (transfer + exchange < total - 1) return 'partial'
   return 'full'
+}
+
+/* ───── R8-RECEIPT: دادهٔ سند رسمی — تبدیل پاسخ ثبت به قرارداد docs.tsx ───── */
+type ReceiptMode = 'thermal' | 'a4'
+
+function docDataFrom(created: any, cashierName: string) {
+  const dt = created?.createdAt ? new Date(created.createdAt) : new Date()
+  const p2 = (n: number) => (n < 10 ? '0' + n : String(n))
+  return {
+    code: String(created?.code ?? ''),
+    date: formatJalali(dt),
+    time: `${p2(dt.getHours())}:${p2(dt.getMinutes())}`,
+    customerName: String(created?.customerName ?? ''),
+    customerPhone: String(created?.customerPhone ?? ''),
+    customerCardNumber: created?.customerCardNumber ?? null,
+    purchaseAt: created?.purchaseAt ?? null,
+    settleType: String(created?.settlementType ?? ''),
+    items: (Array.isArray(created?.items) ? created.items : []).map((it: any) => ({
+      name: String(it?.name ?? ''),
+      barcode: it?.barcode ? String(it.barcode) : null,
+      qty: Math.round((Number(it?.qty) || 0) * 1000) / 1000,
+      unit: String(it?.unit ?? ''),
+      unitPrice: Number(it?.unitPrice) || 0,
+      lineTotal: Number(it?.lineTotal) || 0,
+    })),
+    totalAmount: Number(created?.totalAmount) || 0,
+    exchangeValue: Number(created?.exchangeValue) || 0,
+    transferAmount: Number(created?.transferAmount) || 0,
+    transferNote: created?.transferNote ?? null,
+    reason: String(created?.reason ?? ''),
+    note: created?.note ?? null,
+    cashierName,
+    status: String(created?.status ?? ''),
+  }
 }
 
 /* ───── پیش‌نویس خودکار — بازیابی فرم ناتمام پس از رفرش ───── */
@@ -339,6 +375,8 @@ function renderThermalReceipt(
     reason: string
     note?: string | null
     totalAmount: number
+    exchangeValue: number
+    transferAmount: number
     createdAt: string
     items: { name: string; barcode?: string | null; qty: number; unitPrice: number; lineTotal: number }[]
   },
@@ -350,6 +388,16 @@ function renderThermalReceipt(
   const SCALE = 2
   const CX = W / 2
   const MAX_W = W - M * 2
+
+  /* R8-RECEIPT: تفکیک تسویه — هم‌ساخت با نسخهٔ رسمی A4 */
+  const exchange = Math.max(0, +data.exchangeValue || 0)
+  const transfer = Math.max(0, +data.transferAmount || 0)
+  const debt = exchange - data.totalAmount
+  const pay = transfer > 0 ? transfer : Math.max(0, data.totalAmount - exchange)
+  const regDt = new Date(data.createdAt)
+  const p2 = (n: number) => (n < 10 ? '0' + n : String(n))
+  const dateDot = toFaDigits((formatJalali(regDt) || '').replace(/\//g, '.')) || '—'
+  const timeHM = toFaDigits(`${p2(regDt.getHours())}:${p2(regDt.getMinutes())}`)
 
   const measure = document.createElement('canvas').getContext('2d')
   if (!measure) return null
@@ -445,7 +493,8 @@ function renderThermalReceipt(
   }
   row('علت مرجوعی', data.reason || '—')
   row('صندوقدار', cashierName || '—')
-  row('زمان ثبت', toFaDigits(formatJalaliLong(new Date(data.createdAt))))
+  row('تاریخ', dateDot)
+  row('ساعت', timeHM)
   if (data.note) for (const line of wrap(data.note, 16, 500, MAX_W)) right(line, 16, 500)
   rule()
 
@@ -471,12 +520,17 @@ function renderThermalReceipt(
   })
   rule()
 
-  /* جمع کل + حروف‌خوانی مبلغ در دو سطر (ریال / تومان) */
+  /* R8-RECEIPT: تسویه — تفکیک کالا/کارت + مبلغ قابل پرداخت (درشت) */
   totalRow('جمع کل مرجوعی', `${money(data.totalAmount)} ریال`)
+  if (exchange > 0) row('تسویه با کالا', `${money(exchange)} ریال`)
+  if (transfer > 0) row('بازپرداخت به کارت', `${money(transfer)} ریال`)
+  if (debt > 0) row('بدهی مشتری', `${money(debt)} ریال`)
   y += 6
   rule(false, 10)
   rule(false, 11)
-  const words = amountWords(data.totalAmount)
+  totalRow('مبلغ قابل پرداخت', `${money(pay)} ریال`)
+  y += 4
+  const words = amountWords(pay)
   for (const line of wrap(words.rial, 19, 600, MAX_W)) center(line, 19, 600)
   for (const line of wrap(`معادل: ${words.toman}`, 19, 600, MAX_W)) center(line, 19, 600)
   rule(false, 10)
@@ -486,7 +540,7 @@ function renderThermalReceipt(
   center('امضای مشتری: ..............................', 17, 500, 2)
   for (const line of wrap('این رسید صرفاً جهت پیگیری مرجوعی صادر شده است.', 16, 600, MAX_W)) center(line, 16, 600)
   for (const line of wrap('وجه مرجوعی پس از تأیید مدیریت به کارت مشتری واریز می‌شود.', 15, 500, MAX_W)) center(line, 15, 500)
-  center('هایپر زیتون — سامانه سررسید', 16, 600)
+  center('سر رسید — سامانه یکپارچه مدیریت هایپر زیتون', 15, 600)
   center(`چاپ: ${toFaDigits(formatJalaliLong(new Date()))}`, 15, 500)
   y += 26
 
@@ -527,15 +581,17 @@ function renderThermalReceipt(
   return canvas
 }
 
-/* ───── دیالوگ چاپ رسید ───── */
+/* ───── دیالوگ چاپ رسید — دو نسخه: حرارتی Bixolon + رسمی A4 (R8-RECEIPT) ───── */
 function ReceiptDialog({
-  open, onOpenChange, created, cashierName,
+  open, onOpenChange, created, cashierName, initialMode = 'thermal',
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   created: any
   cashierName: string
+  initialMode?: ReceiptMode
 }) {
+  const [mode, setMode] = useState<ReceiptMode>(initialMode)
   const [bx, setBx] = useState<{ logicalName: string; port: string }>(() => {
     try {
       const raw = localStorage.getItem('hz-bixolon')
@@ -548,8 +604,14 @@ function ReceiptDialog({
   })
   const [testing, setTesting] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const [printingA4, setPrintingA4] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  /* دادهٔ سند رسمی A4 — همان چیزی که DocPreview نشان می‌دهد و printDoc چاپ می‌کند */
+  const docData = useMemo(() => docDataFrom(created, cashierName), [created, cashierName])
+
+  useEffect(() => { if (open) setMode(initialMode) }, [open, initialMode])
 
   function updateBx(patch: Partial<{ logicalName: string; port: string }>) {
     setBx((prev) => {
@@ -560,7 +622,7 @@ function ReceiptDialog({
   }
 
   useEffect(() => {
-    if (!open || !created) return
+    if (!open || !created || mode !== 'thermal') return
     ;(async () => {
       /* R7: لوگوی فروشگاه روی رسید حرارتی — از هویت چاپی */
       let logoImg: HTMLImageElement | null = null
@@ -584,6 +646,8 @@ function ReceiptDialog({
           reason: String(created.reason ?? ''),
           note: created.note,
           totalAmount: Number(created.totalAmount) || 0,
+          exchangeValue: Number(created.exchangeValue) || 0,
+          transferAmount: Number(created.transferAmount) || 0,
           createdAt: String(created.createdAt ?? new Date().toISOString()),
           items: (Array.isArray(created.items) ? created.items : []).map((it: any) => ({
             name: String(it.name ?? ''),
@@ -599,7 +663,7 @@ function ReceiptDialog({
       canvasRef.current = c
       setPreviewUrl(c ? c.toDataURL('image/png') : '')
     })()
-  }, [open, created, cashierName])
+  }, [open, created, cashierName, mode])
 
   function settings(): BixolonSettings {
     return { logicalName: bx.logicalName.trim() || 'Printer1', port: Math.trunc(num(bx.port)) || 18080 }
@@ -623,6 +687,18 @@ function ReceiptDialog({
     else toast.error(r.error || 'چاپ ناموفق بود')
   }
 
+  /* R8-RECEIPT: چاپ رسمی A4 از طریق printDoc (iframe + @page) — عینِ پیش‌نمایش */
+  async function printA4() {
+    if (!created) return toast.error('رسید آماده نیست')
+    setPrintingA4(true)
+    try {
+      await printDoc('return', docData)
+    } catch {
+      toast.error('چاپ رسمی ناموفق بود')
+    }
+    setPrintingA4(false)
+  }
+
   function download() {
     const canvas = canvasRef.current
     if (!canvas) return toast.error('تصویر رسید آماده نیست')
@@ -639,51 +715,84 @@ function ReceiptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><I.printer size={18} /> چاپ رسید حرارتی</DialogTitle>
-          <DialogDescription>چاپگر حرارتی Bixolon SRP-330II از طریق سرویس Web Print SDK روی همین رایانهٔ صندوق</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><I.printer size={18} /> چاپ رسید مرجوعی</DialogTitle>
+          <DialogDescription>نسخهٔ حرارتی ۸۰ میلی‌متری روی چاپگر Bixolon، یا نسخهٔ رسمی A4 با سربرگ فروشگاه</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="mb-1 block text-xs text-stone-500">نام منطقی چاپگر</label>
-              <Input dir="ltr" className="text-end" value={bx.logicalName} onChange={(e: any) => updateBx({ logicalName: e.target.value })} placeholder="Printer1" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-stone-500">پورت سرویس</label>
-              <Input dir="ltr" inputMode="numeric" className="num text-end" value={bx.port} onChange={(e: any) => updateBx({ port: toEnDigits(e.target.value).replace(/\D/g, '') })} placeholder="18080" />
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5" disabled={testing} onClick={() => void testConnection()}>
-              {testing ? <I.loader size={14} className="animate-spin" /> : <I.settings size={14} />} آزمایش اتصال
-            </Button>
-            <span className="text-[10px] text-stone-400">تنظیمات در همین مرورگر ذخیره می‌شود</span>
-          </div>
-
-          {/* R7: پیش‌نمایش رسید با ارتفاع محدود و اسکرول — رسیدهای بلند دیگر دکمهٔ چاپ را نمی‌پوشانند */}
-          <div className="flex max-h-[52vh] justify-center overflow-y-auto rounded-xl border border-stone-200 bg-stone-100 p-3 scroll-area">
-            {previewUrl ? (
-              <img src={previewUrl} alt="پیش‌نمایش رسید حرارتی" className="w-[306px] max-w-full rounded-md border border-stone-300 bg-white shadow-sm" />
-            ) : (
-              <span className="py-8 text-xs text-stone-400">در حال ساخت پیش‌نمایش…</span>
-            )}
-          </div>
-          <p className="text-[10px] leading-4 text-stone-400">
-            نوار حرارتی ۸۰ میلی‌متری — متن کاملاً مشکی روی زمینهٔ سفید. اگر سرویس چاپ روی این رایانه اجرا نمی‌شود، از دکمهٔ «دانلود تصویر رسید» استفاده کنید (چاپ مرورگر به‌دلیل حاشیهٔ اضافی مجاز نیست).
-          </p>
+        {/* سوییچ نسخه — R8-RECEIPT */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted/60 p-1" role="tablist" aria-label="نسخهٔ چاپ">
+          <button
+            type="button" role="tab" aria-selected={mode === 'thermal'}
+            onClick={() => setMode('thermal')}
+            className={cn('flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors', mode === 'thermal' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500 hover:text-stone-800')}
+          >
+            <I.printer size={15} /> چاپگر حرارتی ۸۰mm
+          </button>
+          <button
+            type="button" role="tab" aria-selected={mode === 'a4'}
+            onClick={() => setMode('a4')}
+            className={cn('flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors', mode === 'a4' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500 hover:text-stone-800')}
+          >
+            <I.receipt size={15} /> رسید رسمی A4
+          </button>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button variant="outline" className="gap-1.5" onClick={download}>
-            <I.banknote size={15} /> دانلود تصویر رسید
-          </Button>
-          <Button className="gap-1.5" disabled={printing || !previewUrl} onClick={() => void print()}>
-            {printing ? <I.loader size={15} className="animate-spin" /> : <I.printer size={15} />} چاپ رسید
-          </Button>
-        </DialogFooter>
+        {mode === 'thermal' ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-xs text-stone-500">نام منطقی چاپگر</label>
+                <Input dir="ltr" className="text-end" value={bx.logicalName} onChange={(e: any) => updateBx({ logicalName: e.target.value })} placeholder="Printer1" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-stone-500">پورت سرویس</label>
+                <Input dir="ltr" inputMode="numeric" className="num text-end" value={bx.port} onChange={(e: any) => updateBx({ port: toEnDigits(e.target.value).replace(/\D/g, '') })} placeholder="18080" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5" disabled={testing} onClick={() => void testConnection()}>
+                {testing ? <I.loader size={14} className="animate-spin" /> : <I.settings size={14} />} آزمایش اتصال
+              </Button>
+              <span className="text-[10px] text-stone-400">تنظیمات در همین مرورگر ذخیره می‌شود</span>
+            </div>
+
+            {/* R7: پیش‌نمایش رسید با ارتفاع محدود و اسکرول — رسیدهای بلند دیگر دکمهٔ چاپ را نمی‌پوشانند */}
+            <div className="flex max-h-[52vh] justify-center overflow-y-auto rounded-xl border border-stone-200 bg-stone-100 p-3 scroll-area">
+              {previewUrl ? (
+                <img src={previewUrl} alt="پیش‌نمایش رسید حرارتی" className="w-[306px] max-w-full rounded-md border border-stone-300 bg-white shadow-sm" />
+              ) : (
+                <span className="py-8 text-xs text-stone-400">در حال ساخت پیش‌نمایش…</span>
+              )}
+            </div>
+            <p className="text-[10px] leading-4 text-stone-400">
+              نوار حرارتی ۸۰ میلی‌متری — متن کاملاً مشکی روی زمینهٔ سفید. اگر سرویس چاپ روی این رایانه اجرا نمی‌شود، از دکمهٔ «دانلود تصویر رسید» استفاده کنید (چاپ مرورگر به‌دلیل حاشیهٔ اضافی مجاز نیست).
+            </p>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" className="gap-1.5" onClick={download}>
+                <I.banknote size={15} /> دانلود تصویر رسید
+              </Button>
+              <Button className="gap-1.5" disabled={printing || !previewUrl} onClick={() => void print()}>
+                {printing ? <I.loader size={15} className="animate-spin" /> : <I.printer size={15} />} چاپ رسید
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-[11px] leading-5 text-stone-500">
+              نسخهٔ رسمی A4 به سبک فاکتور فروشگاه — سربرگ با لوگو، نوار شماره سند/تاریخ/ساعت، جدول اقلام با سرستون تیره، بلوک تسویه و محل امضا.
+              پیش‌نمایش زیر عیناً همان چیزی است که چاپ می‌شود (برای بایگانی و تأیید مدیریت).
+            </p>
+            <DocPreview kind="return" data={docData} scale={0.5} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] text-stone-400">قطع A4 — از پنجرهٔ چاپ مرورگر می‌توان PDF گرفت</span>
+              <Button className="gap-1.5" disabled={printingA4 || !created} onClick={() => void printA4()}>
+                {printingA4 ? <I.loader size={15} className="animate-spin" /> : <I.printer size={15} />} چاپ / ذخیرهٔ PDF
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -719,6 +828,7 @@ export default function ReturnsNewView() {
   const [submitting, setSubmitting] = useState(false)
   const [created, setCreated] = useState<any | null>(null)
   const [printOpen, setPrintOpen] = useState(false)
+  const [printMode, setPrintMode] = useState<ReceiptMode>('thermal')
   const [draftRestored, setDraftRestored] = useState<Draft | null>(null)
 
   const searchRef = useRef<any>(null)
@@ -1005,19 +1115,22 @@ export default function ReturnsNewView() {
             <div className="text-[11px] text-stone-400">معادل {toman(created.totalAmount)} تومان</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="lg" className="touch-target flex-1 gap-1.5" onClick={() => setPrintOpen(true)}>
+            <Button size="lg" className="touch-target flex-1 gap-1.5" onClick={() => { setPrintMode('thermal'); setPrintOpen(true) }}>
               <I.printer size={16} /> چاپ رسید حرارتی
+            </Button>
+            <Button size="lg" variant="outline" className="touch-target flex-1 gap-1.5" onClick={() => { setPrintMode('a4'); setPrintOpen(true) }}>
+              <I.receipt size={16} /> چاپ رسمی A4
             </Button>
             <Button size="lg" variant="outline" className="touch-target flex-1 gap-1.5" onClick={resetForm}>
               <I.packagePlus size={16} /> ثبت مرجوعی جدید
             </Button>
             <Button size="lg" variant="ghost" className="touch-target" onClick={() => go('returns/history')}>
-              <I.history size={16} /> تاریخچه مرجوعی‌ها
+              <I.history size={16} /> تاریخچه
             </Button>
           </div>
         </div>
 
-        <ReceiptDialog open={printOpen} onOpenChange={setPrintOpen} created={created} cashierName={user?.fullName || created.cashier?.fullName || ''} />
+        <ReceiptDialog open={printOpen} onOpenChange={setPrintOpen} created={created} cashierName={user?.fullName || created.cashier?.fullName || ''} initialMode={printMode} />
       </div>
     )
   }
@@ -1201,7 +1314,7 @@ export default function ReturnsNewView() {
                   onKeyDown={(e: any) => { if (e.key === 'Enter') { e.preventDefault(); void lookupCustomer() } }}
                   placeholder="09123456789"
                 />
-                <Button type="button" variant="outline" className="shrink-0 gap-1 touch-target" disabled={lookup.loading} onClick={() => void lookupCustomer()}>
+                <Button type="button" variant="outline" data-tour="history-query" className="shrink-0 gap-1 touch-target" disabled={lookup.loading} onClick={() => void lookupCustomer()}>
                   {lookup.loading ? <I.loader size={14} className="animate-spin" /> : <I.history size={14} />} استعلام
                 </Button>
               </div>
@@ -1440,7 +1553,7 @@ export default function ReturnsNewView() {
             <br />
             پس از ثبت، مرجوعی‌های وجه‌دار در انتظار تأیید مدیریت قرار می‌گیرند.
           </p>
-          <Button size="lg" disabled={submitting} className="touch-target gap-2 text-base font-extrabold" onClick={() => void submit()}>
+          <Button size="lg" data-tour="submit-return" disabled={submitting} className="touch-target gap-2 text-base font-extrabold" onClick={() => void submit()}>
             {submitting ? <I.loader size={18} className="animate-spin" /> : <I.send size={18} />}
             ثبت و ارسال به مدیریت
           </Button>

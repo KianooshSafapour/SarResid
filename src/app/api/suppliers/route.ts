@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const q = (sp.get('q') ?? '').trim()
   const classification = sp.get('classification') ?? ''
+  const status = (sp.get('status') ?? '').trim() // R8: فیلتر وضعیت (فعال / غیر فعال)
   const sort = (sp.get('sort') ?? 'name').trim()
   const page = Math.max(1, clampInt(sp.get('page'), 1, 100000, 1))
   // R7: اجازهٔ صفحهٔ بزرگ برای بارگیری یکجای همهٔ تأمین‌کنندگان فعال (سفارش‌گذاری — ۱۱۰۰+ طرف حساب)
@@ -69,6 +70,8 @@ export async function GET(req: NextRequest) {
     and.push({ OR: [{ name: { contains: q } }, { code: { contains: q } }, { phone: { contains: q } }] })
   }
   if (classification) and.push({ classification })
+  if (status === 'فعال') and.push({ status: 'فعال' })
+  else if (status === 'غیر فعال') and.push({ status: { not: 'فعال' } })
   const where = and.length ? { AND: and } : {}
 
   const total = await db.supplier.count({ where })

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson, clampInt } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { assertPageAccess } from '@/lib/access'
-import { toFaDigits } from '@/lib/jalali'
+import { toFaDigits, todayJalaliDash } from '@/lib/jalali'
 
 const ORDER_STATUSES = [
   'DRAFT',
@@ -60,7 +60,10 @@ function toNumber(v: unknown, dflt = 0): number {
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
-  const pageKey = (req.nextUrl.searchParams.get('status') || '').trim() === 'queue' ? 'supply/receiving' : 'supply/orders'
+  /* R11: صفحهٔ دریافت کالا با queue=1 (یا status=queue) کار می‌کند — گیتِ همان صفحه را می‌گیرد
+     (دریافت کالا برای همهٔ کارکنان باز است) */
+  const isQueue = (req.nextUrl.searchParams.get('status') || '').trim() === 'queue' || req.nextUrl.searchParams.get('queue') === '1'
+  const pageKey = isQueue ? 'supply/receiving' : 'supply/orders'
   const gate = await assertPageAccess(user, pageKey)
   if (!gate.ok) return fail(gate.deny, 403)
 
@@ -103,6 +106,7 @@ export async function GET(req: NextRequest) {
       supplier: sup ? { id: sup.id, name: sup.name, code: sup.code } : null,
       deliveryDate: o.deliveryDate,
       payMethod: o.payMethod,
+      chequeDays: o.chequeDays,
       totalAmount: o.totalAmount,
       createdAt: o.createdAt,
       createdById: o.createdById,
@@ -198,6 +202,31 @@ export async function POST(req: NextRequest) {
 
   const payMethod = ['CASH', 'CHEQUE', 'POS'].includes(String(body.payMethod)) ? String(body.payMethod) : 'CASH'
 
+  // R8: مهلت چک (روز) — فقط برای پرداخت چکی معنا دارد؛ بازهٔ ۰ تا ۳۶۵ روز
+  const chequeDays = Math.max(0, Math.min(365, Math.round(toNumber(body.chequeDays, 0)) || 0))
+
+  /* ── R9: انتخاب ضایعات برای برگشت با همین سفارش ──
+     خانم لطفی در تب «سفارش جدید» ضایعاتِ در انتظارِ همین تأمین‌کننده را علامت می‌زند؛
+     اقلام علامت‌خورده وضعیت SELECTED می‌گیرند و هنگام پایان دریافت، RETURNED می‌شوند. */
+  const wasteIds: string[] = Array.isArray(body.wasteIds)
+    ? body.wasteIds.map((w: unknown) => String(w)).filter(Boolean).slice(0, 60)
+    : []
+  let selectedWaste: { id: string; name: string; qty: number; unit: string; supplierId: string | null }[] = []
+  if (wasteIds.length) {
+    const rows = await db.wasteRecord.findMany({ where: { id: { in: wasteIds } } })
+    selectedWaste = rows.filter((r) => r.status === 'PENDING')
+    // همهٔ اقلام باید متعلق به همان تأمین‌کنندهٔ سفارش باشند (یا تأمین‌کنندهٔ سفارش از اقلام ارث می‌برد)
+    const wasteSuppliers = new Set(selectedWaste.map((r) => r.supplierId ?? ''))
+    if (supplierId) {
+      const foreign = selectedWaste.filter((r) => r.supplierId && r.supplierId !== supplierId)
+      if (foreign.length) return fail('ضایعات انتخابی به تأمین‌کنندهٔ دیگری تعلق دارند')
+    } else if (wasteSuppliers.size === 1 && selectedWaste[0]?.supplierId) {
+      const sup = await db.supplier.findUnique({ where: { id: selectedWaste[0].supplierId }, select: { id: true, name: true } })
+      if (sup) { supplierId = sup.id; supplierName = sup.name }
+    }
+    void wasteSuppliers
+  }
+
   const created = await db.order.create({
     data: {
       code,
@@ -206,6 +235,7 @@ export async function POST(req: NextRequest) {
       supplierName,
       deliveryDate: body.deliveryDate ? String(body.deliveryDate) : null,
       payMethod,
+      ...(payMethod === 'CHEQUE' && chequeDays > 0 ? { chequeDays } : {}),
       notes: JSON.stringify(extras),
       totalAmount,
       createdById: user.id,
@@ -217,6 +247,27 @@ export async function POST(req: NextRequest) {
     include: { items: true },
   })
 
+  /* R9: اقلام ضایعات ← SELECTED + پیوند به همین سفارش */
+  if (selectedWaste.length) {
+    await db.wasteRecord.updateMany({
+      where: { id: { in: selectedWaste.map((r) => r.id) } },
+      data: {
+        status: 'SELECTED',
+        orderId: created.id,
+        orderCode: created.code,
+        selectedAtJalali: todayJalaliDash(),
+        selectedByName: user.fullName,
+      },
+    })
+    history.push({
+      at: new Date().toISOString(),
+      by: user.fullName,
+      action: 'waste-select',
+      detail: `${selectedWaste.length} قلم ضایعات برای برگشت با همین سفارش علامت خورد`,
+    })
+    await db.order.update({ where: { id: created.id }, data: { notes: JSON.stringify({ ...extras, history }) } })
+  }
+
   void supplierCode
 
   await logActivity({
@@ -225,9 +276,25 @@ export async function POST(req: NextRequest) {
     action: 'order_create',
     actionLabel: 'ثبت سفارش',
     category: 'orders',
-    detail: `ثبت سفارش ${code} برای «${supplierName ?? 'بدون تأمین‌کننده'}» — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال`,
+    detail: `ثبت سفارش ${code} برای «${supplierName ?? 'بدون تأمین‌کننده'}» — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال${selectedWaste.length ? ` + ${selectedWaste.length} قلم ضایعات برگشتی` : ''}`,
     entityId: created.id,
   })
+
+  /* R10: سفارش ارسال‌شده ← اعلان به مدیران (نیاز به تأیید) — نشانهٔ سفارش‌ها را روشن می‌کند */
+  if (submitted) {
+    for (const role of ['OWNER', 'GM', 'ADMIN', 'EXEC']) {
+      await db.notification.create({
+        data: {
+          role,
+          kind: `order:submit:${created.id}`,
+          severity: 'warning',
+          title: 'سفارش جدید در انتظار تأیید',
+          body: `سفارش ${code} (${supplierName ?? 'بدون تأمین‌کننده'}) توسط ${user.fullName} ثبت شد و نیازمند تأیید مدیران است — ${items.length} قلم، جمع ${faMoney(totalAmount)} ریال.`,
+          go: '#/supply/orders',
+        },
+      }).catch(() => {})
+    }
+  }
 
   return ok({
     id: created.id,
@@ -237,6 +304,7 @@ export async function POST(req: NextRequest) {
     supplierName: created.supplierName,
     deliveryDate: created.deliveryDate,
     payMethod: created.payMethod,
+    chequeDays: created.chequeDays,
     note: extras.note ?? null,
     paymentRef: extras.paymentRef ?? null,
     totalAmount: created.totalAmount,

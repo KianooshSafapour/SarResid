@@ -65,6 +65,65 @@ export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
 
+  const sp0 = req.nextUrl.searchParams
+
+  /* ── R9 mode: آخرین خریدِ هر کالا (برای ردیف‌های جست‌وجوی کالا در سفارش جدید) ──
+     ?lastBuys=1&ids=<id,id,...>  (حداکثر ۴۰ شناسه)
+     خروجی: { lastBuys: [{ productId, lastBuyDate, lastBuyDateLabel, lastBuyQty, lastBuyPrice, buyMonths, lastSellDate }] } */
+  if ((sp0.get('lastBuys') ?? '') === '1') {
+    const ids = (sp0.get('ids') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 40)
+    if (!ids.length) return fail('شناسهٔ کالاها را بفرستید')
+    const rows = await db.tradeRecord.findMany({
+      where: { productId: { in: ids }, kind: 'BUY' },
+      orderBy: [{ dateJalali: 'desc' }, { createdAt: 'desc' }],
+    })
+    const sellRows = await db.tradeRecord.findMany({
+      where: { productId: { in: ids }, kind: 'SELL' },
+      orderBy: [{ dateJalali: 'desc' }, { createdAt: 'desc' }],
+      select: { productId: true, dateJalali: true },
+    })
+    const byProduct = new Map<string, typeof rows>()
+    for (const r of rows) {
+      const cur = byProduct.get(r.productId ?? '') ?? []
+      cur.push(r)
+      byProduct.set(r.productId ?? '', cur)
+    }
+    const lastSellBy = new Map<string, string | null>()
+    for (const s of sellRows) lastSellBy.set(s.productId ?? '', s.dateJalali)
+    const MONTH_FA: Record<string, string> = {
+      '1405-04': 'تیر ۱۴۰۵',
+      '1405-05': 'مرداد ۱۴۰۵',
+      '1405-06': 'شهریور ۱۴۰۵',
+      '1405-07': 'مهر ۱۴۰۵',
+    }
+    const lastBuys = ids.map((pid) => {
+      const list = byProduct.get(pid) ?? []
+      const last = list[0] ?? null
+      const months = [...new Set(list.map((r) => r.month))].sort()
+      /* dateJalali در این جدول نقطه‌ای است (1405.07.30) — برچسب خوانا بساز */
+      const dotted = last?.dateJalali ?? ''
+      const parts = dotted.split('.')
+      const label = parts.length === 3 ? `${parts[0]}.${parts[1]}.${parts[2]}` : dotted
+      return {
+        productId: pid,
+        lastBuyDate: last?.dateJalali ?? null,
+        lastBuyDateLabel: last ? label : null,
+        lastBuyMonthLabel: last ? (MONTH_FA[last.month] ?? last.month) : null,
+        lastBuyQty: last?.qty ?? 0,
+        lastBuyPrice: last?.unitPrice ?? 0,
+        buyCount: list.length,
+        buyMonths: months.length,
+        lastSellDate: lastSellBy.get(pid) ?? null,
+      }
+    })
+    return ok({ lastBuys })
+  }
+
+
   const sp = req.nextUrl.searchParams
 
   /* ── mode 1: per-product monthly series ── */

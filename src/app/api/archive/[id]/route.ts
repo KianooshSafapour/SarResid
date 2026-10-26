@@ -85,7 +85,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     if (r) rep = { id: r.id, name: r.name, mobile: r.mobile, company: r.company, title: r.title, active: r.active }
   }
 
-  return ok({ ...docOut(doc), linkedOrder, linkedReturn, linkedCheque, rep })
+  return ok({ ...docOut(doc), scanDataUrl: doc.scanDataUrl, linkedOrder, linkedReturn, linkedCheque, rep })
 }
 
 /** PUT /api/archive/[id] — ویرایش کامل/جزئی سند (همان فیلدهای POST) */

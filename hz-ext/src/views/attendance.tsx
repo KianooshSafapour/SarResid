@@ -355,12 +355,13 @@ export default function AttendanceView() {
     ).length,
     [rows],
   )
-  /* گروه‌بندی شیفت روز (برنامهٔ شیفت هفتگی) — نیروهای همان شیفت اول */
+  /* گروه‌بندی شیفت روز (برنامهٔ شیفت هفتگی) — R11: نیروهای «صبح و عصر» (BOTH)
+     در هر دو شیفت می‌شمارَند و در هر دو فیلتر دیده می‌شوند */
   const dayShiftCounts = useMemo(() => {
     const c = { MORNING: 0, EVENING: 0 }
     for (const s of staff) {
-      if (s.dayShift === 'MORNING') c.MORNING++
-      else if (s.dayShift === 'EVENING') c.EVENING++
+      if (s.dayShift === 'MORNING' || s.dayShift === 'BOTH') c.MORNING++
+      if (s.dayShift === 'EVENING' || s.dayShift === 'BOTH') c.EVENING++
     }
     return c
   }, [staff])
@@ -368,12 +369,12 @@ export default function AttendanceView() {
     if (dayShiftF === 'ALL') {
       // نیروهای شیفتِ در حال بررسی اول، بعد بقیه — گروه‌بندی مرئی
       return [...staff].sort((a: any, b: any) => {
-        const ra = a.dayShift === shift ? 0 : 1
-        const rb = b.dayShift === shift ? 0 : 1
+        const ra = a.dayShift === shift || a.dayShift === 'BOTH' ? 0 : 1
+        const rb = b.dayShift === shift || b.dayShift === 'BOTH' ? 0 : 1
         return ra - rb
       })
     }
-    return staff.filter((s: any) => s.dayShift === dayShiftF)
+    return staff.filter((s: any) => s.dayShift === dayShiftF || s.dayShift === 'BOTH')
   }, [staff, dayShiftF, shift])
   /* جمع‌بندی ماه برای سیستم حقوق */
   const monthTotals = useMemo(() => {
@@ -397,7 +398,7 @@ export default function AttendanceView() {
   return (
     <div className="space-y-4">
       {/* سربرگ: شیفت + تاریخ + میان‌برها */}
-      <Card>
+      <Card data-tour="page">
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           {canSwitchShift ? (
             <div>
@@ -598,8 +599,10 @@ export default function AttendanceView() {
                             {s.honorific ? `${s.honorific} ` : ''}{s.fullName}
                             {isMe && <Badge variant="secondary" className="mr-1.5 bg-emerald-50 text-emerald-700">خودم</Badge>}
                             {isMgr && <Badge variant="secondary" className="mr-1.5 bg-amber-50 text-amber-700">{ROLE_FA[s.role] || s.role}</Badge>}
+                            {/* R11: شیفتِ همان روز از برنامهٔ شیفت هفتگی — «صبح و عصر» برای نیروهای دوگانه */}
                             {s.dayShift === 'MORNING' && <Badge variant="outline" className="mr-1.5 border-teal-200 bg-teal-50 text-teal-700">صبح</Badge>}
                             {s.dayShift === 'EVENING' && <Badge variant="outline" className="mr-1.5 border-amber-200 bg-amber-50 text-amber-700">عصر</Badge>}
+                            {s.dayShift === 'BOTH' && <Badge variant="outline" className="mr-1.5 border-teal-300 bg-gradient-to-l from-teal-50 to-amber-50 text-teal-800">صبح و عصر</Badge>}
                           </div>
                           <div className="whitespace-nowrap text-[11px] text-stone-500">{s.title || ''}</div>
                           {onDayLeave && (

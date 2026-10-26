@@ -295,6 +295,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (n < 0) return fail('تعداد پیش‌فرض کارتن نمی‌تواند منفی باشد')
     data.defaultCartonQty = n
   }
+  /* R8: اندازهٔ کارتن به‌یادسپاری‌شده (۰ = نامشخص) — از دیالوگ «اندازهٔ کارتن» سفارش‌گذاری */
+  if (body.unitsPerCarton !== undefined) {
+    const n = toIntOrNull(body.unitsPerCarton)
+    if (n == null) return fail('تعداد در هر کارتن را وارد کنید')
+    if (n < 0 || n > 10000) return fail('تعداد در هر کارتن باید بین ۰ تا ۱۰٬۰۰۰ باشد')
+    data.unitsPerCarton = n
+  }
   if (body.shelfLifeDays !== undefined) data.shelfLifeDays = toNumber(body.shelfLifeDays)
   if (body.status !== undefined) data.status = body.status === null ? null : String(body.status)
   if (body.active !== undefined) {

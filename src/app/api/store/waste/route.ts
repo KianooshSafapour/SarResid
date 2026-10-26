@@ -22,14 +22,77 @@ function monthStart(dash: string): string {
   return `${jy}-${String(jm).padStart(2, '0')}-01`
 }
 
-/** GET /api/store/waste?from=&to=&reason= → {range,items,summary} */
+/** GET /api/store/waste — حالت‌های R9 + قرارداد قدیمی
+ *  ?groups=1                    → فهرست تأمین‌کنندگان دارای ضایعات + شمارنده‌ها (برای انتخاب‌گر طرف‌حساب)
+ *  ?supplierId=<id>&mode=full    → ضایعات یک تأمین‌کننده با همهٔ وضعیت‌ها + آمار (نمای «ضایعاتِ این طرف‌حساب»)
+ *  ?supplierId=<id>&status=PENDING → فقط در انتظار (برای پنل انتخاب در سفارش جدید)
+ *  از=&تا=&reason= (قدیمی)       → شکل زندهٔ اصلی (دوره/علت) — اقلام حالا status/supplier هم دارند */
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
   const gate = await assertPageAccess(user, 'store/waste')
   if (!gate.ok) return fail(gate.deny, 403)
 
+  const sp = req.nextUrl.searchParams
   const today = todayJalaliDash()
+
+  /* ── R9 mode: فهرست طرف‌حساب‌های دارای ضایعات ── */
+  if ((sp.get('groups') ?? '') === '1') {
+    const rows = await db.wasteRecord.groupBy({
+      by: ['supplierId', 'supplierName'],
+      _count: { _all: true },
+    })
+    const pending = await db.wasteRecord.groupBy({
+      by: ['supplierId'],
+      where: { status: 'PENDING' },
+      _count: { _all: true },
+    })
+    const pendingMap = new Map(pending.map((p) => [p.supplierId ?? '', p._count._all]))
+    const groups = rows
+      .filter((r) => r.supplierId)
+      .map((r) => ({
+        supplierId: r.supplierId as string,
+        supplierName: r.supplierName ?? '',
+        total: r._count._all,
+        pending: pendingMap.get(r.supplierId ?? '') ?? 0,
+      }))
+      .sort((a, b) => b.pending - a.pending || b.total - a.total)
+    return ok({ today, groups })
+  }
+
+  /* ── R9 mode: ضایعات یک تأمین‌کننده ── */
+  const supplierIdQ = (sp.get('supplierId') ?? '').trim()
+  if (supplierIdQ) {
+    const supplier = await db.supplier.findUnique({
+      where: { id: supplierIdQ },
+      select: { id: true, name: true, code: true, phone: true, classification: true },
+    })
+    if (!supplier) return fail('تأمین‌کننده یافت نشد', 404)
+    const statusQ = (sp.get('status') ?? '').trim().toUpperCase()
+    const where: { supplierId: string; status?: string } = { supplierId: supplierIdQ }
+    if (['PENDING', 'SELECTED', 'RETURNED'].includes(statusQ)) where.status = statusQ
+    const items = await db.wasteRecord.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { date: 'desc' }, { createdAt: 'desc' }],
+    })
+    const counts = {
+      pending: items.filter((i) => i.status === 'PENDING').length,
+      selected: items.filter((i) => i.status === 'SELECTED').length,
+      returned: items.filter((i) => i.status === 'RETURNED').length,
+    }
+    const value = {
+      pending: items.filter((i) => i.status === 'PENDING').reduce((s, i) => s + i.estValue, 0),
+      selected: items.filter((i) => i.status === 'SELECTED').reduce((s, i) => s + i.estValue, 0),
+      returned: items.filter((i) => i.status === 'RETURNED').reduce((s, i) => s + i.estValue, 0),
+    }
+    return ok({
+      today,
+      supplier,
+      items: items.map(wasteItemShape),
+      stats: { counts, value },
+    })
+  }
+
   const from = validDash(req.nextUrl.searchParams.get('from')) || monthStart(today)
   const to = validDash(req.nextUrl.searchParams.get('to')) || today
   const reason = req.nextUrl.searchParams.get('reason') || ''
@@ -69,18 +132,7 @@ export async function GET(req: NextRequest) {
 
   return ok({
     range: { from, to },
-    items: items.map((i) => ({
-      id: i.id,
-      date: i.date,
-      name: i.name,
-      qty: i.qty,
-      unit: i.unit,
-      reason: i.reason,
-      reasonLabel: REASON_LABELS[i.reason] ?? i.reason,
-      estValue: i.estValue,
-      userName: i.userName,
-      note: i.note,
-    })),
+    items: items.map(wasteItemShape),
     summary: {
       totalValue,
       count: items.length,
@@ -91,7 +143,36 @@ export async function GET(req: NextRequest) {
   })
 }
 
-/** POST /api/store/waste {productId?,name,qty,reason,estValue?,note?} */
+/** R9: شکل مشترک هر رکورد ضایعات (همهٔ حالت‌های GET) */
+function wasteItemShape(i: { id: string; date: string; name: string; qty: number; unit: string; reason: string; estValue: number; userName: string | null; note: string | null; supplierId: string | null; supplierName: string | null; productId: string | null; barcode: string | null; status: string; orderId: string | null; orderCode: string | null; selectedAtJalali: string | null; selectedByName: string | null; returnedAtJalali: string | null }) {
+  return {
+    id: i.id,
+    date: i.date,
+    name: i.name,
+    qty: i.qty,
+    unit: i.unit,
+    reason: i.reason,
+    reasonLabel: REASON_LABELS[i.reason] ?? i.reason,
+    estValue: i.estValue,
+    userName: i.userName,
+    note: i.note,
+    // R9: پیوند طرف‌حساب + وضعیت گردش کار
+    supplierId: i.supplierId,
+    supplierName: i.supplierName,
+    productId: i.productId,
+    barcode: i.barcode,
+    status: i.status ?? 'PENDING',
+    statusLabel:
+      i.status === 'SELECTED' ? 'برگشت با سفارش بعدی' : i.status === 'RETURNED' ? 'برگشت به تأمین‌کننده' : 'در انتظار',
+    orderId: i.orderId,
+    orderCode: i.orderCode,
+    selectedAtJalali: i.selectedAtJalali,
+    selectedByName: i.selectedByName,
+    returnedAtJalali: i.returnedAtJalali,
+  }
+}
+
+/** POST /api/store/waste {productId?,name,qty,reason,estValue?,note?, supplierId?} */
 export async function POST(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
@@ -108,6 +189,15 @@ export async function POST(req: NextRequest) {
   const reason = VALID_REASONS.includes(body?.reason) ? body.reason : 'OTHER'
   const note = typeof body?.note === 'string' && body.note.trim() ? body.note.trim() : null
   const productId = typeof body?.productId === 'string' && body.productId ? body.productId : null
+
+  // R9: طرف‌حساب (تأمین‌کننده) — ضایعات به نام او ثبت می‌شود تا با سفارش بعدی برگردد
+  let supplierId: string | null = typeof body?.supplierId === 'string' && body.supplierId ? body.supplierId : null
+  let supplierName: string | null = null
+  if (supplierId) {
+    const sup = await db.supplier.findUnique({ where: { id: supplierId }, select: { id: true, name: true } })
+    if (!sup) return fail('تأمین‌کننده یافت نشد')
+    supplierName = sup.name
+  }
 
   // estValue: explicit → use; else estimate from the linked product's last buy price
   let estValue = Number(body?.estValue)
@@ -132,6 +222,9 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       userName: user.fullName,
       note,
+      // R9: پیوند طرف‌حساب — وضعیت آغازین PENDING (در انتظار برگشت با سفارش بعدی)
+      ...(supplierId ? { supplierId, supplierName: supplierName ?? '', status: 'PENDING' } : {}),
+      ...(productId ? { productId, barcode: (await db.product.findUnique({ where: { id: productId }, select: { code: true } }))?.code ?? null } : {}),
     },
   })
 
@@ -146,11 +239,95 @@ export async function POST(req: NextRequest) {
     action: 'waste.create',
     actionLabel: 'ضایعات',
     category: 'waste',
-    detail: `${name} — ${qty} ${unit} (${REASON_LABELS[reason]})`,
+    detail: `${name} — ${qty} ${unit} (${REASON_LABELS[reason]})${supplierName ? ` · طرف‌حساب: ${supplierName}` : ''}`,
     entityId: rec.id,
   })
 
-  return ok({ id: rec.id, waste: rec })
+  return ok({ id: rec.id, waste: wasteItemShape(rec as any) })
+}
+
+/** PATCH /api/store/waste — R9 گردش کار ضایعاتِ طرف‌حساب
+ *  {id, action:'mark-returned'}        → وضعیت RETURNED (برگشت فیزیکی بدون سفارش — ثبت دستی مدیر)
+ *  {id, action:'revert'}               → SELECTED → PENDING (لغو انتخاب برای سفارش)
+ *  {id, action:'edit', qty?, reason?, note?, estValue?} → ویرایش رکورد (فقط PENDING) */
+export async function PATCH(req: NextRequest) {
+  const user = await getSessionUser()
+  if (!user) return fail('ابتدا وارد شوید', 401)
+  const gate = await assertPageAccess(user, 'store/waste')
+  if (!gate.ok) return fail(gate.deny, 403)
+
+  const body = await req.json().catch(() => null)
+  const id = typeof body?.id === 'string' ? body.id : ''
+  const action = typeof body?.action === 'string' ? body.action : ''
+  const rec = await db.wasteRecord.findUnique({ where: { id } })
+  if (!rec) return fail('رکورد یافت نشد', 404)
+
+  if (action === 'mark-returned') {
+    if (!isManager(user)) return fail('علامت‌گذاری «برگشت» فقط با دسترسی مدیران ممکن است', 403)
+    if (rec.status === 'RETURNED') return fail('این قلم از قبل برگشت خورده است')
+    await db.wasteRecord.update({
+      where: { id },
+      data: { status: 'RETURNED', returnedAtJalali: todayJalaliDash() },
+    })
+    await logActivity({
+      userId: user.id,
+      userName: user.fullName,
+      action: 'waste.returned',
+      actionLabel: 'ضایعات',
+      category: 'waste',
+      detail: `برگشت به تأمین‌کننده: ${rec.name}${rec.supplierName ? ` — ${rec.supplierName}` : ''}`,
+      entityId: id,
+    })
+    return ok({ id, status: 'RETURNED' })
+  }
+
+  if (action === 'revert') {
+    if (!isManager(user) && rec.userId !== user.id) return fail('اجازه تغییر این رکورد را ندارید', 403)
+    if (rec.status !== 'SELECTED') return fail('فقط اقلام «برگشت با سفارش بعدی» قابل بازگشت به انتظار هستند')
+    await db.wasteRecord.update({ where: { id }, data: { status: 'PENDING', orderId: null, orderCode: null, selectedAtJalali: null, selectedByName: null } })
+    await logActivity({
+      userId: user.id,
+      userName: user.fullName,
+      action: 'waste.revert',
+      actionLabel: 'ضایعات',
+      category: 'waste',
+      detail: `بازگشت به انتظار: ${rec.name}`,
+      entityId: id,
+    })
+    return ok({ id, status: 'PENDING' })
+  }
+
+  if (action === 'edit') {
+    if (!isManager(user) && rec.userId !== user.id) return fail('اجازه ویرایش این رکورد را ندارید', 403)
+    if (rec.status !== 'PENDING') return fail('فقط اقلام در انتظار قابل ویرایش هستند')
+    const patch: { qty?: number; reason?: string; note?: string | null; estValue?: number } = {}
+    if (body?.qty !== undefined) {
+      const q = Math.round(Number(body.qty) * 1000) / 1000
+      if (!Number.isFinite(q) || q <= 0) return fail('تعداد نامعتبر است')
+      patch.qty = q
+    }
+    if (body?.reason !== undefined && VALID_REASONS.includes(body.reason)) patch.reason = body.reason
+    if (body?.note !== undefined) patch.note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null
+    if (body?.estValue !== undefined) {
+      const v = Number(body.estValue)
+      if (!Number.isFinite(v) || v < 0) return fail('ارزش تخمینی نامعتبر است')
+      patch.estValue = v
+    }
+    if (Object.keys(patch).length === 0) return fail('چیزی برای ویرایش نفرستاده شد')
+    await db.wasteRecord.update({ where: { id }, data: patch })
+    await logActivity({
+      userId: user.id,
+      userName: user.fullName,
+      action: 'waste.edit',
+      actionLabel: 'ضایعات',
+      category: 'waste',
+      detail: `ویرایش: ${rec.name}`,
+      entityId: id,
+    })
+    return ok({ id, edited: true })
+  }
+
+  return fail('عملیات ناشناخته است')
 }
 
 /** DELETE /api/store/waste?id= (body may carry a deletion reason) — managers or own records */

@@ -102,6 +102,8 @@ type DocRow = {
   repNote: string | null
   binderId: string | null
   folio: string | null
+  scanDataUrl: string | null
+  scanName: string | null
   amount: number
   status: string
   returnedJson: string
@@ -140,6 +142,8 @@ export function docOut(d: DocRow): Record<string, unknown> {
     repNote: d.repNote,
     binderId: d.binderId,
     folio: d.folio,
+    hasScan: !!d.scanDataUrl,
+    scanName: d.scanName,
     amount: d.amount,
     status: d.status,
     returned,

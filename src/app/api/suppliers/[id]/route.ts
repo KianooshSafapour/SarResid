@@ -130,7 +130,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     data.classification = body.classification === null || body.classification === '' ? null : String(body.classification)
   if (body.intermediary !== undefined)
     data.intermediary = body.intermediary === null || body.intermediary === '' ? null : String(body.intermediary)
-  if (body.status !== undefined) data.status = body.status === null ? null : String(body.status)
+  if (body.status !== undefined) {
+    // R8: فعال/غیرفعال — فقط دو مقدار معتبر؛ نرمال‌سازی ی/ک فارسی و فاصله‌ها
+    const st = body.status === null ? '' : String(body.status).trim()
+    const norm = st.replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ')
+    if (norm === 'فعال') data.status = 'فعال'
+    else if (norm === 'غیر فعال' || norm === 'غیرفعال') data.status = 'غیر فعال'
+    else if (st === '') data.status = null
+    else return fail('وضعیت طرف حساب باید «فعال» یا «غیر فعال» باشد')
+  }
   if (body.balance !== undefined) data.balance = toNumberOrNull(body.balance)
   if (body.creditLimit !== undefined) data.creditLimit = toNumberOrNull(body.creditLimit) ?? 0
 
@@ -186,8 +194,8 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   const s = await db.supplier.findUnique({ where: { id } })
   if (!s) return fail('طرف حساب یافت نشد', 404)
 
-  // soft delete — same wording as the seeded Holoo data («غير فعال» with Arabic yeh)
-  await db.supplier.update({ where: { id }, data: { status: 'غير فعال' } })
+  // soft delete — R8: فارسیِ استاندارد «غیر فعال» (قبلاً با ی عربی ذخیره می‌شد)
+  await db.supplier.update({ where: { id }, data: { status: 'غیر فعال' } })
   await logActivity({
     userId: user.id,
     userName: user.fullName,
@@ -197,5 +205,5 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
     detail: `طرف حساب «${s.name}» غیرفعال شد`,
     entityId: s.id,
   })
-  return ok({ id: s.id, status: 'غير فعال' })
+  return ok({ id: s.id, status: 'غیر فعال' })
 }

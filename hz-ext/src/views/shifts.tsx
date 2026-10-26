@@ -34,11 +34,13 @@ function wdIdx(s: string): number {
   return d ? (d.getDay() + 1) % 7 : 0
 }
 
-type ShiftVal = '' | 'MORNING' | 'EVENING' | 'LEAVE' | 'OFF'
+/* R11: BOTH = شیفت دوگانهٔ صبح+عصر — برای پرسنلی که در هر دو شیفتِ یک روز کار می‌کنند */
+type ShiftVal = '' | 'MORNING' | 'EVENING' | 'BOTH' | 'LEAVE' | 'OFF'
 
 const CHIP: Record<string, { label: string; cls: string; dot: string }> = {
   MORNING: { label: 'صبح', cls: 'bg-teal-50 text-teal-700 border-teal-200', dot: 'bg-teal-500' },
   EVENING: { label: 'عصر', cls: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  BOTH: { label: 'صبح و عصر', cls: 'bg-gradient-to-l from-teal-50 to-amber-50 text-teal-800 border-teal-300', dot: 'bg-teal-500' },
   LEAVE: { label: 'مرخصی', cls: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
   OFF: { label: 'تعطیل', cls: 'bg-stone-100 text-stone-600 border-stone-200', dot: 'bg-stone-400' },
 }
@@ -60,7 +62,7 @@ interface WeekData {
 /** دادهٔ قدیمی NIGHT → EVENING (سمت کلاینت هم محافظت می‌کنیم) */
 function normShift(v: string): ShiftVal {
   const s = v === 'NIGHT' ? 'EVENING' : v
-  return (['MORNING', 'EVENING', 'LEAVE', 'OFF'] as const).includes(s as any) ? (s as ShiftVal) : ''
+  return (['MORNING', 'EVENING', 'BOTH', 'LEAVE', 'OFF'] as const).includes(s as any) ? (s as ShiftVal) : ''
 }
 
 export default function ShiftsView() {
@@ -152,8 +154,8 @@ export default function ShiftsView() {
     let m = 0, e = 0
     for (let i = 0; i < 7; i++) {
       const v = cells[`${userId}:${i}`]
-      if (v === 'MORNING') m++
-      else if (v === 'EVENING') e++
+      if (v === 'MORNING' || v === 'BOTH') m++   /* R11: شیفت دوگانه در هر دو گروه می‌شمارَد */
+      if (v === 'EVENING' || v === 'BOTH') e++
     }
     if (m === 0 && e === 0) return 'NONE'
     return m >= e ? 'MORNING' : 'EVENING'
@@ -179,6 +181,7 @@ export default function ShiftsView() {
       const v = cells[k]
       if (v === 'MORNING') m++
       else if (v === 'EVENING') e++
+      else if (v === 'BOTH') { m++; e++ }   /* R11: نیروی دوگانه در پوشش هر دو شیفت */
       else if (v === 'LEAVE') l++
     }
     return { m, e, l }
@@ -251,7 +254,7 @@ export default function ShiftsView() {
               <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">مرخصی <I.lock size={11} className="text-rose-500" /></span>
               <span className="rounded-full border border-stone-200 bg-stone-100 px-2 py-0.5 text-stone-600">تعطیل</span>
             </span>
-            <span className="hidden text-xs font-normal text-stone-400 xl:inline">شیفت‌بندی دو شیفتهٔ فروشگاه — بدون شیفت شب</span>
+            <span className="hidden text-xs font-normal text-stone-400 xl:inline">شیفت‌بندی دو شیفتهٔ فروشگاه — بدون شیفت شب؛ «صبح و عصر» = شیفت دوگانهٔ همان روز</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -408,11 +411,15 @@ export default function ShiftsView() {
                                       <div className="px-2 pb-1 pt-0.5 text-[10px] font-bold text-stone-400">
                                         {WD[i]} {faSlashD(d)}
                                       </div>
-                                      {(['MORNING', 'EVENING', 'LEAVE', 'OFF'] as const).map((s) => (
+                                      {(['MORNING', 'EVENING', 'BOTH', 'LEAVE', 'OFF'] as const).map((s) => (
                                         <button key={s} type="button"
                                           onClick={() => { setCell(u.id, i, s); setOpen(null) }}
+                                          title={s === 'BOTH' ? 'شیفت دوگانه — هر دو شیفتِ صبح و عصر' : undefined}
                                           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-xs font-bold text-stone-700 transition-colors hover:bg-stone-100">
-                                          <span className={cn('h-2.5 w-2.5 rounded-full', CHIP[s].dot)} /> {CHIP[s].label}
+                                          <span className="flex items-center gap-0.5">
+                                            <span className={cn('h-2.5 w-2.5 rounded-full', CHIP[s].dot)} />
+                                            {s === 'BOTH' && <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />}
+                                          </span> {CHIP[s].label}
                                         </button>
                                       ))}
                                       {st.v && (
@@ -457,7 +464,7 @@ export default function ShiftsView() {
 
           <p className="text-[10.5px] leading-5 text-stone-400">
             {isMgr
-              ? 'روی هر خانه کلیک کنید و شیفت را انتخاب کنید (صبح / عصر / مرخصی / تعطیل). روزهای مرخصیِ تأییدشده با قفل نمایش داده می‌شوند و تغییرشان فقط از بخش «مرخصی‌ها» ممکن است.'
+              ? 'روی هر خانه کلیک کنید و شیفت را انتخاب کنید (صبح / عصر / صبح و عصر / مرخصی / تعطیل). «صبح و عصر» برای پرسنلی است که هر دو شیفتِ همان روز را کار می‌کنند. روزهای مرخصیِ تأییدشده با قفل نمایش داده می‌شوند و تغییرشان فقط از بخش «مرخصی‌ها» ممکن است.'
               : 'این برنامه فقط برای مشاهده است؛ تعیین شیفت توسط مدیران انجام می‌شود.'}
           </p>
         </CardContent>

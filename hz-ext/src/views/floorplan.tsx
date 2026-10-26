@@ -449,7 +449,7 @@ export default function FloorplanView() {
   /* ═══ سرآیند + نوار ابزار ═══ */
   return (
     <div className="space-y-4">
-      <Card>
+      <Card data-tour="page">
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-base">

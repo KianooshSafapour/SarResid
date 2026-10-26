@@ -314,7 +314,7 @@ function MarginGauge({ result, caption, th }: { result: Analysis; caption: strin
         ) : null}
       </div>
 
-      <div className="relative mx-auto w-full" dir="ltr">
+      <div data-tour="gauge" className="relative mx-auto w-full" dir="ltr">
         <svg viewBox="0 0 200 128" className="w-full" role="img" aria-label={valid ? `حاشیه سود ${faPct(margin)} درصد` : 'گیج حاشیه سود'}>
           {/* ریل زمینه */}
           <path d={gArc(180, 0)} fill="none" stroke="#e7e5e4" strokeWidth="15" strokeLinecap="round" />
@@ -1635,13 +1635,13 @@ export default function ProfitView() {
                   <I.refresh size={15} /> فاکتور جدید
                 </Button>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="secondary" disabled={saving || items.length === 0} className="gap-1.5" onClick={() => void save()}>
+                  <Button variant="secondary" data-tour="save" disabled={saving || items.length === 0} className="gap-1.5" onClick={() => void save()}>
                     {saving ? <I.loader size={15} className="animate-spin" /> : <I.save size={15} />}
                     ذخیرهٔ فاکتور در سودسنج
                   </Button>
                   <Button disabled={purchasing || items.length === 0} className="gap-1.5" onClick={() => void submitPurchase()}>
                     {purchasing ? <I.loader size={15} className="animate-spin" /> : <I.store size={15} />}
-                    ثبت تحویل و خرید
+                    ثبت خرید مستقیم (بدون سفارش)
                   </Button>
                   {canSetTh ? (
                     <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-[11px] font-bold text-stone-600">
@@ -1652,9 +1652,9 @@ export default function ProfitView() {
                 </div>
               </div>
               {!canSetTh ? (
-                <p className="text-[10px] text-stone-400">«ثبت تحویل و خرید» فاکتور سودسنج + سند خرید را می‌سازد؛ ارسال به هلو پس از ثبت توسط مدیران ارشد از بخش هلو انجام می‌شود.</p>
+                <p className="text-[10px] text-stone-400">مسیر اصلی خرید: «سفارش‌گذاری» → تأیید → «دریافت کالا» → راستی‌آزمایی → «ثبت حسابداری». این دکمه فقط برای خریدِ مستقیمِ بدون سفارش قبلی است (تحویل در لحظهٔ ثبت، فاکتور سودسنج + سند خرید می‌سازد)؛ ارسال به هلو پس از ثبت توسط مدیران ارشد از بخش هلو انجام می‌شود.</p>
               ) : (
-                <p className="text-[10px] text-stone-400">«ثبت تحویل و خرید» فاکتور سودسنج + سند خرید را می‌سازد و (در صورت فعال‌بودن اتصال) سفارش خرید را به هلو ارسال می‌کند.</p>
+                <p className="text-[10px] text-stone-400">مسیر اصلی خرید: «سفارش‌گذاری» → تأیید → «دریافت کالا» → راستی‌آزمایی → «ثبت حسابداری». این دکمه فقط برای خریدِ مستقیمِ بدون سفارش قبلی است (تحویل در لحظهٔ ثبت) و (در صورت فعال‌بودن اتصال) سفارش خرید را به هلو ارسال می‌کند.</p>
               )}
             </CardContent>
           </Card>

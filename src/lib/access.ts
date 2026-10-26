@@ -81,7 +81,7 @@ export const SECTION_DEFAULTS: Record<string, string[]> = {
 export const PAGE_DEFAULTS: Record<string, string[]> = {
   // ---- live chunk page map (verbatim) ----
   'supply/orders': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'ACC'],
-  'supply/receiving': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'SK', 'PM'],
+  'supply/receiving': ['*'], // R11: دریافت کالا برای همهٔ کارکنان (مالک: «همه باید بتوانند دریافت و تأیید کنند» — با اصل دو‌نفره سمت سرور)
   'supply/products': ['*'],
   'supply/suppliers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM', 'SK', 'HC'],
   'returns/approvals': ['OWNER', 'GM', 'ADMIN', 'EXEC'],

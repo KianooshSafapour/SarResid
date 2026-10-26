@@ -7,17 +7,41 @@
 .workspace-sidebar .p-4>h2{font-size:19px}
 .workspace-sidebar nav>button{font-size:15.5px;padding:13px 14px;min-height:52px}
 .workspace-sidebar nav>button>svg{width:22px;height:22px}
-/* ── R7: حالت جمع‌شدهٔ منو (دسکتاپ) — با دکمهٔ لبهٔ نوار، منو جمع می‌شود تا فضای کار باز شود ── */
-.workspace-sidebar{transition:width .22s ease,opacity .16s ease}
-.hz-nav-compact .workspace-sidebar{width:0;min-width:0;padding:0;border:0;opacity:0;overflow:hidden;pointer-events:none}
+/* ── R7: حالت جمع‌شدهٔ منو (دسکتاپ) — با دکمهٔ لبهٔ نوار، منو جمع می‌شود تا فضای کار باز شود ──
+   R8: فرزندان منو عرض ثابت دارند تا هنگام بازشدن، متن‌ها بازچین (reflow) نشوند —
+   فقط لبهٔ ظرف با clip نرم باز می‌شود (قبل از این، متن‌ها در حین انیمیشن می‌شکستند و زشت بود) */
+.workspace-sidebar{transition:width .26s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.workspace-sidebar>*{width:272px;flex:none}
+.hz-nav-compact .workspace-sidebar{width:0;min-width:0;padding:0;border:0;pointer-events:none}
 .hz-nav-compact .workspace-rail{width:56px;min-width:56px}
 .hz-nav-compact .workspace-rail>button{width:44px;height:46px;gap:0;border-radius:12px}
 .hz-nav-compact .workspace-rail>button>svg{width:22px;height:22px}
 .hz-nav-compact .workspace-rail>button>span{display:none}
-#hz-nav-toggle{position:fixed;top:64px;right:calc(88px + 272px - 11px);z-index:45;width:22px;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border,#d6d3d1);border-radius:8px;background:var(--card,#fff);color:var(--muted-foreground,#78716c);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.10);transition:right .22s ease;padding:0}
+#hz-nav-toggle{position:fixed;top:64px;right:calc(88px + 272px - 11px);z-index:45;width:22px;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border,#d6d3d1);border-radius:8px;background:var(--card,#fff);color:var(--muted-foreground,#78716c);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.10);transition:right .26s cubic-bezier(.4,0,.2,1),opacity .18s ease;padding:0}
+/* R8: دکمهٔ جمع‌کردن فقط وقتی نوار بخش‌ها هست (صفحهٔ ورود ندارد) — کلاس hz-toggle-hidden از اسکریپت nav-system ست می‌شود */
+#hz-nav-toggle.hz-toggle-hidden{display:none!important}
 #hz-nav-toggle:hover{color:var(--foreground,#292524);background:var(--accent,#f5f5f4)}
 #hz-nav-toggle svg{width:13px;height:13px}
 .hz-nav-compact #hz-nav-toggle{right:calc(56px - 11px)}
+/* ── R9: تعویض نرم زیرمنو — عنوان با محوشدگی، آیتم‌های منو با لغشت کوتاهِ پله‌ای ──
+   (پیش از این کل بلوک یک‌تکه می‌آمد — اثر «بد» گزارش‌شدهٔ مالک؛ حالا هر آیتم با ~۳۵ms تأخیر پله‌ای می‌آید) */
+@keyframes hz-submenu-fade{from{opacity:0}to{opacity:1}}
+@keyframes hz-submenu-in{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+.workspace-sidebar.hz-submenu-swap>div:first-child{animation:hz-submenu-fade .16s ease-out both}
+.workspace-sidebar.hz-submenu-swap>h2{animation:hz-submenu-fade .16s ease-out both}
+.workspace-sidebar.hz-submenu-swap>nav{animation:hz-submenu-fade .16s ease-out both}
+.workspace-sidebar.hz-submenu-swap>nav>*{animation:hz-submenu-in .22s cubic-bezier(.2,.8,.2,1) both}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(1){animation-delay:0ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(2){animation-delay:35ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(3){animation-delay:70ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(4){animation-delay:105ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(5){animation-delay:135ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(n+6){animation-delay:160ms}
+/* ── R8: دکمه‌های ساده (بدون کامپوننت دکمهٔ شادکن) هم نشانگر دست داشته باشند —
+   Tailwind 4 به‌طور پیش‌فرض cursor:pointer را از دکمه‌ها برداشته و «غیرفعال» به‌نظر می‌رسند ── */
+button:not(:disabled):not(.cursor-default),[role="button"]:not(:disabled){cursor:pointer}
+/* ── R8: کشوی زیرمنوی موبایل — سریع‌تر و نرم‌تر (500ms→260ms با easing استاندارد متریال) ── */
+.hz-drawer-fast{transition-duration:.26s!important;transition-timing-function:cubic-bezier(.32,.72,.24,1)!important}
 /* ── R7: موبایل — منوی اصلی به‌صورت تب‌بار پایین صفحه (الگوی استاندارد اپ‌های فارسی) و
       زیرمنو با کشوی همبرگری + لمس بخشِ فعال، کشو را باز می‌کند ── */
 @media(max-width:767px){
@@ -291,7 +315,10 @@ document.addEventListener('keydown', function (e) {
 })();
 </script><script data-hz-ux="nav-system">
 /* ── R7: سامانهٔ منو — دکمهٔ جمع‌کردن منو (دسکتاپ) + باز شدن کشوی زیرمنو با لمس بخشِ فعال (موبایل)
-   + هدایت hr/personnel قدیمی به پرونده پرسنل جدید ── */
+   + هدایت hr/personnel قدیمی به پرونده پرسنل جدید
+   R8: ① دکمهٔ جمع‌کردن فقط وقتی نوار بخش‌ها در صفحه هست نمایش می‌یابد (صفحهٔ ورود نه!)
+      ② تعویض محتوای زیرمنو با انیمیشن نرم (کلاس hz-submenu-swap روی تغییر عنوان بخش)
+      ③ کشوی موبایل سریع‌تر (hz-drawer-fast) ── */
 (function(){
   'use strict';
   /* ۱) بازگرداندن حالت جمع‌شده پیش از رندر (بدون فلش منوی باز) */
@@ -307,6 +334,14 @@ document.addEventListener('keydown', function (e) {
     b.setAttribute('aria-label',b.title);
     b.setAttribute('aria-expanded',compact?'false':'true');
   }
+  /* R8: صفحهٔ ورود نوار بخش‌ها ندارد — دکمهٔ جمع‌کردن باید پنهان بماند */
+  function syncToggleVisibility(){
+    var b=document.getElementById('hz-nav-toggle'); if(!b)return;
+    var hasRail=!!document.querySelector('.workspace-rail');
+    var hasLogin=document.body && (document.body.textContent||'').indexOf('ورود امن')>-1 && !hasRail;
+    if(hasRail && !hasLogin) b.classList.remove('hz-toggle-hidden');
+    else b.classList.add('hz-toggle-hidden');
+  }
   function ensureToggle(){
     if(document.getElementById('hz-nav-toggle')||!document.body)return;
     var b=document.createElement('button');
@@ -318,10 +353,55 @@ document.addEventListener('keydown', function (e) {
     });
     document.body.appendChild(b);
     updateToggle();
+    syncToggleVisibility();
   }
   if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',ensureToggle)}else{ensureToggle()}
-  var moT=new MutationObserver(function(){ensureToggle()});
+  var moT=new MutationObserver(function(){ensureToggle();syncToggleVisibility()});
   moT.observe(document.documentElement,{childList:true,subtree:true});
+
+  /* R8-②: انیمیشن نرم تعویض محتوای زیرمنو — وقتی عنوان بخش (h2) تغییر کند،
+     کلاس hz-submenu-swap برای ۳۰۰ms روی aside می‌نشیند تا فرزندان با لغزش نرم بیایند */
+  (function(){
+    var lastTitle='';
+    function arm(){
+      var sb=document.querySelector('.workspace-sidebar'); if(!sb)return;
+      var h=sb.querySelector('h2');
+      var t=(h&&h.textContent||'').trim();
+      if(t && t!==lastTitle){
+        lastTitle=t;
+        sb.classList.remove('hz-submenu-swap');
+        /* دو rAF تا انیمیشن قطعاً از نو اجرا شود */
+        requestAnimationFrame(function(){requestAnimationFrame(function(){
+          sb.classList.add('hz-submenu-swap');
+          setTimeout(function(){sb.classList.remove('hz-submenu-swap')},460);
+        })});
+      }
+    }
+    arm();
+    var moS=new MutationObserver(arm);
+    moS.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+  })();
+
+  /* R8-③: کشوی زیرمنوی موبایل (Sheet رادیکس) — کلاس سرعت به محتوای کشو */
+  (function(){
+    function fastify(){
+      try{
+        var els=document.querySelectorAll('[data-state].fixed.z-50');
+        for(var i=0;i<els.length;i++){
+          var el=els[i];
+          if(el.getAttribute('data-hz-fast')!=null)continue;
+          /* فقط کشویی که منوی ناوبری دارد (نه سایر دیالوگ‌ها) */
+          if((el.textContent||'').indexOf('منوی ناوبری')>-1||(el.textContent||'').indexOf('سر رسید')>-1){
+            el.setAttribute('data-hz-fast','1');
+            el.classList.add('hz-drawer-fast');
+          }
+        }
+      }catch(e){}
+    }
+    if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fastify)}else{fastify()}
+    var moF=new MutationObserver(fastify);
+    moF.observe(document.documentElement,{childList:true,subtree:true});
+  })();
 
   /* ۲) موبایل: لمس بخشِ فعال در تب‌بار، کشوی زیرمنو (همبرگر) را باز می‌کند */
   document.addEventListener('click',function(e){

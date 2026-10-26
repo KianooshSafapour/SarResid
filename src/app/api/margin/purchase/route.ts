@@ -217,8 +217,9 @@ export async function POST(req: NextRequest) {
           })
           .catch(() => {})
       } else {
-        /* فراخوانی درون‌سروری همان مسیر موجود — بدون کپی‌کردن منطق pushOrder */
-        const origin = new URL(req.url).origin
+        /* فراخوانی درون‌سروری همان مسیر موجود — بدون کپی‌کردن منطق pushOrder
+           R9: حلقهٔ محلی مستقیم (درخواست https از خودِ سرور به EPROTO می‌افتد) */
+        const origin = `http://127.0.0.1:${process.env.PORT || 3000}`
         const hres = await fetch(`${origin}/api/holoo/sync`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', cookie: req.headers.get('cookie') || '' },

@@ -12,8 +12,10 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 /**
  * POST /api/returns/[id]/payment — record the card-to-card transfer payment.
- * Body: {bankName, cardNumber?, referenceNumber?, transferredAt}
+ * Body: {bankName, cardNumber?, referenceNumber?, transferredAt, customerMsg?}
  * Sets the return to `paid` and stores a ReturnPayment (bank details as JSON in note).
+ * R10-MSG: customerMsg (اختیاری، ≤۷۰۰ نویسه) = متنِ نهاییِ «پیام به مشتری» که مدیر
+ * در پیش‌نمایش مودال ویرایش کرد — داخل noteِ همان پرداخت بایگانی می‌شود.
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const me = await getSessionUser()
@@ -42,6 +44,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const existing = await db.returnPayment.findFirst({ where: { returnId: id } })
   if (existing) return fail('پرداخت این مرجوعی قبلاً ثبت شده است')
 
+  // R10-MSG — پیام ویرایش‌شدهٔ مشتری (پیش‌نمایش مودال ثبت پرداخت)؛ پاکسازی + سقف ۷۰۰
+  const customerMsg = String(body.customerMsg ?? '')
+    .replace(/[\u0000-\u001f]+/g, ' ')
+    .trim()
+    .slice(0, 700)
+
   const amount = r.transferAmount
   if (amount <= 0) return fail('این مرجوعی بابت پرداخت به کارت مبلغی ندارد')
 
@@ -56,6 +64,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         cardNumber: cardNumber.length === 16 ? cardNumber : cardNumber || null,
         referenceNumber,
         transferredAt,
+        customerMsg: customerMsg || null,
         recordedBy: me.fullName,
       }),
     },
@@ -119,6 +128,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     cardNumber: cardNumber.length === 16 ? cardNumber : cardNumber || null,
     referenceNumber,
     transferredAt,
+    customerMsg: customerMsg || null,
     recordedBy: me.fullName,
     createdAt: pay.createdAt.toISOString(),
   })

@@ -20,6 +20,7 @@ body{font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;color:#292524;backgrou
 .lh{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
 .lh-brand{display:flex;align-items:center;gap:11px;min-width:0}
 .lh-emblem{flex:none;width:54px;height:54px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:27px}
+.lh-logo{flex:none;width:54px;height:54px;object-fit:contain;border-radius:10px;border:1px solid #d1fae5;background:#fff;padding:2px}
 .lh-name{font-size:22px;font-weight:800;color:#065f46;line-height:1.35}
 .lh-sub{font-size:10.5px;font-weight:600;color:#57534e}
 .lh-addr{font-size:8.8px;color:#78716c;margin-top:1px}
@@ -111,6 +112,28 @@ table.tbl{width:100%;border-collapse:collapse;font-size:10.8px}
 .sig .s-label{font-size:10px;font-weight:800;color:#57534e}
 .sig .s-name{font-size:11px;font-weight:600;color:#292524;margin-top:2px}
 .sig .s-hint{position:absolute;bottom:6px;right:12px;left:12px;text-align:center;font-size:8.4px;color:#a8a29e}
+/* ═══ رسید مرجوعی — سبک فاکتور Apex (R8-RECEIPT) ═══ */
+.rx-head{display:flex;flex-direction:column;align-items:center;text-align:center;padding:2px 0 4px}
+.rx-logo{width:62px;height:62px;border-radius:50%;object-fit:cover;border:2px solid #a7f3d0;background:#fff;padding:3px}
+.rx-emblem{width:62px;height:62px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:30px}
+.rx-name{font-size:25px;font-weight:800;color:#065f46;line-height:1.4}
+.rx-latin{direction:ltr;font-size:10px;font-weight:700;letter-spacing:5px;color:#78716c;margin-top:1px}
+.rx-slogan{font-size:11px;font-weight:600;color:#0f766e;margin-top:1px}
+.rx-title{display:inline-block;margin-top:7px;border:1.5px solid #a7f3d0;background:#ecfdf5;color:#065f46;font-size:12.5px;font-weight:800;border-radius:999px;padding:2px 18px 3px}
+.rx-bar{display:flex;border:1px solid #e7e5e4;border-radius:10px;overflow:hidden;margin-top:9px;background:#fafaf9}
+.rx-cell{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:7px 8px;border-left:1px solid #e7e5e4;min-width:0}
+.rx-cell:last-child{border-left:0}
+.rx-ic{color:#047857;display:inline-flex;flex:none}
+.rx-cl{display:block;font-size:9px;color:#78716c;line-height:1.6}
+.rx-cv{display:block;font-size:12px;font-weight:800;color:#1c1917;line-height:1.5}
+.rx-ctx{border:1px solid #e7e5e4;border-right:3.5px solid #14b8a6;border-radius:10px;margin-top:9px;background:#fff;overflow:hidden}
+.rx-ctx .cx1{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 12px;font-size:11.5px;border-bottom:1px dashed #e7e5e4}
+.rx-ctx .cx2{display:flex;flex-wrap:wrap;gap:3px 16px;padding:6px 12px;font-size:10.5px;color:#57534e;background:#fafaf9;line-height:1.9}
+.rx-ctx .cx2 b{color:#292524}
+table.tbl.rx-tbl{font-size:11px}
+.rx-tbl th{background:#1c1917;border-color:#1c1917;color:#fff;font-size:10.6px}
+.rx-tbl td{padding:4.5px 9px}
+.rx-foot{border:1.5px solid #e7e5e4;border-radius:12px;background:#fafaf9;padding:8px 14px;margin-top:12px;text-align:center;font-size:10.5px;line-height:2}
 /* پابرگ */
 .docfoot{margin-top:12px;border-top:1px solid #e7e5e4;padding-top:6px;display:flex;justify-content:space-between;gap:10px;font-size:8.6px;color:#78716c;flex-wrap:wrap}
 .pfoot{display:none}
@@ -128,88 +151,70 @@ table.tbl{width:100%;border-collapse:collapse;font-size:10.8px}
 <div class="sheet">
 <div class="wm"><div class="wm-in"><div class="wm-olive">🫒</div><div class="wm-text">سر رسید</div></div></div>
 <div class="doc">
-<header class="lh">
-  <div class="lh-brand">
-    <div class="lh-emblem">🫒</div>
-    <div>
-      <div class="lh-name">هایپر زیتون</div>
-      <div class="lh-sub">فروشگاه زنجیره‌ای — رفسنجان</div>
-      <div class="lh-addr">نشانی: رفسنجان، بلوار ... — تلفن: ۰۳۴-۳۳ ...</div>
-    </div>
-  </div>
-  <div class="lh-doc">
-    <div class="doc-title">رسید مرجوعی کالا</div>
-    <div class="doc-code">HZ-071020-0003</div>
-    <div class="doc-meta">تاریخ: ۲۸ مهر ۱۴۰۵ — ساعت: ۰۸:۲۶</div>
-    
-  </div>
+<header class="rx-head">
+  <div class="rx-emblem">🫒</div>
+  <div class="rx-name">هایپر زیتون</div>
+  <div class="rx-latin">HYPER ZEYTOON</div>
+  <div class="rx-slogan">«سالم غذای سالم، زندگی سالم»</div>
+  <div class="rx-title">رسید مرجوعی کالا</div>
 </header>
 <div class="rule"></div>
 
-<div class="row2">
-  <div class="box"><div class="box-title">مشخصات مشتری</div><div class="kv"><div><div class="k">نام مشتری</div><div class="v">زهرا محمودی</div></div><div><div class="k">تلفن همراه</div><div class="v"><span class="num">۰۹۱۳۱۲۳۴۵۶۷</span></div></div><div><div class="k">کارت بانکی</div><div class="v"><span class="num">۶۲۱۹-****-****-۵۶۷۸</span></div></div><div><div class="k">تاریخ خرید</div><div class="v">۱۵ مهر ۱۴۰۵</div></div></div></div>
-  <div class="box"><div class="box-title">مشخصات سند</div><div style="display:flex;flex-direction:column;gap:7px;align-items:flex-start">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <span class="chip emerald">نوع تسویه: تسویه جزئی (دارای مانده)</span>
-      <span class="chip amber">وضعیت: در انتظار تأیید</span>
-    </div>
-    <div class="kv"><div><div class="k">صندوکار</div><div class="v">کیانوش لطفی</div></div><div><div class="k">تعداد اقلام</div><div class="v">۳ قلم</div></div><div><div class="k">کد پیگیری</div><div class="v"><span class="num">HZ-071020-0003</span></div></div></div>
-  </div></div>
+<div class="rx-bar">
+  <div class="rx-cell"><span class="rx-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg></span><span><span class="rx-cl">شماره سند</span><span class="rx-cv num" style="font-size:11px">HZ-050801-0004</span></span></div>
+  <div class="rx-cell"><span class="rx-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span><span><span class="rx-cl">تاریخ</span><span class="rx-cv">۱۴۰۵.۰۷.۲۷</span></span></div>
+  <div class="rx-cell"><span class="rx-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><span><span class="rx-cl">ساعت</span><span class="rx-cv">۱۴:۰۵</span></span></div>
 </div>
-
-<div class="sec-title">اقلام مرجوعی</div>
-<table class="tbl">
-<thead><tr><th class="c" style="width:34px">ردیف</th><th>نام کالا</th><th class="c" style="width:110px">بارکد</th><th class="c" style="width:64px">تعداد</th><th class="c" style="width:100px">فی (ریال)</th><th class="c" style="width:110px">جمع (ریال)</th></tr></thead>
+<div class="rx-ctx">
+  <div class="cx1">
+    <span>مرجوعی فروش — ثبت‌شده توسط: <b>کیانوش صفاپور</b></span>
+    <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span class="chip amber">وضعیت: در انتظار تأیید</span>
+      <span class="chip emerald">بازگشت کامل وجه</span>
+    </span>
+  </div>
+  <div class="cx2">
+    <span>نام خریدار: <b>مریم احمدی</b></span>
+    <span>موبایل: <b class="num">۰۹۱۲۳۴۵۶۷۸۹</b></span>
+    <span>کارت: <b class="num">۶۰۳۷-۹۹۱۲-۳۴۵۶-۷۸۹۰</b></span>
+    <span>تاریخ خرید: <b>۱۴۰۵/۰۷/۲۱</b></span>
+    <span>علت مرجوعی: <b>کالای معیوب</b></span>
+  </div>
+</div>
+<table class="tbl rx-tbl">
+<thead><tr><th>شرح کالا</th><th class="c" style="width:84px">تعداد</th><th class="c" style="width:112px">قیمت واحد (ریال)</th><th class="c" style="width:118px">مبلغ کل (ریال)</th></tr></thead>
 <tbody><tr>
-<td class="c">۱</td>
-<td><b>روغن سرخ‌کردنی لادن ۱.۳۵ لیتری</b><div style="font-size:9px;color:#78716c">واحد: عدد</div></td>
-<td class="c mono">6260100123456</td>
-<td class="num">۲</td>
-<td class="num">۱۴۸,۰۰۰</td>
-<td class="num"><b>۲۹۶,۰۰۰</b></td>
+<td><b>مغز بادام زمینی</b><div class="mono" style="font-size:8.8px;color:#a8a29e;direction:ltr;text-align:right">1550</div></td>
+<td class="c">۰٫۷۲ <span style="font-size:9px;color:#a8a29e">کیلوگرم</span></td>
+<td class="num">۱۱٬۵۰۵٬۰۰۰</td>
+<td class="num"><b>۸٬۲۸۳٬۶۰۰</b></td>
 </tr><tr>
-<td class="c">۲</td>
-<td><b>پنیر لیقوان ۴۰۰ گرمی</b><div style="font-size:9px;color:#78716c">واحد: بسته</div></td>
-<td class="c mono">20001234</td>
-<td class="num">۱</td>
-<td class="num">۹۲,۰۰۰</td>
-<td class="num"><b>۹۲,۰۰۰</b></td>
-</tr><tr>
-<td class="c">۳</td>
-<td><b>ماست دبه‌ای ۲ کیلویی</b><div style="font-size:9px;color:#78716c">واحد: دبه</div></td>
-<td class="c mono">6260044556677</td>
-<td class="num">۱</td>
-<td class="num">۲۱۰,۰۰۰</td>
-<td class="num"><b>۲۱۰,۰۰۰</b></td>
+<td><b>شیر پرچرب ۱ لیتری</b><div class="mono" style="font-size:8.8px;color:#a8a29e;direction:ltr;text-align:right">1234567890123</div></td>
+<td class="c">۲ <span style="font-size:9px;color:#a8a29e">عدد</span></td>
+<td class="num">۴۸٬۰۰۰</td>
+<td class="num"><b>۹۶٬۰۰۰</b></td>
 </tr></tbody>
-<tfoot><tr><td colspan="5" style="text-align:right">جمع کل اقلام مرجوعی</td><td class="num">۵۹۸,۰۰۰</td></tr></tfoot>
+<tfoot><tr><td colspan="3" style="text-align:right">جمع کل اقلام مرجوعی</td><td class="num">۸٬۲۸۳٬۶۰۰</td></tr></tfoot>
 </table>
 
-<div class="totwrap"><div class="totbox">
-  <div class="trow"><span class="lbl">ارزش کل اقلام مرجوعی</span><span class="val">۵۹۸,۰۰۰ ریال</span></div>
-  <div class="trow"><span class="lbl">ارزش کالای جایگزین</span><span class="val">۱۵۰,۰۰۰ ریال</span></div>
-  <div class="grand"><span class="lbl">مبلغ بازگشت وجه به کارت</span><span class="val">۴۴۸,۰۰۰ ریال</span></div>
-</div></div>
-<div class="words"><div class="w1">چهارصد و چهل و هشت هزار ریال</div><div class="w2">معادل: چهل و چهار هزار و هشتصد تومان</div></div>
-<div class="note">یادداشت بازگشت وجه: واریز به کارت بانکی مشتری تا ۴۸ ساعت کاری</div>
-<div class="note"><b>علت مرجوعی:</b> نزدیک به تاریخ انقضا</div>
+<div class="totwrap"><div class="totbox"><div class="trow"><span class="lbl">مجموع کالاها (۲ قلم)</span><span class="val">۸٬۲۸۳٬۶۰۰ ریال</span></div><div class="trow"><span class="lbl">بازپرداخت به کارت</span><span class="val">۸٬۲۸۳٬۶۰۰ ریال</span></div><div class="grand"><span class="lbl">مبلغ قابل پرداخت</span><span class="val"><b>۸٬۲۸۳٬۶۰۰ ریال</b></span></div></div></div>
+<div class="words big"><div class="w1">هشت میلیون و دویست و هشتاد و سه هزار و ششصد ریال</div><div class="w2">معادل: هشتصد و بیست و هشت هزار و سیصد و شصت تومان</div></div>
+<div class="note"><b>توضیح تسویه:</b> واریز به کارت</div>
+<div class="note"><b>یادداشت:</b> یادداشت آزمون</div>
 
+<div class="sigs"><div class="sig"><div class="s-label">امضای صندوق</div><div class="s-name">کیانوش صفاپور</div><div class="s-hint">صندوکار ثبت‌کننده</div></div><div class="sig"><div class="s-label">امضای مدیر</div><div class="s-hint">تأیید و مهر فروشگاه</div></div></div>
 
-<div class="stamp-row">
-  <div class="tracking">
-    <div class="t-label">کد پیگیری مرجوعی</div>
-    <div class="t-code">HZ-071020-0003</div>
-  </div>
-  <div class="stampbox">محل مهر و امضای فروشگاه</div>
+<div class="rx-foot">
+  <div style="font-weight:800;color:#065f46">مرجوعی مطابق سیاست‌های فروشگاه و پس از تأیید مدیریت انجام می‌شود؛ وجه قابل پرداخت به کارت خریدار واریز می‌گردد.</div>
+  <div>خدمات مشتریان: <b class="num">—</b></div>
+  <div style="color:#78716c">نشانی: رفسنجان، بلوار ... — تلفن: ۰۳۴-۳۳ ...</div>
 </div>
-
-<div class="sigs"><div class="sig"><div class="s-label">تنظیم‌کننده</div><div class="s-name">کیانوش لطفی</div><div class="s-hint">صندوکار</div></div><div class="sig"><div class="s-label">تأییدکننده</div><div class="s-hint">مدیر فروشگاه</div></div><div class="sig"><div class="s-label">امضای مشتری</div><div class="s-hint">تحویل‌گیرندهٔ کالا/وجه</div></div></div>
 <footer class="docfoot">
-  <span>سند توسط سامانهٔ سررسید (SarResid) تولید شده — کد سند: <span class="num">HZ-071020-0003</span></span>
-  <span>تاریخ تولید: ۲۸ مهر ۱۴۰۵ — ساعت ۰۸:۲۶</span>
+  <span>سر رسید — سامانه یکپارچه مدیریت هایپر زیتون</span>
+  <span>کد سند: <span class="num">HZ-050801-0004</span> — تاریخ تولید: ۲۷ مهر ۱۴۰۵ — ساعت ۱۴:۰۵</span>
 </footer>
 </div>
-<div class="pfoot">هایپر زیتون — رسید مرجوعی کالا — کد سند: HZ-071020-0003</div>
+<div class="pfoot">هایپر زیتون — رسید مرجوعی کالا — کد سند: HZ-050801-0004</div>
 </div>
 </body>
 </html>

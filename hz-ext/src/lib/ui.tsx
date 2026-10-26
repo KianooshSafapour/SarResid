@@ -327,7 +327,9 @@ export function NumInput(props: NumInputProps) {
     return (neg ? '−' : '') + out
   }
   function handle(rawInput: string) {
-    let v = toEnDigits(String(rawInput ?? '')).replace(/,/g, '.').replace(/[^\d.]/g, '')
+    /* R10: «٫» (جداکنندهٔ اعشار فارسی U+066B) که fmt در نمایش می‌گذارد هم باید به «.»
+       تبدیل شود — وگرنه تایپ رقم بعد از ممیز، ممیز را می‌بلعد (۱٫۲ → ۱۲) */
+    let v = toEnDigits(String(rawInput ?? '')).replace(/[,،٫]/g, '.').replace(/[^\d.]/g, '')
     const parts = v.split('.')
     if (decimals <= 0) v = parts[0] ?? ''
     else if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('')

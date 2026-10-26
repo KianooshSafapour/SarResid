@@ -106,7 +106,7 @@ export default function ReviewsView() {
   return (
     <div className="space-y-4">
       {/* خط‌های فروشگاه — چیپ‌ها */}
-      <Card>
+      <Card data-tour="page">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><Icon name="store" size={18} /> ارزیابی چیدمان خط‌ها</CardTitle>
         </CardHeader>

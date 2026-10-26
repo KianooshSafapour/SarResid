@@ -34,9 +34,11 @@ if (src.includes('__HZ_NOTIF_FIXED__')) {
   console.log('patch-notifications: already applied')
 } else {
   // 1) notification item click: mark read + remove from list, then navigate
+  //    (R10 title-badge: also dispatch hz:badges-refresh so document.title
+  //     recomputes immediately — see patch-title-badge.mjs)
   src = apply(src, 'notif item click → mark read + remove',
     'onClick:()=>{r.go&&e(r.go.replace(/^#\\/?/,"")),a(!1)}',
-    'onClick:()=>{/*__HZ_NOTIF_FIXED__*/try{(0,n.api)("/api/app/notifications",{method:"POST",body:{ids:[r.id]}}).catch(function(){}),o(s.filter(function(x){return x.id!==r.id}))}catch(v){}r.go&&e(r.go.replace(/^#\\/?/,"")),a(!1)}')
+    'onClick:()=>{/*__HZ_NOTIF_FIXED__*/try{(0,n.api)("/api/app/notifications",{method:"POST",body:{ids:[r.id]}}).catch(function(){}),o(s.filter(function(x){return x.id!==r.id}))}catch(v){}window.dispatchEvent(new CustomEvent("hz:badges-refresh")),r.go&&e(r.go.replace(/^#\\/?/,"")),a(!1)}')
   src += '\n/*__HZ_NOTIF_FIXED__*/'
   writeFileSync(CHUNK, src)
   console.log('patch-notifications: written')

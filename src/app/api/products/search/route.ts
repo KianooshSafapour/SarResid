@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
   /* ── حالت کامل سفارش‌گذاری: سابقهٔ سفارش + قیمت تأمین‌کنندگان ── */
   const ids = products.map((p) => p.id)
 
-  const [linkRows, recentItems] = await Promise.all([
+  const [linkRows, recentItems, buyRows] = await Promise.all([
     db.supplierProduct.findMany({
       where: { productId: { in: ids } },
       orderBy: [{ isPrimary: 'desc' }, { unitPrice: 'asc' }],
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
       },
     }),
     db.orderItem.findMany({
-      where: { productId: { in: ids } },
+      where: { productId: { in: ids }, order: { status: { not: 'CANCELLED' } } },
       orderBy: { order: { createdAt: 'desc' } },
       take: 400,
       select: {
@@ -104,6 +104,13 @@ export async function GET(req: NextRequest) {
           },
         },
       },
+    }),
+    /* R8: آخرین خرید واقعی از دادهٔ هلو (TradeRecord BUY) — چیپ «خرید هلو» در نتایج جست‌وجو */
+    db.tradeRecord.findMany({
+      where: { kind: 'BUY', productId: { in: ids } },
+      orderBy: { dateJalali: 'desc' },
+      take: 600,
+      select: { productId: true, dateJalali: true, month: true, qty: true, unitPrice: true },
     }),
   ])
 
@@ -125,6 +132,11 @@ export async function GET(req: NextRequest) {
   const lastBy = new Map<string | null, (typeof recentItems)[number]>() // productId در OrderItem نال‌پذیر است (پیش‌موجود)
   for (const it of recentItems) {
     if (!lastBy.has(it.productId)) lastBy.set(it.productId, it)
+  }
+  /* R8: آخرین خرید هلو هر کالا (نخستین ردیف تاریخ‌مرتب‌شده) */
+  const lastBuyBy = new Map<string, (typeof buyRows)[number]>()
+  for (const b of buyRows) {
+    if (b.productId && !lastBuyBy.has(b.productId)) lastBuyBy.set(b.productId, b)
   }
 
   return ok({
@@ -173,6 +185,13 @@ export async function GET(req: NextRequest) {
               status: last.order.status,
             }
           : null,
+        /* R8: آخرین خرید واقعی از فایل هلو (تیر–مهر ۱۴۰۵) — ماه + تعداد */
+        lastBuy: (() => {
+          const b = lastBuyBy.get(p.id)
+          return b
+            ? { dateJalali: b.dateJalali, month: b.month, qty: b.qty, unitPrice: b.unitPrice }
+            : null
+        })(),
       }
     }),
   })

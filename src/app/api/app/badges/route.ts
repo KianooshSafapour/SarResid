@@ -18,12 +18,19 @@ export async function GET() {
   const today = todayJalaliDash()
   const weekEnd = addDaysJalaliDash(today, 7)
 
-  const [returnsPending, ordersWaiting, chequesDue, tasksOpen, messagesUnread] =
+  /* R10: اعلان‌های زنگِ باز نشده — همان دامنهٔ دید زنگ (خودم / نقش من / عمومی)
+     تا نشانِ عنوان سایت (document.title) هم با خواندن اعلان‌ها به‌روز شود. */
+  const notifScope = {
+    readAt: null,
+    OR: [{ userId: me.id }, { role: me.role }, { userId: null, role: null }],
+  }
+
+  const [returnsPending, ordersWaiting, chequesDue, tasksOpen, messagesUnread, notificationsUnread] =
     await Promise.all([
       db.returnRequest.count({ where: { status: { in: ['pending', 'approved'] } } }),
-      db.order.count({
-        where: { status: { in: ['SUBMITTED', 'APPROVED', 'RECEIVING', 'RECEIVED', 'VERIFIED'] } },
-      }),
+      /* R10: نشان «سفارش‌ها» = فقط سفارش‌های در انتظار تأیید مدیران (SUBMITTED).
+         قبلاً همهٔ وضعیت‌های جاری شمرده می‌شد و سیگنالِ «نیاز به تأیید» گم می‌شد. */
+      db.order.count({ where: { status: 'SUBMITTED' } }),
       db.cheque.count({
         where: {
           dueDate: { gte: today, lte: weekEnd },
@@ -32,6 +39,7 @@ export async function GET() {
       }),
       db.task.count({ where: { assignedToId: me.id, status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
       db.message.count({ where: { toId: me.id, readAt: null } }),
+      db.notification.count({ where: notifScope }),
     ])
 
   return ok({
@@ -40,5 +48,6 @@ export async function GET() {
     cheques_due: chequesDue,
     tasks_open: tasksOpen,
     messages_unread: messagesUnread,
+    notifications_unread: notificationsUnread,
   })
 }

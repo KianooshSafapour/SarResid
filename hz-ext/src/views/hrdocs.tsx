@@ -519,7 +519,7 @@ export default function HrDocsView() {
   /* ═══ رندر ═══ */
   return (
     <div className="space-y-4">
-      <Card>
+      <Card data-tour="page">
         <CardHeader className="pb-3">
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
             <Icon name="clipboard" size={18} /> پرونده پرسنل

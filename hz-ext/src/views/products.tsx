@@ -1,6 +1,6 @@
 import {
   useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn,
-  Button, Input, Card, CardContent, CardHeader, CardTitle,
+  Button, Input, Card, CardContent, CardHeader, CardTitle, Badge,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -155,7 +155,7 @@ function UnitsManagerDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   )
 }
 const MANAGE_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM'] // آینهٔ canMutateProducts بک‌اند
-const PAGE_SIZE = 24
+const PAGE_SIZES = [24, 48, 96] // R8: اندازهٔ صفحهٔ جدول
 
 const UNIT_CLS: Record<string, string> = {
   'عدد': 'bg-stone-100 text-stone-600 border-stone-200',
@@ -478,7 +478,7 @@ function ProductFormDialog(props: {
     name: '', code: '', barcode: '',
     mainGroup: '', subGroup: '', unit: 'عدد',
     sectionLabel: '', supplierId: '',
-    sellPrice: '', lastBuyPrice: '', stock: '', reorderLevel: '', defaultOrderQty: '6',
+    sellPrice: '', lastBuyPrice: '', stock: '', reorderLevel: '', defaultOrderQty: '6', unitsPerCarton: '',
     active: true,
   })
   const set = (k: keyof typeof f, v: any) => setF((x) => ({ ...x, [k]: v }))
@@ -491,7 +491,7 @@ function ProductFormDialog(props: {
       .then((r: any) => { if (r.ok) setSuppliers((r.data.items ?? []).map((s: any) => ({ id: s.id, name: s.name }))) })
       .catch(() => {})
     if (!editId) {
-      setF({ name: '', code: '', barcode: '', mainGroup: '', subGroup: '', unit: 'عدد', sectionLabel: '', supplierId: '', sellPrice: '', lastBuyPrice: '', stock: '', reorderLevel: '', defaultOrderQty: '6', active: true })
+      setF({ name: '', code: '', barcode: '', mainGroup: '', subGroup: '', unit: 'عدد', sectionLabel: '', supplierId: '', sellPrice: '', lastBuyPrice: '', stock: '', reorderLevel: '', defaultOrderQty: '6', unitsPerCarton: '', active: true })
       return
     }
     setLoading(true)
@@ -516,6 +516,7 @@ function ProductFormDialog(props: {
           stock: p.stock != null ? String(Math.round(Number(p.stock))) : '',
           reorderLevel: p.reorderLevel != null ? String(Math.round(Number(p.reorderLevel))) : '',
           defaultOrderQty: p.defaultOrderQty != null ? String(Math.round(Number(p.defaultOrderQty))) : '6',
+          unitsPerCarton: p.unitsPerCarton != null && Number(p.unitsPerCarton) > 0 ? String(Math.round(Number(p.unitsPerCarton))) : '',
           active: p.active !== false,
         })
       })
@@ -539,6 +540,8 @@ function ProductFormDialog(props: {
     stock: f.stock === '' ? 0 : Math.round(Number(f.stock)),
     reorderLevel: f.reorderLevel === '' ? null : Math.round(Number(f.reorderLevel)),
     defaultOrderQty: f.defaultOrderQty === '' ? 6 : Math.round(Number(f.defaultOrderQty)),
+    /* R9: تعداد در هر کارتن — پیش‌فرض کارتن این کالا در سفارش‌گذاری (۰/خالی = نامشخص؛ دیالوگ اندازهٔ کارتن می‌پرسد) */
+    unitsPerCarton: f.unitsPerCarton === '' ? 0 : Math.max(0, Math.round(Number(f.unitsPerCarton) || 0)),
     active: f.active,
     status: f.active ? 'فعال' : 'غیر فعال',
   })
@@ -680,15 +683,28 @@ function ProductFormDialog(props: {
                 <p className="text-[10px] text-stone-400">تعداد «عدد» هنگام سفارش‌گذاری</p>
               </div>
               <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-stone-600">تعداد در هر کارتن</label>
+                <NumInput value={f.unitsPerCarton} onChange={(v: string) => set('unitsPerCarton', v)} placeholder="۱۲" ariaLabel="تعداد در هر کارتن" />
+                <p className="text-[10px] text-stone-400">اندازهٔ کارتن این کالا — خالی = نامشخص (هنگام سفارش پرسیده می‌شود و پس از اولین پاسخ ذخیره می‌شود)</p>
+              </div>
+              <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-stone-600">وضعیت</label>
-                <div className="flex rounded-lg border border-stone-200 bg-white p-1">
-                  {([true, false] as const).map((a) => (
-                    <button key={String(a)} type="button" onClick={() => set('active', a)}
-                      className={cn('flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-                        f.active === a ? (a ? 'bg-emerald-600 text-white' : 'bg-rose-500 text-white') : 'text-stone-600 hover:bg-stone-100')}>
-                      {a ? 'فعال' : 'غیرفعال'}
-                    </button>
-                  ))}
+                {/* R10: رادیو-پییل استاندارد — هم‌سان با بقیهٔ سامانه */}
+                <div className="flex items-stretch gap-1.5 rounded-xl border border-stone-200 bg-stone-100/60 p-1.5">
+                  {([true, false] as const).map((a) => {
+                    const on = f.active === a
+                    return (
+                      <button key={String(a)} type="button" onClick={() => set('active', a)} role="radio" aria-checked={on}
+                        className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-bold transition-all touch-target',
+                          on ? 'bg-white shadow-sm ring-1 ' + (a ? 'text-emerald-800 ring-primary/40' : 'text-rose-700 border-rose-300') : 'text-stone-500 hover:bg-white/60 hover:text-stone-700')}>
+                        <span className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                          on ? (a ? 'border-emerald-600' : 'border-rose-500') : 'border-stone-300')}>
+                          {on && <span className={cn('h-1.5 w-1.5 rounded-full', a ? 'bg-emerald-600' : 'bg-rose-500')} />}
+                        </span>
+                        {a ? 'فعال' : 'غیرفعال'}
+                      </button>
+                    )
+                  })}
                 </div>
                 <p className="text-[10px] text-stone-400">کالای غیرفعال در سفارش‌گذاری پیشنهاد نمی‌شود</p>
               </div>
@@ -997,6 +1013,11 @@ export default function ProductsView() {
   const [unit, setUnit] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(24) // R8: ۲۴/۴۸/۹۶ کالا در هر صفحه
+  const [lowStock, setLowStock] = useState(false) // R8: فیلتر «کم‌موجود» (کالاهای فعالِ زیر حد سفارش مجدد)
+  const [pageInput, setPageInput] = useState('1') // R8: ورودی شمارهٔ صفحه (ارقام فارسی مجاز)
+  const [pageBad, setPageBad] = useState(false) // R8: ورودی نامعتبر ⇒ قرمزی + لرزش + بازگشت
+  const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [passport, setPassport] = useState<string | null>(null)
   /* R5-F: فرم ثبت/ویرایش کالا — formId=null ⇒ ثبت، رشته ⇒ ویرایش همان کالا */
   const [formOpen, setFormOpen] = useState(false)
@@ -1011,17 +1032,33 @@ export default function ProductsView() {
     return () => clearTimeout(t)
   }, [q])
 
+  /* اعمال پاسخ فهرست — اگر داده کم شده و صفحهٔ فعلی از بازه خارج شد، به آخرین صفحهٔ معتبر برمی‌گردد */
+  function applyList(r: any, targetPage: number) {
+    if (!r.ok) { toast.error(r.error || 'دریافت فهرست کالاها ناموفق بود'); return }
+    setRows(r.data.items ?? [])
+    setTotal(r.data.total ?? 0)
+    const real = Math.max(1, Number(r.data.pages ?? 1) || 1)
+    setPages(real)
+    if (targetPage > real) setPage(real)
+  }
+
   useEffect(() => {
     const my = ++seqRef.current
     setLoading(true)
-    api('/api/products' + qs({ q: qEff || undefined, mainGroup: mainGroup || undefined, subGroup: subGroup || undefined, unit: unit || undefined, status: status || undefined, page, pageSize: PAGE_SIZE }))
+    api('/api/products' + qs({
+      q: qEff || undefined, mainGroup: mainGroup || undefined, subGroup: subGroup || undefined,
+      unit: unit || undefined, status: status || undefined,
+      lowStock: lowStock ? 1 : undefined, page, pageSize, // R8: فیلتر کم‌موجود + اندازهٔ صفحه
+    }))
       .then((r: any) => {
         if (my !== seqRef.current) return
-        if (r.ok) { setRows(r.data.items ?? []); setTotal(r.data.total ?? 0); setPages(r.data.pages ?? 1) }
-        else toast.error(r.error || 'دریافت فهرست کالاها ناموفق بود')
+        applyList(r, page)
       })
       .finally(() => { if (my === seqRef.current) setLoading(false) })
-  }, [qEff, mainGroup, subGroup, unit, status, page])
+  }, [qEff, mainGroup, subGroup, unit, status, lowStock, page, pageSize])
+
+  /* ورودی شمارهٔ صفحه با صفحهٔ فعال هم‌گام بماند (پس از پرش با دکمه‌ها) */
+  useEffect(() => { setPageInput(String(page)) }, [page])
 
   const groupOptions = useMemo(() => {
     const mgs = (meta?.mainGroups ?? []) as any[]
@@ -1047,13 +1084,43 @@ export default function ProductsView() {
       .finally(() => setToggling(null))
   }
 
-  const refresh = () => { setPage((x) => x); seqRef.current++; const my = seqRef.current; api('/api/products' + qs({ q: qEff || undefined, mainGroup: mainGroup || undefined, subGroup: subGroup || undefined, unit: unit || undefined, status: status || undefined, page, pageSize: PAGE_SIZE })).then((r: any) => { if (my === seqRef.current && r.ok) { setRows(r.data.items ?? []); setTotal(r.data.total ?? 0) } }) }
+  const refresh = () => {
+    const my = ++seqRef.current
+    api('/api/products' + qs({
+      q: qEff || undefined, mainGroup: mainGroup || undefined, subGroup: subGroup || undefined,
+      unit: unit || undefined, status: status || undefined,
+      lowStock: lowStock ? 1 : undefined, page, pageSize,
+    })).then((r: any) => { if (my === seqRef.current) applyList(r, page) })
+  }
   /* R5-F: پس از ثبت/ویرایش، متا (شمارش‌ها + فهرست گروه‌ها) هم تازه شود */
   const refreshAll = () => {
     refresh()
     api('/api/products?meta=1').then((r: any) => { if (r.ok) setMeta(r.data) })
   }
-  const filtersOn = !!(qEff || mainGroup || subGroup || unit || status)
+  const filtersOn = !!(qEff || mainGroup || subGroup || unit || status || lowStock)
+
+  /* R8: پرش با ورودی شمارهٔ صفحه — ارقام فارسی مجاز (toEnDigits)؛ نامعتبر/خارج از بازه ⇒ لرزش + قرمزی + بازگشت */
+  function applyPageInput() {
+    const n = parseInt(toEnDigits(pageInput).replace(/[^\d]/g, ''), 10)
+    if (Number.isFinite(n) && n >= 1 && n <= pages) {
+      setPageBad(false)
+      setPageInput(String(n))
+      if (n !== page) setPage(n)
+      return
+    }
+    if (pageInput === '') { setPageInput(String(page)); return } // خالی = بی‌تغییر
+    setPageBad(true)
+    try {
+      pageInputRef.current?.animate(
+        [
+          { transform: 'translateX(0)' }, { transform: 'translateX(-4px)' }, { transform: 'translateX(4px)' },
+          { transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' }, { transform: 'translateX(0)' },
+        ],
+        { duration: 320, easing: 'ease-in-out' },
+      )
+    } catch { /* Web Animations در دسترس نیست */ }
+    setTimeout(() => { setPageBad(false); setPageInput(String(page)) }, 650)
+  }
 
   return (
     <div className="space-y-4">
@@ -1104,12 +1171,26 @@ export default function ProductsView() {
                 <SelectItem value="غیر فعال">غیر فعال</SelectItem>
               </SelectContent>
             </Select>
+            {/* R8: فیلتر «کم‌موجود» — کالاهای فعالِ زیر حد سفارش مجدد (آستانهٔ اختصاصی ← حد هلو ← ۵) */}
+            <button
+              type="button"
+              aria-pressed={lowStock}
+              onClick={() => { setLowStock((v) => !v); setPage(1) }}
+              title="فقط کالاهای فعال که موجودی‌شان به حد سفارش مجدد رسیده یا کمتر است — با جست‌وجو و بقیهٔ فیلترها ترکیب می‌شود"
+              className={cn('inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors',
+                lowStock ? 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50')}>
+              <I.alertTriangle size={14} className={lowStock ? 'text-rose-500' : 'text-stone-400'} />
+              کم‌موجود
+              {lowStock && (
+                <span className="rounded-full bg-rose-600 px-1.5 py-px text-[10px] font-black leading-4 text-white">{fa(total)}</span>
+              )}
+            </button>
             {(filtersOn || page !== 1) && (
-              <Button variant="ghost" size="sm" className="gap-1 text-stone-500" onClick={() => { setQ(''); setQEff(''); setMainGroup(''); setSubGroup(''); setUnit(''); setStatus(''); setPage(1) }}>
+              <Button variant="ghost" size="sm" className="gap-1 text-stone-500" onClick={() => { setQ(''); setQEff(''); setMainGroup(''); setSubGroup(''); setUnit(''); setStatus(''); setLowStock(false); setPage(1) }}>
                 <I.x size={13} /> پاک‌کردن فیلترها
               </Button>
             )}
-            <Button variant="outline" size="sm" className="gap-1" onClick={refresh}><I.refresh size={13} /> به‌روزرسانی</Button>
+            <Button variant="outline" size="sm" className="gap-1" onClick={refreshAll}><I.refresh size={13} /> به‌روزرسانی</Button>
             {canManage && (
               <Button variant="outline" size="sm" className="gap-1" title="تعریف و مدیریت واحدهای شمارش" onClick={() => { refreshUnitsCache(); setUnitsOpen(true) }}>
                 <I.settings size={14} /> واحدها
@@ -1123,7 +1204,7 @@ export default function ProductsView() {
           </div>
 
           {/* جدول فشرده */}
-          <div className="rounded-xl border border-stone-200">
+          <div className="relative rounded-xl border border-stone-200">
             <Table>
               <TableHeader>
                 <TableRow className="bg-stone-50 hover:bg-stone-50">
@@ -1180,22 +1261,70 @@ export default function ProductsView() {
                 ))}
               </TableBody>
             </Table>
+            {/* R8: هنگام تعویض صفحه/فیلتر (ردیف‌های موجود) — پوشش ظریف بارگذاری */}
+            {loading && rows.length > 0 && (
+              <div className="absolute inset-0 z-10 flex items-start justify-center rounded-xl bg-white/60">
+                <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-bold text-stone-500 shadow-sm">
+                  <I.loader size={12} className="animate-spin" /> در حال دریافت…
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* صفحه‌بندی */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[11px] text-stone-500">صفحهٔ {fa(page)} از {fa(pages)} · {fa(total)} کالا</p>
-            <div className="flex items-center gap-1.5">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((x) => Math.max(1, x - 1))} className="gap-1">
-                <I.chevronRight size={14} /> قبلی
+          {/* R8: صفحه‌بندی کامل — اولین / قبلی / ورودی شمارهٔ صفحه / بعدی / آخرین + اندازهٔ صفحه */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            {/* شمار نتایج */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-bold text-stone-600">
+                <I.package size={12} className="text-stone-400" /> {fa(total)} کالا
+              </span>
+              {Number(meta?.total ?? 0) > total && (
+                <span className="text-[11px] text-stone-400">از {fa(Number(meta?.total ?? 0))} کالای کل</span>
+              )}
+            </div>
+            {/* کنترل‌های صفحه */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5" disabled={page <= 1} onClick={() => setPage(1)} title="اولین صفحه">
+                <I.arrowRight size={14} /> <span className="hidden sm:inline">اولین صفحه</span>
               </Button>
-              <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((x) => Math.min(pages, x + 1))} className="gap-1">
-                بعدی <I.chevronLeft size={14} />
+              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5" disabled={page <= 1} onClick={() => setPage((x) => Math.max(1, x - 1))} title="صفحهٔ قبل">
+                <I.chevronRight size={14} /> <span className="hidden sm:inline">قبلی</span>
               </Button>
+              <span className="flex items-center gap-1.5">
+                <Input
+                  ref={pageInputRef}
+                  dir="ltr"
+                  inputMode="numeric"
+                  aria-label="شمارهٔ صفحه"
+                  title={`شمارهٔ صفحه (۱ تا ${toFaDigits(pages)}) — با Enter یا کلیک بیرون اعمال می‌شود`}
+                  placeholder="۱"
+                  className={cn('h-8 w-16 text-center font-black tabular-nums', pageBad && 'border-rose-400 text-rose-600')}
+                  value={pageInput ? toFaDigits(pageInput) : ''}
+                  onChange={(e: any) => setPageInput(toEnDigits(String(e.target.value ?? '')).replace(/[^\d]/g, ''))}
+                  onKeyDown={(e: any) => { if (e.key === 'Enter') { e.preventDefault(); applyPageInput() } }}
+                  onBlur={() => { if (!pageBad) applyPageInput() }}
+                />
+                <span className="whitespace-nowrap text-[11px] font-medium text-stone-500">از {fa(pages)}</span>
+              </span>
+              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5" disabled={page >= pages} onClick={() => setPage((x) => Math.min(pages, x + 1))} title="صفحهٔ بعد">
+                <span className="hidden sm:inline">بعدی</span> <I.chevronLeft size={14} />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5" disabled={page >= pages} onClick={() => setPage(pages)} title="آخرین صفحه">
+                <span className="hidden sm:inline">آخرین صفحه</span> <I.arrowLeft size={14} />
+              </Button>
+              {/* اندازهٔ صفحه */}
+              <span className="mx-1 hidden h-5 w-px bg-stone-200 sm:block" />
+              <Select value={String(pageSize)} onValueChange={(v: string) => { setPageSize(Number(v) || 24); setPage(1) }}>
+                <SelectTrigger className="h-8 w-24 text-xs" aria-label="تعداد کالا در هر صفحه"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZES.map((n) => <SelectItem key={n} value={String(n)}>{toFaDigits(n)} کالا</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <p className="text-[10px] leading-4 text-stone-400">
             روی هر ردیف کلیک کنید تا «شناسنامهٔ کالا» با نمودار گردش سفارش و روند موجودی باز شود.
+            با فیلتر «کم‌موجود» فقط کالاهای فعالِ زیر حد سفارش مجدد دیده می‌شوند و شمارهٔ صفحه را می‌توانید مستقیم تایپ کنید.
             {canManage ? ' با «کالای جدید» و «ویرایش» می‌توانید کالا ثبت و اصلاح کنید؛ تغییر واحد شمارش در شناسنامه انجام می‌شود و کالا را از قاعدهٔ خودکار مصون می‌کند.' : ''}
           </p>
         </CardContent>

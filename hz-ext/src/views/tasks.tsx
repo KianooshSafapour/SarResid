@@ -487,7 +487,7 @@ export default function TasksView() {
             ) : null}
             <span className="mr-auto" />
             {isManager ? (
-              <Button size="sm" onClick={() => setNewOpen(true)}><I.plus size={14} className="ml-1" /> دستور کار جدید</Button>
+              <Button size="sm" data-tour="new-task" onClick={() => setNewOpen(true)}><I.plus size={14} className="ml-1" /> دستور کار جدید</Button>
             ) : null}
           </div>
 
@@ -535,7 +535,7 @@ export default function TasksView() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[340px_1fr]">
         {/* ── ستون راست: وظایف من ── */}
         <div className="space-y-4">
-          <Card>
+          <Card data-tour="my-tasks">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <I.clipboard size={16} className="text-emerald-700" /> وظایف من

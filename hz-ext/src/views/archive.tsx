@@ -4,14 +4,15 @@ import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, But
    archive — آرشیو اسناد (بایگانی هیبریدی دیجیتال + فیزیکی)
    جست‌وجو-محور: پیدا کردن کاغذ در یک ثانیه —
      کابینت ← قفسه ← زون‌بند ← برگه
-   سه تب:
+   دو تب:
      ۱) اسناد: جست‌وجوی برجستهٔ سراسری (تأمین‌کننده، شماره فاکتور/رسید هلو،
         شماره چک، نام نماینده، عنوان…) + فیلتر نوع/وضعیت/زون‌بند/بازهٔ تاریخ
         + ثبت/ویرایش سند + دیالوگ جزئیات با چاپ برگهٔ جایگاه
      ۲) ساختار آرشیو: مدیریت کابینت/قفسه/زون‌بند با کد خودکار
         (CAB-01 · CAB-01-S2 · CAB-01-S2-B1) و آمار اسناد
-     ۳) نمایندگان فروش: افراد بیرونی (نام، موبایل، شرکت، سمت) + سوابق
    اسناد دارای قلم مرجوعی با برچسب قرمز نمایش داده می‌شوند.
+   تب «نمایندگان فروش» در R8 به انبار ← تأمین‌کنندگان و اشخاص منتقل شد
+   (suppliers.tsx) — فهرست نمایندگان فقط برای گزینشگر سند همین‌جا می‌آید.
    دسترسی: OWNER/GM/ADMIN/EXEC/ACC
    ───────────────────────────────────────────────────────────── */
 
@@ -279,10 +280,8 @@ export default function ArchiveView() {
   const [cabinets, setCabinets] = useState<CabinetNode[]>([])
   const [totals, setTotals] = useState<any>(null)
 
-  /* ── نمایندگان ── */
+  /* ── نمایندگان (فقط برای گزینشگر سند — مدیریت کامل در انبار ← تأمین‌کنندگان و اشخاص) ── */
   const [reps, setReps] = useState<RepItem[]>([])
-  const [repQ, setRepQ] = useState('')
-  const [repQEff, setRepQEff] = useState('')
 
   /* ── دیالوگ سند (ثبت/ویرایش) ── */
   const emptyForm = {
@@ -319,34 +318,19 @@ export default function ArchiveView() {
   const [structForm, setStructForm] = useState<any>(emptyStruct)
   const [savingStruct, setSavingStruct] = useState(false)
 
-  /* ── دیالوگ نماینده ── */
-  const emptyRep = { id: '', name: '', mobile: '', company: '', title: '', note: '', active: true }
-  const [repOpen, setRepOpen] = useState(false)
-  const [repForm, setRepForm] = useState<any>(emptyRep)
-  const [savingRep, setSavingRep] = useState(false)
-
-  /* ── سوابق نماینده ── */
-  const [repHist, setRepHist] = useState<RepItem | null>(null)
-  const [repHistDocs, setRepHistDocs] = useState<DocItem[]>([])
-  const [repHistLoading, setRepHistLoading] = useState(false)
-
   /* ═══════════ بارگذاری داده‌ها ═══════════ */
 
   useEffect(() => {
     const t = setTimeout(() => setQEff(q), 400)
     return () => clearTimeout(t)
   }, [q])
-  useEffect(() => {
-    const t = setTimeout(() => setRepQEff(repQ), 350)
-    return () => clearTimeout(t)
-  }, [repQ])
 
   useEffect(() => {
     setPage(1)
     void loadDocs(1)
   }, [qEff, fKind, fStatus, fBinder, fFrom, fTo])
   useEffect(() => { void loadStructure() }, [])
-  useEffect(() => { void loadReps() }, [repQEff])
+  useEffect(() => { void loadReps() }, [])
 
   /** صفحهٔ صریح می‌گیرد تا رقابت پاسخ‌ها ممکن نشود؛ پاسخ کهنه با seq دور ریخته می‌شود */
   async function loadDocs(p = page) {
@@ -384,9 +368,10 @@ export default function ArchiveView() {
     setTotals(r.data.totals || null)
   }
 
+  /** فهرست نمایندگان — برای گزینشگر سند (CRUD کامل: انبار ← تأمین‌کنندگان و اشخاص) */
   async function loadReps() {
-    const r = await api(`/api/archive/reps${qs({ q: repQEff || undefined })}`)
-    if (!r.ok) { toast.error(r.error || 'بارگذاری نمایندگان ناموفق بود'); return }
+    const r = await api('/api/archive/reps')
+    if (!r.ok) return /* بدون toast — فقط گزینشگر خالی می‌ماند */
     setReps(r.data.items || [])
   }
 
@@ -542,6 +527,41 @@ export default function ArchiveView() {
     setDetail(r.data)
   }
 
+  /* ═══ R8: اسکن دیجیتال سند — بارگذاری/مشاهده/حذف ═══ */
+  const [scanBusy, setScanBusy] = useState(false)
+  const scanFileRef = useRef<HTMLInputElement | null>(null)
+
+  async function uploadScan(d: DocItem, file: File) {
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return toast.error('قالب اسکن باید PNG یا JPG یا WebP باشد')
+    if (file.size > 300 * 1024) return toast.error('حجم اسکن بیش از ۳۰۰ کیلوبایت است — اسکن کوچک‌تر بارگذاری کنید')
+    setScanBusy(true)
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader()
+        fr.onload = () => resolve(String(fr.result))
+        fr.onerror = () => reject(new Error('read-failed'))
+        fr.readAsDataURL(file)
+      })
+      const r = await api('/api/archive', { method: 'PATCH', body: { id: d.id, scan: { dataUrl, name: file.name } } })
+      if (!r.ok) { toast.error(r.error || 'بارگذاری اسکن ناموفق بود'); return }
+      toast.success('اسکن دیجیتال سند ذخیره شد')
+      setDetail((cur: any) => (cur && cur.id === d.id ? { ...cur, ...r.data, scanDataUrl: dataUrl } : cur))
+      void loadDocs()
+    } finally { setScanBusy(false) }
+  }
+
+  async function removeScan(d: DocItem) {
+    if (!window.confirm('اسکن دیجیتال این سند حذف شود؟')) return
+    setScanBusy(true)
+    try {
+      const r = await api('/api/archive', { method: 'PATCH', body: { id: d.id, scan: null } })
+      if (!r.ok) { toast.error(r.error || 'حذف اسکن ناموفق بود'); return }
+      toast.success('اسکن حذف شد')
+      setDetail((cur: any) => (cur && cur.id === d.id ? { ...cur, hasScan: false, scanName: null, scanDataUrl: null } : cur))
+      void loadDocs()
+    } finally { setScanBusy(false) }
+  }
+
   function printCover(d: DocItem) {
     printHTML(coverHTML(d, user?.fullName || '—'), { width: '210mm' })
   }
@@ -618,58 +638,6 @@ export default function ArchiveView() {
     void loadStructure(); void loadDocs()
   }
 
-  /* ═══════════ نمایندگان فروش ═══════════ */
-
-  function openRepCreate() { setRepForm({ ...emptyRep }); setRepOpen(true) }
-  function openRepEdit(rep: RepItem) {
-    setRepForm({ id: rep.id, name: rep.name, mobile: rep.mobile || '', company: rep.company || '', title: rep.title || '', note: rep.note || '', active: rep.active })
-    setRepOpen(true)
-  }
-
-  async function submitRep() {
-    if (!repForm.name.trim()) return toast.error('نام نماینده را وارد کنید')
-    setSavingRep(true)
-    const body = {
-      name: repForm.name.trim(),
-      mobile: repForm.mobile.trim() || null,
-      company: repForm.company.trim() || null,
-      title: repForm.title.trim() || null,
-      note: repForm.note.trim() || null,
-      active: !!repForm.active,
-    }
-    const r = repForm.id
-      ? await api('/api/archive/reps', { method: 'PUT', body: { ...body, id: repForm.id } })
-      : await api('/api/archive/reps', { method: 'POST', body })
-    setSavingRep(false)
-    if (!r.ok) return toast.error(r.error || 'ذخیره نماینده انجام نشد')
-    toast.success(repForm.id ? 'نماینده به‌روزرسانی شد' : 'نماینده ثبت شد')
-    setRepOpen(false)
-    void loadReps()
-  }
-
-  async function delRep(rep: RepItem) {
-    if (!window.confirm(`نمایندهٔ «${rep.name}» حذف شود؟ سندهای ثبت‌شده با نام او باقی می‌مانند.`)) return
-    const r = await api(`/api/archive/reps?id=${rep.id}`, { method: 'DELETE' })
-    if (!r.ok) return toast.error(r.error || 'حذف انجام نشد')
-    toast.success('نماینده حذف شد')
-    void loadReps()
-  }
-
-  async function toggleRep(rep: RepItem) {
-    const r = await api('/api/archive/reps', { method: 'PUT', body: { id: rep.id, active: !rep.active } })
-    if (!r.ok) return toast.error(r.error || 'تغییر وضعیت انجام نشد')
-    void loadReps()
-  }
-
-  async function openRepHistory(rep: RepItem) {
-    setRepHist(rep)
-    setRepHistDocs([])
-    setRepHistLoading(true)
-    const r = await api(`/api/archive?repId=${rep.id}&pageSize=100&sort=date`)
-    setRepHistLoading(false)
-    if (!r.ok) { toast.error(r.error || 'دریافت سوابق ناموفق بود'); return }
-    setRepHistDocs(r.data?.items || [])
-  }
 
   /* ═══════════ رندر ═══════════ */
 
@@ -728,7 +696,6 @@ export default function ArchiveView() {
         <TabsList>
           <TabsTrigger value="docs"><I.search size={14} className="ml-1 inline" /> اسناد</TabsTrigger>
           <TabsTrigger value="structure"><I.layoutGrid size={14} className="ml-1 inline" /> ساختار آرشیو</TabsTrigger>
-          <TabsTrigger value="reps"><I.users size={14} className="ml-1 inline" /> نمایندگان فروش</TabsTrigger>
         </TabsList>
 
         {/* ═══════════ تب ۱: اسناد ═══════════ */}
@@ -987,74 +954,6 @@ export default function ArchiveView() {
           </div>
         )}
 
-        {/* ═══════════ تب ۳: نمایندگان فروش ═══════════ */}
-        {tab === 'reps' && (
-          <div className="space-y-3 pt-3">
-            <Card>
-              <CardContent className="flex flex-wrap items-center gap-2 p-4">
-                <div className="relative min-w-52 flex-1">
-                  <I.search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                  <Input value={repQ} onChange={(e: any) => setRepQ(e.target.value)} placeholder="جست‌وجوی نماینده (نام، موبایل، شرکت، سمت)…" className="h-9 pr-9 text-sm" />
-                </div>
-                <span className="num text-xs text-stone-500">{fa(reps.length)} نماینده</span>
-                <Button size="sm" className="gap-1.5" onClick={openRepCreate}><I.plus size={14} /> نمایندهٔ جدید</Button>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>نام</TableHead>
-                      <TableHead className="text-center">موبایل</TableHead>
-                      <TableHead>شرکت</TableHead>
-                      <TableHead>سمت</TableHead>
-                      <TableHead className="text-center">اسناد</TableHead>
-                      <TableHead className="text-center">وضعیت</TableHead>
-                      <TableHead className="text-center">عملیات</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reps.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="py-10 text-center text-sm text-stone-400">
-                        نماینده‌ای ثبت نشده — نمایندگان فروش (کسانی که چک/نقد می‌گیرند یا مرجوعی می‌آورند) را اضافه کنید.
-                      </TableCell></TableRow>
-                    ) : reps.map((rep) => (
-                      <TableRow key={rep.id}>
-                        <TableCell>
-                          <button className="text-sm font-bold text-stone-800 hover:text-emerald-700 hover:underline" onClick={() => void openRepHistory(rep)}>
-                            {rep.name}
-                          </button>
-                          {rep.note ? <div className="max-w-48 truncate text-[10px] text-stone-400">{rep.note}</div> : null}
-                        </TableCell>
-                        <TableCell className="num text-center text-xs text-stone-600" dir="ltr">{rep.mobile ? toFaDigits(rep.mobile) : '—'}</TableCell>
-                        <TableCell className="max-w-40 truncate text-xs text-stone-600">{rep.company || '—'}</TableCell>
-                        <TableCell className="text-xs text-stone-600">{rep.title || '—'}</TableCell>
-                        <TableCell className="num text-center text-xs font-bold text-emerald-700">{fa(rep.documentsCount)}</TableCell>
-                        <TableCell className="text-center">
-                          <button onClick={() => void toggleRep(rep)} title="تغییر وضعیت">
-                            <Badge variant="outline" className={rep.active
-                              ? 'border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700'
-                              : 'border-stone-200 bg-stone-100 text-[10px] text-stone-500'}>
-                              {rep.active ? 'فعال' : 'غیرفعال'}
-                            </Badge>
-                          </button>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-0.5">
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="سوابق اسناد" onClick={() => void openRepHistory(rep)}><I.history size={14} className="text-emerald-700" /></Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="ویرایش" onClick={() => openRepEdit(rep)}><I.pencil size={13} className="text-stone-600" /></Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="حذف" onClick={() => void delRep(rep)}><I.trash size={13} className="text-rose-600" /></Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
-        )}
       </Tabs>
 
       {/* ═══════════ دیالوگ ثبت/ویرایش سند ═══════════ */}
@@ -1200,6 +1099,9 @@ export default function ArchiveView() {
               <Input className="h-9 text-xs" placeholder="یادداشت (مثلاً ساعت دریافت)" value={form.repNote}
                 onChange={(e: any) => setForm((f: any) => ({ ...f, repNote: e.target.value }))} />
             </div>
+            <p className="mt-2 text-[10px] text-stone-400">
+              مدیریت فهرست نمایندگان (ثبت/ویرایش/سوابق): انبار ← تأمین‌کنندگان و اشخاص ← تب «نمایندگان فروش».
+            </p>
           </div>
 
           {/* جایگاه فیزیکی */}
@@ -1427,6 +1329,42 @@ export default function ArchiveView() {
                       </div>
                     ) : null}
 
+                    {/* ═══ R8: اسکن دیجیتال سند ═══ */}
+                    <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-3">
+                      <p className="mb-2 flex flex-wrap items-center gap-1.5 text-xs font-bold text-teal-800">
+                        <I.scan size={13} /> اسکن دیجیتال سند
+                        {detail.hasScan && <Badge variant="outline" className="border-teal-300 bg-white text-[10px] text-teal-700">موجود</Badge>}
+                      </p>
+                      {(detail as any).scanDataUrl ? (
+                        <div className="space-y-2">
+                          <a href={(detail as any).scanDataUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-teal-200 bg-white transition-shadow hover:shadow-md">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={(detail as any).scanDataUrl} alt={`اسکن ${detail.title}`} className="max-h-72 w-full object-contain" />
+                          </a>
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-500">
+                            <span className="truncate">{detail.scanName || 'اسکن سند'} — برای بزرگ‌نمایی روی تصویر کلیک کنید</span>
+                            <div className="flex gap-1.5">
+                              <Button size="sm" variant="outline" className="h-8 gap-1" disabled={scanBusy} onClick={() => scanFileRef.current?.click()}>
+                                <I.loader size={12} className={scanBusy ? 'animate-spin' : 'hidden'} /> جایگزینی
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-8 gap-1 text-rose-600" disabled={scanBusy} onClick={() => void removeScan(detail)}>
+                                <I.trash size={12} /> حذف اسکن
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-teal-300 bg-white/60 p-4 text-center">
+                          <p className="text-xs leading-5 text-stone-600">تصویر اسکن‌شدهٔ مدرک (فاکتور/رسید/چک) را اینجا نگه دارید تا بعداً بدون مراجعه به بایگانی فیزیکی قابل مشاهده باشد.</p>
+                          <Button size="sm" className="gap-1.5" disabled={scanBusy} onClick={() => scanFileRef.current?.click()}>
+                            {scanBusy ? <I.loader size={13} className="animate-spin" /> : <I.scan size={13} />} بارگذاری اسکن (PNG/JPG · حداکثر ۳۰۰KB)
+                          </Button>
+                        </div>
+                      )}
+                      <input ref={scanFileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+                        onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadScan(detail, f) }} />
+                    </div>
+
                     <DialogFooter className="mt-1">
                       <Button variant="outline" className="gap-1.5" onClick={() => printCover(detail)}>
                         <I.printer size={14} /> چاپ برگهٔ جایگاه
@@ -1511,85 +1449,6 @@ export default function ArchiveView() {
         </DialogContent>
       </Dialog>
 
-      {/* ═══════════ دیالوگ نمایندهٔ فروش ═══════════ */}
-      <Dialog open={repOpen} onOpenChange={setRepOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><I.user size={16} className="text-emerald-700" /> {repForm.id ? 'ویرایش نماینده' : 'نمایندهٔ فروش جدید'}</DialogTitle>
-            <DialogDescription>نمایندگان تأمین‌کنندگان: کسانی که چک/نقد می‌گیرند، مرجوعی می‌آورند یا کالا تحویل می‌دهند.</DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-stone-500">نام و نام خانوادگی <span className="text-rose-500">*</span></label>
-              <Input value={repForm.name} onChange={(e: any) => setRepForm((f: any) => ({ ...f, name: e.target.value }))} placeholder="مثلاً: رضا احمدی" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-stone-500">موبایل</label>
-              <Input dir="ltr" className="num h-9 text-center text-sm" value={toFaDigits(repForm.mobile)}
-                onChange={(e: any) => setRepForm((f: any) => ({ ...f, mobile: toEnDigits(e.target.value).replace(/[^\d]/g, '') }))}
-                placeholder="۰۹۱۲۳۴۵۶۷۸۹" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-stone-500">شرکت / تأمین‌کننده</label>
-              <Input value={repForm.company} onChange={(e: any) => setRepForm((f: any) => ({ ...f, company: e.target.value }))} placeholder="مثلاً: کاله" />
-            </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-stone-500">سمت</label>
-              <Input value={repForm.title} onChange={(e: any) => setRepForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="مثلاً: نمایندهٔ فروش · راننده" />
-            </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-stone-500">یادداشت</label>
-              <Textarea rows={2} value={repForm.note} onChange={(e: any) => setRepForm((f: any) => ({ ...f, note: e.target.value }))} placeholder="…" />
-            </div>
-            <label className="col-span-2 flex cursor-pointer items-center gap-2 text-xs text-stone-600">
-              <input type="checkbox" checked={repForm.active} onChange={(e: any) => setRepForm((f: any) => ({ ...f, active: e.target.checked }))}
-                className="h-4 w-4 accent-emerald-600" />
-              فعال (در فهرست انتخاب سند دیده می‌شود)
-            </label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRepOpen(false)}>انصراف</Button>
-            <Button disabled={savingRep} onClick={() => void submitRep()}>{savingRep ? 'در حال ذخیره…' : 'ذخیره'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ═══════════ دیالوگ سوابق نماینده ═══════════ */}
-      <Dialog open={!!repHist} onOpenChange={(o: boolean) => !o && setRepHist(null)}>
-        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
-          {repHist && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2"><I.history size={16} className="text-emerald-700" /> سوابق «{repHist.name}»</DialogTitle>
-                <DialogDescription>
-                  {repHist.company ? `${repHist.company} · ` : ''}{repHist.title || 'نمایندهٔ فروش'} — {fa(repHistDocs.length)} سند
-                </DialogDescription>
-              </DialogHeader>
-              {repHistLoading ? (
-                <p className="py-8 text-center text-sm text-stone-400">در حال دریافت…</p>
-              ) : repHistDocs.length === 0 ? (
-                <p className="py-8 text-center text-sm text-stone-400">سندی برای این نماینده ثبت نشده است.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {repHistDocs.map((d) => {
-                    const k = kindMeta(d.kind)
-                    return (
-                      <button key={d.id} className="flex w-full items-center gap-2 rounded-lg border border-stone-200 p-2 text-right hover:bg-emerald-50/50"
-                        onClick={() => { setRepHist(null); void openDetails(d) }}>
-                        <Badge variant="outline" className={cn('flex-none text-[9px]', k.cls)}>{k.label}</Badge>
-                        <span className="min-w-0 flex-1 truncate text-xs font-bold text-stone-700">{d.title}</span>
-                        <span className="num flex-none text-[10px] text-stone-500">{faDate(d.dateJalali)}</span>
-                        {d.repRole ? <span className="flex-none text-[10px] text-stone-400">{d.repRole}</span> : null}
-                        {d.amount > 0 ? <span className="num flex-none text-[10px] font-bold text-stone-600">{money(d.amount)}</span> : null}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

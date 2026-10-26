@@ -287,6 +287,7 @@ model Order {
   supplierName  String?
   deliveryDate  String? // Jalali
   payMethod     String    @default("CASH") // CASH | CHEQUE | POS
+  chequeDays    Int       @default(0) // R8: سررسید چک این سفارش (روز) — هنگام پایان دریافت، چک با این سررسید خودکار ثبت می‌شود
   notes         String?
   totalAmount   Float     @default(0)
   createdById   String?
@@ -309,7 +310,9 @@ model OrderItem {
   unitBuyPrice      Float   @default(0)
   printedPrice      Float   @default(0)
   receivedQty       Int?
-  status            String  @default("PENDING") // PENDING | OK | MISSING | REJECTED
+  returnedQty       Int     @default(0) // R8: تعداد مرجوعی جزئی همین قلم (مثلاً ۴ از ۱۲)
+  returnReason      String? // R8: علت مرجوعی (شکسته · قیمت چاپی متفاوت · تاریخ‌گذشته · …)
+  status            String  @default("PENDING") // PENDING | OK | MISSING | REJECTED | PARTIAL_RETURN | RETURNED
   expiryDate        String?
   note              String?
   // v0.2: سفارش بر اساس کارتن
@@ -370,6 +373,18 @@ model ReturnPayment {
   createdAt DateTime @default(now())
 }
 
+/// الگوی پیام مرجوعی — پیام آمادهٔ مشتری بر اساس علت مرجوعی (R10-MSG)
+/// reason: یکی از REASON_PRESETS (کالای معیوب، …) یا «*» برای پیش‌فرض کلی
+model ReturnMsgTemplate {
+  id        String   @id @default(cuid())
+  reason    String   @unique // علت مرجوعی (دقیقاً مثل REASON_PRESETS) یا «*» برای پیش‌فرض کلی
+  title     String
+  body      String   // با جای‌نگردها: {مشتری} {مبلغ} {کد} {تاریخ} {علت} {بانک} {شماره‌پیگیری}
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ============ CRM ============
 
 model Customer {
@@ -419,6 +434,7 @@ model Cheque {
   dueDate     String // Jalali
   note        String?
   orderCode   String?
+  orderId     String? // R8: سفارشی که این چک برایش خودکار ثبت شد
   historyJson String   @default("[]") // [{at, by, action, detail}]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -687,6 +703,25 @@ model WasteRecord {
   userName  String?
   note      String?
   createdAt DateTime @default(now())
+
+  // ── R9: ضایعات به تفکیک طرف‌حساب (تأمین‌کننده) — برگشت با سفارش بعدی ──
+  // گردش کار: PENDING (در انبار ضایعاتِ تأمین‌کننده) → SELECTED (خانم لطفی برای سفارش بعدی علامت می‌زند)
+  // → RETURNED (هنگام پایان دریافت سفارش، همراه مامور پخش به تأمین‌کننده برگشت)
+  supplierId       String?
+  supplierName     String?
+  productId        String?
+  barcode          String?
+  status           String   @default("PENDING") // PENDING | SELECTED | RETURNED
+  orderId          String?
+  orderCode        String?
+  selectedAtJalali String?
+  selectedByName   String?
+  returnedAtJalali String?
+
+  // ── R11: مامور پخش (نمایندهٔ تأمین‌کننده) که اقلام ضایعات به او سپرده شد —
+  // هنگام «پایان دریافت» اجباری ثبت می‌شود (نام کامل + موبایل)
+  repName  String?
+  repPhone String?
 }
 
 // ============ SETTINGS ============
@@ -1052,10 +1087,11 @@ model SalesRep {
   id        String   @id @default(cuid())
   name      String
   mobile    String?
-  company   String? // شرکت / تأمین‌کنندهٔ مربوطه
+  company   String? // شرکت / تأمین‌کنندهٔ مربوطه (متن آزاد — برای سازگاری با گذشته)
   title     String? // سمت (نماینده · راننده …)
   note      String?
   active    Boolean  @default(true)
+  supplierIdsJson String? // R10: آرایهٔ JSON شناسهٔ تأمین‌کننده‌هایی که این نماینده برایشان کار می‌کند
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1086,6 +1122,9 @@ model ArchiveDocument {
   // محل فیزیکی سند
   binderId       String?
   folio          String? // شمارهٔ صفحه/جیب داخل زون‌بند
+  // R8: اسکن دیجیتال سند (data-URL تصویر — مثل لوگوی برند، حداکثر ~۳۰۰KB)
+  scanDataUrl    String?
+  scanName       String? // نام فایل اصلی اسکن
   // مبالغ و وضعیت
   amount         Float    @default(0)
   status         String   @default("ARCHIVED") // PENDING | IN_PROGRESS | ARCHIVED | MISSING
@@ -1121,4 +1160,51 @@ model TradeRecord {
   createdAt   DateTime @default(now())
 
   @@unique([kind, month, invoiceNo, rowIdx])
+}
+
+// ===================== R8 — کنترل انقضای کالاها (روی ردیف/قفسه) =====================
+
+/// بازرسی انقضا توسط چیدمان‌گر — مدیر انتخاب می‌کند کدام چیدمان‌گر، کدام بخش/ردیف را
+/// بررسی کرده و سیستم آخرین وضعیت هر ردیف را نگه می‌دارد («هر ردیف کِی و چطور دیده شد»)
+model LaneCheck {
+  id               String   @id @default(cuid())
+  dateJalali       String // YYYY-MM-DD روز بازرسی
+  merchandiserId   String? // کاربر چیدمان‌گر (خانم لطفی / آقای ملایی و…)
+  merchandiserName String
+  sectionLabel     String // بخش فروشگاه (برچسب بلوک نقشه — G1 | IC-A | NUTS | …)
+  lane             String // ردیف/طبقهٔ مشخص — «طبقهٔ ۲» | «قفسهٔ یخچال ۱» | «باتوم راست» …
+  status           String   @default("ok") // ok | needs_attention | problem
+  expiredFound     Int      @default(0) // تعداد اقلام تاریخ‌گذشتهٔ پیدا‌شده
+  nearExpiry       Int      @default(0) // اقلام نزدیک انقضا (۳۰ روز)
+  removedQty       Int      @default(0) // تعداد جمع‌آوری‌شده از قفسه
+  note             String?
+  createdById      String?
+  createdByName    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([sectionLabel, lane])
+}
+
+// ===================== R8 — زمان‌بندی انبارگردانی بر اساس کالا =====================
+
+/// برنامهٔ شمارش دوره‌ای هر کالا — بعد از هر انبارگردانی، تاریخ بعدی بر اساس دورهٔ
+/// عملی (بر پایهٔ گردش فروش) خودکار می‌نشیند؛ مدیر می‌تواند دوره‌ها را شخصی‌سازی کند
+model CountSchedule {
+  id              String   @id @default(cuid())
+  productId       String
+  productName     String
+  barcode         String?
+  intervalDays    Int      @default(30) // دورهٔ شمارش (روز) — 7/14/30/60/90/120/180
+  lastCountJalali String? // آخرین بار کِی شمرده شد
+  lastDiff        Int      @default(0) // آخرین مغایرت
+  nextDueJalali   String // موعد بعدی
+  active          Boolean  @default(true)
+  autoReschedule  Boolean  @default(true) // بعد از هر شمارش، موعد بعدی خودکار جلو برود
+  priority        String   @default("NORMAL") // HIGH | NORMAL | LOW (بر پایهٔ گردش فروش)
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([productId])
 }

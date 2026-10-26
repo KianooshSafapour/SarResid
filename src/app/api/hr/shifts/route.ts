@@ -17,8 +17,9 @@ export const dynamic = 'force-dynamic'
  *    مرخصی‌های سیستمی از LeaveRequest می‌آیند: روز پوشیده‌شده با مرخصی تأییدشدهٔ
  *    تمام‌روز، قفل می‌شود و نوشتن شیفت روی آن رد می‌شود (lockedDays/hourlyLeaves).
  */
-const WRITE_SHIFTS = ['MORNING', 'EVENING', 'LEAVE', 'OFF'] as const
-const SHIFT_LABELS: Record<string, string> = { MORNING: 'صبح', EVENING: 'عصر', NIGHT: 'شب', LEAVE: 'مرخصی', OFF: 'تعطیل' }
+/* R11: BOTH = شیفت دوگانهٔ صبح+عصر — برای پرسنلی که هر دو شیفت را کار می‌کنند */
+const WRITE_SHIFTS = ['MORNING', 'EVENING', 'BOTH', 'LEAVE', 'OFF'] as const
+const SHIFT_LABELS: Record<string, string> = { MORNING: 'صبح', EVENING: 'عصر', BOTH: 'صبح و عصر', NIGHT: 'شب', LEAVE: 'مرخصی', OFF: 'تعطیل' }
 const NEEDS: Record<string, number> = { MORNING: 2, EVENING: 2 }
 /** مرخصی‌های تمام‌روز (قفل‌کنندهٔ سلول) — HOURLY فقط نشانگر ساعتی است */
 const FULL_DAY_LEAVES = ['DAILY', 'SICK', 'UNPAID']
@@ -92,7 +93,10 @@ export async function GET(req: NextRequest) {
   const coverage = dates.map((date, dayIdx) => {
     const counts: Record<string, number> = { MORNING: 0, EVENING: 0, LEAVE: 0, OFF: 0 }
     for (const a of mapped) {
-      if (a.date === date && counts[a.shift] !== undefined) counts[a.shift] += 1
+      if (a.date !== date) continue
+      /* R11: شیفت دوگانه در پوششِ هر دو شیفت می‌شمارَد (نیروی صبح و عصر) */
+      if (a.shift === 'BOTH') { counts.MORNING += 1; counts.EVENING += 1; continue }
+      if (counts[a.shift] !== undefined) counts[a.shift] += 1
     }
     const issues: string[] = []
     let noCoverage = false
@@ -162,7 +166,7 @@ export async function POST(req: NextRequest) {
   if (!weekStart) return fail('هفته نامعتبر است')
   if (!userId) return fail('کاربر را انتخاب کنید')
   if (!Number.isInteger(dayIdx) || dayIdx < 0 || dayIdx > 6) return fail('روز هفته نامعتبر است')
-  if (shiftType === 'NIGHT') return fail('شیفت شب در هایپر زیتون وجود ندارد — صبح، عصر، مرخصی یا تعطیل انتخاب کنید')
+  if (shiftType === 'NIGHT') return fail('شیفت شب در هایپر زیتون وجود ندارد — صبح، عصر، صبح و عصر، مرخصی یا تعطیل انتخاب کنید')
   if (!WRITE_SHIFTS.includes(shiftType as (typeof WRITE_SHIFTS)[number])) return fail('نوع شیفت نامعتبر است')
 
   const target = await db.user.findUnique({ where: { id: userId } })

@@ -52,10 +52,12 @@ export function fa(n: number | string | null | undefined): string {
   if (typeof n === 'number') return n.toLocaleString('en-US').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]).replace(/,/g, '٬')
   return String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
 }
-/** پول به ریال با جداکنندهٔ فارسی */
+/** پول به ریال با جداکنندهٔ فارسی — R10: باگ کامای ASCII برطرف شد
+ *  (قبلاً fa() با رشتهٔ ازپیش‌قالب‌خورده صدا زده می‌شد و مسیر «رشته» فقط ارقام
+ *  را فارسی می‌کرد و کاما لاتین می‌ماند؛ اکنون قالب‌بندی کامل اینجا انجام می‌شود) */
 export function money(n: number | null | undefined): string {
   if (n === null || n === undefined) return '۰'
-  return fa(Math.round(n).toLocaleString('en-US'))
+  return Math.round(n).toLocaleString('en-US').replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]).replace(/,/g, '٬')
 }
 /** پول به تومان */
 export function toman(n: number | null | undefined): string {

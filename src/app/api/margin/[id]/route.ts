@@ -921,20 +921,11 @@ async function nextFolioOf(binderId: string): Promise<number> {
   return max + 1
 }
 
-/** اعلان درون‌برنامه‌ای برای نقش‌ها — مثل R10 سفارش‌ها */
+/** اعلان درون‌برنامه‌ای برای نقش‌ها — R15: با کتابخانهٔ مشترک notify() تا
+    هم ردیف زنگ ایجاد شود و هم رویداد لحظه‌ای (realtime) به نقش‌ها برسد. */
+import { notify } from '@/lib/notify'
 async function notifyRoles(roles: string[], data: { kind: string; severity: string; title: string; body: string; go: string }) {
   for (const role of roles) {
-    await db.notification
-      .create({
-        data: {
-          role,
-          kind: data.kind,
-          severity: data.severity,
-          title: data.title,
-          body: data.body,
-          go: data.go,
-        },
-      })
-      .catch(() => {})
+    await notify({ role, kind: data.kind, severity: data.severity, title: data.title, body: data.body, go: data.go }).catch(() => {})
   }
 }

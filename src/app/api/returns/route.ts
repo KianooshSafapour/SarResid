@@ -8,7 +8,7 @@ import { todayJalaliDash, parseJalaliDash, jalaliToDate, pad2, toFaDigits } from
 export const dynamic = 'force-dynamic'
 
 /** roles allowed to register a return (cashier-side flow) */
-const RETURN_CREATE_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC', 'CASHIER']
+const RETURN_CREATE_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC', 'CASHIER', 'ACC' ]
 
 /** live settlement-type rule (chunk lib): (total, exchange, transfer)
  *  «exchange» فقط وقتی درست است که کالای جایگزین به‌تنهایی کل مبلغ را بپوشاند و
@@ -63,8 +63,8 @@ export async function GET(req: NextRequest) {
   if (!me) return fail('ابتدا وارد شوید', 401)
   // approvals board vs history page — both consume this list endpoint
   const pageKey = (new URL(req.url).searchParams.get('status') || '').trim() === 'pending'
-    ? 'returns/approvals'
-    : 'returns/history'
+    ? 'crm/approvals'
+    : 'crm/history'
   const gate = await assertPageAccess(me, pageKey)
   if (!gate.ok) return fail(gate.deny, 403)
 
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
 
   // auto-upsert CRM customer (per-phone stats, live behaviour)
   if (customerPhone) {
-    await db.customer.upsert({
+    const cust = await db.customer.upsert({
       where: { phone: customerPhone },
       create: {
         phone: customerPhone,
@@ -254,6 +254,17 @@ export async function POST(req: NextRequest) {
         lastVisitAt: now,
       },
     })
+    /* R15: هر مرجوعی یک رویداد CRM است — خط زمانی تجربهٔ مشتری */
+    await db.crmEvent
+      .create({
+        data: {
+          customerId: cust.id,
+          kind: 'return',
+          content: `مرجوعی ${code} — ${items.length} قلم · ${Math.round(totalAmount).toLocaleString('en-US')} ریال · علت: ${reason || '—'}${body.exchangeValue ? ' · کارت بانکی' : ''}`,
+          userId: me.id,
+        },
+      })
+      .catch(() => {})
   }
 
   await logActivity({

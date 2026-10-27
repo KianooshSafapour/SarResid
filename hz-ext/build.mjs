@@ -144,6 +144,8 @@ e.s(["default",()=>globalThis.__HZ_VIEWS__],${ID_SETUP})},`
   await import('./patch-registry-fixes.mjs')
   await import('./patch-profit-to-finance.mjs')
   await import('./patch-router-query.mjs')
+  await import('./patch-access-all.mjs')
+  await import('./patch-returns-to-crm.mjs')
 
   // ---- loader patch: append async entries before the final "]);"
   let loader = readFileSync(join(ORIG, '2fb9e5ced3d1b0e6.js'), 'utf8')

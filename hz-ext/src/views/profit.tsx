@@ -492,7 +492,7 @@ function rowAnalysis(r: Row, th: Thresholds): Analysis {
 let rowSeq = 0
 
 export default function ProfitView() {
-  const { user } = useShell()
+  const { user, go } = useShell()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [purchasing, setPurchasing] = useState(false)
@@ -520,6 +520,7 @@ export default function ProfitView() {
   /* حالت ویرایش — «بازکردن در فاکتورنویس» از دفتر فاکتورها (hash: ?id=) */
   const [editing, setEditing] = useState<null | { id: string; number: number | string; purchaseOrderId: string | null; archived: boolean; status: string }>(null)
   const editingRef = useRef<string | null>(null)
+  const productRef = useRef<string | null>(null)
 
   /* فرم قلم */
   const [barcode, setBarcode] = useState('')
@@ -561,6 +562,39 @@ export default function ProfitView() {
     const m = String(typeof location !== 'undefined' ? location.hash || '' : '').match(/#\/(?:finance|profit)\/builder\?id=([A-Za-z0-9_-]+)/)
     return m ? m[1] : null
   }
+  /* R15: ?product=<id> از «آمار و تحلیل سود» — فرم جدید با همان کالا پیش‌پر می‌شود */
+  function productIdFromHash(): string | null {
+    const m = String(typeof location !== 'undefined' ? location.hash || '' : '').match(/#\/(?:finance|profit)\/builder\?product=([A-Za-z0-9_-]+)/)
+    return m ? m[1] : null
+  }
+  async function loadProductForNewRow(pid: string) {
+    const r = await api(`/api/products/${encodeURIComponent(pid)}`)
+    if (!r.ok || !r.data) { toast.error(r.error || 'کالا یافت نشد'); return }
+    const p = r.data
+    editingRef.current = null
+    setEditing(null)
+    setItems((cur) => {
+      if (cur.some((it: any) => it.productId === p.id)) return cur
+      return [...cur, {
+        key: ++rowSeq,
+        productId: p.id,
+        barcode: (p.barcodes || [])[0]?.code ?? p.code ?? null,
+        name: p.name,
+        unit: p.unit || 'عدد',
+        quantity: 1,
+        totalCost: Math.round((p.lastBuyPrice || 0)),
+        printedPrice: p.sellPrice2 || p.sellPrice || 0,
+        salePrice: p.sellPrice || p.sellPrice2 || 0,
+        free100: false,
+        baseCost: 0,
+        pct: 0,
+        driver: null,
+        history: null,
+      }]
+    })
+    toast.success(`کالای «${p.name}» برای بازبینی قیمت به فاکتورنویس اضافه شد — قیمت‌ها را با نرخ روز اصلاح کنید`)
+    try { barcodeRef.current?.focus?.() } catch { /* noop */ }
+  }
   async function loadInvoiceForEdit(id: string) {
     const r = await api(`/api/margin/${encodeURIComponent(id)}`)
     if (!r.ok || !r.data?.invoice) { toast.error(r.error || 'بازکردن فاکتور برای ویرایش ناموفق بود'); return }
@@ -601,6 +635,8 @@ export default function ProfitView() {
     const apply = () => {
       const id = invoiceIdFromHash()
       if (id && id !== editingRef.current) void loadInvoiceForEdit(id)
+      const pid = productIdFromHash()
+      if (pid && pid !== productRef.current) { productRef.current = pid; void loadProductForNewRow(pid) }
     }
     apply()
     window.addEventListener('hashchange', apply)
@@ -978,7 +1014,9 @@ export default function ProfitView() {
       })
       setSaving(false)
       if (!r.ok) return toast.error(r.error || 'به‌روزرسانی فاکتور ناموفق بود')
-      toast.success(`فاکتور ${toFaDigits(String(editing.number))} به‌روزرسانی شد — ${fa(items.length)} قلم`)
+      toast.success(`فاکتور ${toFaDigits(String(editing.number))} به‌روزرساری شد — ${fa(items.length)} قلم`)
+      /* R15: پس از ذخیره، به «سفارش‌ها» می‌رویم تا وضعیت سفارش دیده شود */
+      go('supply/orders')
       return
     }
     const r = await api('/api/margin', {
@@ -994,8 +1032,9 @@ export default function ProfitView() {
     })
     setSaving(false)
     if (!r.ok) return toast.error(r.error || 'ثبت فاکتور ناموفق بود')
-    toast.success(`پیش‌نویس شماره ${toFaDigits(String(r.data?.number ?? ''))} با ${fa(items.length)} قلم ثبت شد — پس از رسیدن کالا، از «دفتر فاکتورها» (بخش مالی) تأیید تحویل و بررسی حسابداری را ادامه دهید`)
+    toast.success(`پیش‌نویس شماره ${toFaDigits(String(r.data?.number ?? ''))} با ${fa(items.length)} قلم ثبت شد — وضعیت سفارش را در «سفارش‌ها» ببینید`)
     newInvoice()
+    go('supply/orders')
   }
 
   /* «ثبت تحویل و خرید» — فاکتور سودسنج + سند خرید (+ هلو در صورت دسترسی و انتخاب) */

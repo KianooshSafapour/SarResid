@@ -748,7 +748,9 @@ export default function InvoicesView() {
                     {[...detail.history].reverse().map((h, i) => {
                       /* تاریخ ردپا ISO است — formatJalali فقط Date می‌گیرد (درس‌آموختهٔ کارنامهٔ hz.d.ts) */
                       const hdt = h.at ? new Date(h.at) : null
-                      const hdate = hdt && !isNaN(hdt.getTime()) ? fa(formatJalali(hdt).replace(/-/g, '/')) : ''
+                      /* R15: تاریخ + ساعت هر رویداد — «چه موقع دقیقاً» */
+                      const htime = hdt && !isNaN(hdt.getTime()) ? fa(String(hdt.getHours()).padStart(2, '0') + ':' + String(hdt.getMinutes()).padStart(2, '0')) : ''
+                      const hdate = hdt && !isNaN(hdt.getTime()) ? `${fa(formatJalali(hdt).replace(/-/g, '/'))}${htime ? ` · ${htime}` : ''}` : ''
                       return (
                       <div key={i} className="flex gap-2 text-[11px] leading-5">
                         <span className="text-stone-400 whitespace-nowrap">{hdate}</span>

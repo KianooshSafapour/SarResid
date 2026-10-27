@@ -84,11 +84,11 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   'supply/receiving': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'SK', 'PM'],
   'supply/products': ['*'],
   'supply/suppliers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM', 'SK', 'HC'],
-  'returns/approvals': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
-  'returns/payments': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
-  'returns/customers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC'],
-  'returns/new': ['*'],
-  'returns/history': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
+  'crm/approvals': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
+  'crm/payments': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
+  'crm/notebook': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC'],
+  'crm/new': ['*'],
+  'crm/history': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
   'finance/builder': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'],
   'finance/invoices': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC'],
   'finance/stats': ['OWNER', 'GM', 'ADMIN', 'ACC'],
@@ -174,15 +174,7 @@ const SECTIONS: SectionDef[] = [
       { key: 'supply/receiving', label: 'دریافت کالا' },
     ],
   },
-  {
-    key: 'returns', label: 'مرجوعی', icon: 'receipt',
-    pages: [
-      { key: 'returns/new', label: 'ثبت مرجوعی' },
-      { key: 'returns/history', label: 'تاریخچه' },
-      { key: 'returns/approvals', label: 'در انتظار تأیید' },
-      { key: 'returns/customers', label: 'دفترچه مشتریان' },
-    ],
-  },
+
   {
     key: 'finance', label: 'مالی', icon: 'banknote',
     pages: [
@@ -205,9 +197,13 @@ const SECTIONS: SectionDef[] = [
     ],
   },
   {
-    key: 'crm', label: 'مشتریان', icon: 'handshake',
+    key: 'crm', label: 'فروش و مشتریان', icon: 'handshake',
     pages: [
-      { key: 'crm/customers', label: 'مشتریان' },
+      { key: 'crm/new', label: 'ثبت مرجوعی' },
+      { key: 'crm/history', label: 'تاریخچه مرجوعی' },
+      { key: 'crm/approvals', label: 'در انتظار تأیید' },
+      { key: 'crm/notebook', label: 'دفترچه مشتریان' },
+      { key: 'crm/customers', label: 'مشتریان و طیف‌بندی' },
       { key: 'crm/campaigns', label: 'کمپین‌ها' },
     ],
   },

@@ -73,7 +73,7 @@ export async function aggregateReturnCustomers(q: string): Promise<Agg[]> {
 export async function GET(req: NextRequest) {
   const me = await getSessionUser()
   if (!me) return fail('ابتدا وارد شوید', 401)
-  const gate = await assertPageAccess(me, 'returns/customers')
+  const gate = await assertPageAccess(me, 'crm/notebook')
   if (!gate.ok) return fail(gate.deny, 403)
 
   const url = new URL(req.url)
@@ -87,16 +87,68 @@ export async function GET(req: NextRequest) {
   else list.sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
 
   const total = list.length
-  const items = list.slice((page - 1) * limit, page * limit).map((a) => ({
-    phone: a.phone,
-    count: a.count,
-    pendingCount: a.pendingCount,
-    exchange: a.exchange,
-    transfer: a.transfer,
-    firstAt: a.firstAt.toISOString(),
-    lastAt: a.lastAt.toISOString(),
-    name: a.name,
-  }))
+
+  /* R15: پیوند دفترچه با CRM — سطح‌بندی + یادداشت + خط زمانی رویدادها */
+  const pageRows = list.slice((page - 1) * limit, page * limit)
+  const phones = pageRows.map((a) => a.phone)
+  const [crmRows, eventRows] = await Promise.all([
+    db.customer.findMany({ where: { phone: { in: phones } } }),
+    phones.length
+      ? db.crmEvent.findMany({
+          where: { customerId: { in: (await db.customer.findMany({ where: { phone: { in: phones } }, select: { id: true } })).map((c) => c.id) } },
+          orderBy: { createdAt: 'desc' },
+          take: 400,
+          select: { customerId: true, kind: true, content: true, createdAt: true },
+        })
+      : Promise.resolve([]),
+  ])
+  const crmByPhone = new Map(crmRows.map((c) => [c.phone, c]))
+  const eventsByCust = new Map<string, typeof eventRows>()
+  for (const ev of eventRows) {
+    const arr = eventsByCust.get(ev.customerId ?? '') ?? []
+    arr.push(ev)
+    eventsByCust.set(ev.customerId ?? '', arr)
+  }
+  const autoTier = (c: { totalAmount: number; firstAt: Date; lastVisitAt: Date }): string => {
+    const days = Math.max(1, Math.round((Date.now() - c.lastVisitAt.getTime()) / 86400000))
+    if (c.totalAmount >= 50_000_000) return 'VIP'
+    if (c.totalAmount >= 20_000_000) return 'LOYAL'
+    if (c.totalAmount >= 10_000_000) return 'REGULAR'
+    if (days > 90) return 'DORMANT'
+    if (days > 45) return 'AT_RISK'
+    return 'NEW'
+  }
+
+  const items = pageRows.map((a) => {
+    const crm = crmByPhone.get(a.phone) ?? null
+    const evs = crm ? eventsByCust.get(crm.id) ?? [] : []
+    return {
+      phone: a.phone,
+      count: a.count,
+      pendingCount: a.pendingCount,
+      exchange: a.exchange,
+      transfer: a.transfer,
+      firstAt: a.firstAt.toISOString(),
+      lastAt: a.lastAt.toISOString(),
+      name: a.name,
+      /* R15: دادهٔ CRM دفترچه */
+      crm: crm
+        ? {
+            id: crm.id,
+            tier: crm.manualTier ?? autoTier(crm),
+            smsEnabled: crm.smsEnabled,
+            birthday: crm.birthday,
+            note: crm.note,
+            eventCount: evs.length,
+            recentEvents: evs.slice(0, 5).map((ev) => ({
+              kind: ev.kind,
+              content: ev.content,
+              at: ev.createdAt.toISOString(),
+            })),
+          }
+        : null,
+    }
+  })
 
   return ok({
     items,

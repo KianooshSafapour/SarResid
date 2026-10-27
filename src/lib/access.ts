@@ -67,12 +67,13 @@ export const SECTION_DEFAULTS: Record<string, string[]> = {
   home: ['*'],
   tasks: ['*'],
   store: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'MERCH', 'SALES'],
-  supply: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM', 'SK', 'HC'],
-  returns: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
+  // R15: انبار برای همهٔ کارکنان — دریافت/راستی‌آزمایی از R11 برای همه باز است (گیت سمت سرور)
+  supply: ['*'],
+  // R15: بخش «مرجوعی» حذف شد — صفحاتش زیر «فروش و مشتریان» (crm) رفتند
   // R12: بخش «سودسنج» حذف شد — صفحاتش (سودسنج، دفتر فاکتورها، آمار) زیر «مالی» رفتند
   finance: ['OWNER', 'GM', 'ADMIN', 'ACC'],
   hr: ['*'],
-  crm: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'SALES', 'HC'],
+  crm: ['*'], // R15: فروش و مشتریان — مرجوعی + CRM؛ گیت واقعی صفحه‌به‌صفحه سمت سرور
   reports: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM'],
   system: ['OWNER', 'GM', 'ADMIN'],
 }
@@ -80,14 +81,14 @@ export const SECTION_DEFAULTS: Record<string, string[]> = {
 /** page → default roles — mirrors canAccessPage; pages absent here fall back to SECTION_DEFAULTS */
 export const PAGE_DEFAULTS: Record<string, string[]> = {
   // ---- live chunk page map (verbatim) ----
-  'supply/orders': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'ACC'],
+  'supply/orders': ['*'], // R15: وضعیت سفارش‌ها برای همهٔ کارکنان — دریافت/تأیید از R11 باز است
   'supply/receiving': ['*'], // R11: دریافت کالا برای همهٔ کارکنان (مالک: «همه باید بتوانند دریافت و تأیید کنند» — با اصل دو‌نفره سمت سرور)
   'supply/products': ['*'],
   'supply/suppliers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM', 'SK', 'HC'],
-  'returns/approvals': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
-  'returns/payments': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
-  'returns/customers': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'HC'],
-  'finance/stats': ['OWNER', 'GM', 'ADMIN', 'ACC'], // R12: از profit/stats به مالی منتقل شد
+  'crm/approvals': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
+  'crm/payments': ['OWNER', 'GM', 'ADMIN', 'EXEC'],
+  'crm/notebook': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'SALES', 'CASHIER'],
+  'finance/stats': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'], // R15: نمای جدید + حسابدار/عملیات/محصولات
   'finance/cheques': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'finance/payments': ['OWNER', 'GM', 'ADMIN', 'ACC'],
   'hr/payroll': ['OWNER', 'GM', 'ADMIN'],
@@ -122,8 +123,8 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'tasks/messages': ['*'],
   'tasks/feedback': ['*'],
   'tasks/wall': ['*'],
-  'returns/new': ['*'],
-  'returns/history': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
+  'crm/new': ['*'],
+  'crm/history': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'],
   'finance/builder': ['OWNER', 'GM', 'ADMIN', 'ACC', 'EXEC', 'PM'], // R12: سودسنج پیشرفته — از profit/builder به مالی منتقل شد
   'finance/invoices': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC'], // R12: دفتر فاکتورها — گردش‌کار تحویل/بررسی/فاکتور خرید/بایگانی
   'reports/briefing': ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'PM'],

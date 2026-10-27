@@ -686,7 +686,13 @@ export async function POST(req: NextRequest) {
   const [sections, map] = await Promise.all([loadSections(), readLaneMap()])
   if (!sections.some((s) => s.label === sectionLabel)) return fail(`بخش «${sectionLabel}» در فروشگاه شناخته نشد`)
   const allowed = lanesFor(sectionLabel, map)
-  if (!allowed.includes(lane)) return fail(`ردیف «${lane}» برای بخش «${sectionLabel}» تعریف نشده است`)
+  /* R15: ردیف ساختاری «سمت چپ|راست · طبقهٔ N / ستون M» بدون تعریف در ویرایشگر پذیرفته
+     می‌شود — گوندولا‌ها دو سمت دارند و هر طبقه چند ستون؛ مدیر برای بازبینی انقضا
+     همان ترکیب را در فرم می‌چیند. */
+  const STRUCTURED_LANE_RE = /^(سمت (چپ|راست) · )?طبقهٔ [۱-۷]( \/ ستون [۱-۹]\d?)?$/
+  if (!allowed.includes(lane) && !STRUCTURED_LANE_RE.test(lane)) {
+    return fail(`ردیف «${lane}» برای بخش «${sectionLabel}» تعریف نشده است`)
+  }
 
   const status = body.status === undefined || body.status === null || String(body.status) === '' ? 'ok' : String(body.status)
   if (!STATUS_LABELS[status]) return fail('وضعیت بازرسی باید یکی از «سالم»، «نیازمند توجه» یا «مشکل دارد» باشد')

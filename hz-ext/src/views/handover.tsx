@@ -37,8 +37,8 @@ const METRICS: {
   key: string; label: string; icon: string; go: string; roles: string[];
   tone?: (n: number) => string
 }[] = [
-  { key: 'returnsToday', label: 'مرجوعی‌های امروز', icon: 'receipt', go: 'returns/history', roles: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'] },
-  { key: 'returnsPending', label: 'مرجوعی در انتظار تأیید', icon: 'timer', go: 'returns/approvals', roles: ['OWNER', 'GM', 'ADMIN', 'EXEC'], tone: (n) => (n > 0 ? 'text-rose-600' : '') },
+  { key: 'returnsToday', label: 'مرجوعی‌های امروز', icon: 'receipt', go: 'crm/history', roles: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC', 'HC', 'CASHIER'] },
+  { key: 'returnsPending', label: 'مرجوعی در انتظار تأیید', icon: 'timer', go: 'crm/approvals', roles: ['OWNER', 'GM', 'ADMIN', 'EXEC'], tone: (n) => (n > 0 ? 'text-rose-600' : '') },
   { key: 'lowStockCount', label: 'کالای کم‌موجود', icon: 'trendingDown', go: 'supply/products', roles: ['*'], tone: (n) => (n > 0 ? 'text-amber-600' : '') },
   { key: 'ordersWaiting', label: 'سفارش در انتظار دریافت', icon: 'carton', go: 'supply/orders', roles: ['OWNER', 'GM', 'ADMIN', 'EXEC', 'PM', 'SK', 'ACC'] },
   { key: 'chequesThisWeek', label: 'چک‌های ۷ روز آینده', icon: 'banknote', go: 'finance/cheques', roles: ['OWNER', 'GM', 'ADMIN', 'ACC'], tone: (n) => (n > 0 ? 'text-amber-600' : '') },

@@ -1124,7 +1124,7 @@ export default function ReturnsNewView() {
             <Button size="lg" variant="outline" className="touch-target flex-1 gap-1.5" onClick={resetForm}>
               <I.packagePlus size={16} /> ثبت مرجوعی جدید
             </Button>
-            <Button size="lg" variant="ghost" className="touch-target" onClick={() => go('returns/history')}>
+            <Button size="lg" variant="ghost" className="touch-target" onClick={() => go('crm/history')}>
               <I.history size={16} /> تاریخچه
             </Button>
           </div>

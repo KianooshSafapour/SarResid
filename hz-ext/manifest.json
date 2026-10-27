@@ -119,9 +119,24 @@
    "replaces": true
   },
   {
-   "key": "returns/new",
+   "key": "finance/stats",
+   "src": "stats",
+   "section": "finance",
+   "title": "آمار و تحلیل سود",
+   "roles": [
+    "OWNER",
+    "GM",
+    "ADMIN",
+    "ACC",
+    "EXEC",
+    "PM"
+   ],
+   "replaces": true
+  },
+  {
+   "key": "crm/new",
    "src": "returns",
-   "section": "returns",
+   "section": "crm",
    "title": "ثبت مرجوعی جدید",
    "roles": [
     "*"

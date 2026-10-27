@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 import { canApproveOrdersUser } from '@/lib/access'
+import { notify } from '@/lib/notify'
 import { toFaDigits, toEnDigits, addDaysJalaliDash, todayJalaliDash } from '@/lib/jalali'
 
 const MANAGERS = ['OWNER', 'GM', 'ADMIN', 'EXEC']
@@ -1025,6 +1026,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         detail: `${o.code}${prices ? ` — ${toFaDigits(String(prices.updatedLocal))} قیمت به‌روز / ${toFaDigits(String(prices.pushedHoloo))} در هلو` : ''}`,
         entityId: o.id,
       })
+      /* R15: اعلان لحظه‌ای به حسابدار و مدیران — تأیید مدیر کل انجام شد، سفارش قابل بستن است */
+      for (const role of ['ACC', 'OWNER', 'ADMIN', 'EXEC']) {
+        await notify({
+          role,
+          kind: `order:gm-done:${o.id}`,
+          severity: 'success',
+          title: 'سفارش تأیید مدیر کل شد — قابل بستن',
+          body: `سفارش ${o.code} (${o.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${by} تأیید مدیر کل شد${prices ? ` و قیمت ${toFaDigits(String(prices.updatedLocal))} کالا منتشر گردید` : ''}. حسابدار/مدیر می‌توانند سفارش را ببندند.`,
+          go: `#/supply/receiving?open=${o.id}`,
+        }).catch(() => {})
+      }
       const dGm = await detail(o.id)
       return ok(dGm ? { ...dGm, prices } : { prices })
     }

@@ -136,6 +136,9 @@ export default function LaneCheckView() {
   const [merch, setMerch] = useState<Person | null>(null)
   const [section, setSection] = useState('')
   const [lane, setLane] = useState('')
+  /* R15: چینش ساختاری ردیف — سمت (برای گوندولا) ← طبقه ← ستون */
+  const [laneSide, setLaneSide] = useState('')
+  const [laneStory, setLaneStory] = useState('')
   const [q, setQ] = useState('')
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ status: 'ok', expiredFound: '', nearExpiry: '', removedQty: '', note: '', silent: false })
@@ -828,6 +831,49 @@ export default function LaneCheckView() {
                       )}
                     </div>
 
+                    {/* R15: چینندهٔ ساختاری — سمت ← طبقه ← ستون؛ خروجی ردیفِ ترکیبی */}
+                    {(() => {
+                      const sec = sections.find((x: any) => x.label === section)
+                      const isGondola = (sec as any)?.kind === 'GONDOLA'
+                      const STORIES = ['طبقهٔ ۱', 'طبقهٔ ۲', 'طبقهٔ ۳', 'طبقهٔ ۴', 'طبقهٔ ۵', 'طبقهٔ ۶', 'طبقهٔ ۷']
+                      const COLS = ['ستون ۱', 'ستون ۲', 'ستون ۳', 'ستون ۴', 'ستون ۵']
+                      const composed = `${laneSide ? `${laneSide} · ` : ''}${laneStory}${/ستون/.test(lane) && lane.includes('/') ? ` / ${lane.split('/ ')[1]}` : ''}`
+                      const chip = (on: boolean) => cn('rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-all', on ? 'border-teal-600 bg-teal-600 text-white' : 'border-stone-200 bg-white text-stone-600 hover:border-teal-400')
+                      return (
+                        <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/40 p-2.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-teal-800">چینش ردیف:</span>
+                            {isGondola ? (
+                              <>
+                                <button type="button" className={chip(laneSide === 'سمت چپ')} onClick={() => setLaneSide('سمت چپ')}>سمت چپ</button>
+                                <button type="button" className={chip(laneSide === 'سمت راست')} onClick={() => setLaneSide('سمت راست')}>سمت راست</button>
+                              </>
+                            ) : null}
+                            <button type="button" className={chip(!laneSide && !isGondola)} onClick={() => setLaneSide('')} hidden={isGondola}>—</button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {STORIES.map((st) => (
+                              <button key={st} type="button" className={chip(laneStory === st)} onClick={() => setLaneStory(st)}>{st}</button>
+                            ))}
+                          </div>
+                          {laneStory ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] text-stone-500">ستون این طبقه:</span>
+                              {COLS.map((c) => {
+                                const full = `${laneSide ? `${laneSide} · ` : ''}${laneStory} / ${c}`
+                                return (
+                                  <button key={c} type="button" className={chip(lane === full)} onClick={() => { setLane(full); resetForm(); setStep(3) }}>{c}</button>
+                                )
+                              })}
+                              <button type="button" className={chip(lane === `${laneSide ? `${laneSide} · ` : ''}${laneStory}`)} onClick={() => { setLane(`${laneSide ? `${laneSide} · ` : ''}${laneStory}`); resetForm(); setStep(3) }}>کل طبقه</button>
+                            </div>
+                          ) : null}
+                          {lane && (lane.includes('·') || lane.includes('/')) ? (
+                            <div className="text-[10px] text-teal-800">ردیف انتخاب‌شده: <b>{lane}</b></div>
+                          ) : null}
+                        </div>
+                      )
+                    })()}
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                       {lanesOf(section).map((l) => {
                         const s = stateOf(section, l)

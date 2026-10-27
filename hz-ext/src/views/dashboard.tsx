@@ -38,7 +38,7 @@ const SHIFT_LABEL: Record<string, string> = { MORNING: 'شیفت صبح', EVENIN
 const WIDGETS: WidgetDef[] = [
   { key: 'mytasks', title: 'وظایف من', icon: 'clipboard', group: 'day', go: 'tasks/tasks', link: 'وظایف' },
   { key: 'mychecklists', title: 'چک‌لیست‌های امروز', icon: 'check', group: 'day', go: 'tasks/checklists', link: 'چک‌لیست‌ها' },
-  { key: 'returnsWait', title: 'مرجوعی‌ها', icon: 'receipt', group: 'day', go: 'returns/approvals', link: 'مرجوعی‌ها' },
+  { key: 'returnsWait', title: 'مرجوعی‌ها', icon: 'receipt', group: 'day', go: 'crm/approvals', link: 'مرجوعی‌ها' },
   { key: 'problems', title: 'مشکلات باز', icon: 'alertTriangle', group: 'store', go: 'tasks/problems', link: 'مشکلات' },
   { key: 'orders', title: 'سفارش‌های فعال', icon: 'carton', group: 'store', go: 'supply/orders', link: 'سفارش‌ها' },
   { key: 'cheques', title: 'چک‌های نزدیک', icon: 'banknote', group: 'store', go: 'finance/cheques', link: 'چک‌ها' },
@@ -55,7 +55,7 @@ const GROUPS: { key: GroupKey; label: string; dot: string; icon: string }[] = [
 
 /** نقش‌های پیش‌فرض هر اقدام سریع — آینهٔ PAGE_DEFAULTS سمت سرور */
 const QUICK_ACTIONS: { label: string; icon: string; go: string; roles: string[] }[] = [
-  { label: 'ثبت مرجوعی', icon: 'receipt', go: 'returns/new', roles: [...MANAGERS, 'CASHIER', 'HC'] },
+  { label: 'ثبت مرجوعی', icon: 'receipt', go: 'crm/new', roles: [...MANAGERS, 'CASHIER', 'HC'] },
   { label: 'سفارش جدید', icon: 'packagePlus', go: 'supply/orders', roles: [...MANAGERS, 'PM', 'SK', 'ACC'] },
   { label: 'کنترل قیمت', icon: 'scan', go: 'store/pricecheck', roles: [...MANAGERS, 'PM'] },
   { label: 'چک جدید', icon: 'banknote', go: 'finance/cheques', roles: ['OWNER', 'GM', 'ADMIN', 'ACC'] },
@@ -346,7 +346,7 @@ export default function DashboardView() {
             <div className="mt-1.5">
               <button
                 type="button"
-                onClick={(e: any) => { e.stopPropagation(); go('returns/history') }}
+                onClick={(e: any) => { e.stopPropagation(); go('crm/history') }}
                 className="inline-flex items-center gap-1 rounded-full bg-stone-50 px-2 py-0.5 text-[11px] font-medium text-stone-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
               >
                 <I.receipt className="h-3 w-3" />
@@ -441,7 +441,7 @@ export default function DashboardView() {
       meta = latestIso ? `آخرین پست: ${longFa(formatJalali(new Date(latestIso)))}` : 'آخرین‌های دیوار خبری'
     }
 
-    const target = def.key === 'returnsWait' && !isManager ? 'returns/history' : def.go
+    const target = def.key === 'returnsWait' && !isManager ? 'crm/history' : def.go
     return (
       <Tile key={def.key} def={def} span={span} iconCls={iconCls} meta={meta} onClick={() => go(target)}>
         {body}

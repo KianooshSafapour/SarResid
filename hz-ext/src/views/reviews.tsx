@@ -1,19 +1,22 @@
 import { useState, useEffect, useMemo, api, qs, useShell, toast, cn, Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, money, fa, todayJalali, formatJalaliLong, addJalaliDays, Icon, I } from '../lib/hz'
 
 /* ─────────────────────────────────────────────────────────────
-   store/reviews — ارزیابی چیدمان و عملکرد (۴ شاخص علمی)
-   ۱) تاریخ تولید/انقضا و FEFO   ۲) نظم چیدمان
-   ۳) نظافت                       ۴) برچسب و قیمت
+   store/reviews — ارزیابی چیدمان و عملکرد (۵ شاخص علمی · R15)
+   پژوهش: مقیاس ۰..۵ با توصیف رفتاری (BARS) — افزایش نقاط مقیاس بی‌فایده است.
+   کنترل انقضا به ابزار خودش («کنترل انقضای قفسه‌ها») رفت؛ این‌جا فقط عملکرد.
+   ۱) شارژ و کامل بودن قفسه   ۲) نظم چیدمان      ۳) نظافت
+   ۴) برچسب و قیمت           ۵) برخورد و پاسخگویی به مشتری
    ───────────────────────────────────────────────────────────── */
 
 const PARAMS = [
-  { key: 'dateScore', label: 'تاریخ تولید/انقضا — نزدیک‌انقضا در جلو (FEFO)', hint: 'کالاهای نزدیک‌تر به انقضا جلوی کالاهای جدیدتر قرار گیرند' },
-  { key: 'layoutScore', label: 'نظم و ترتیب چیدمان', hint: 'ردیف‌ها مرتب، هم‌جهت و بدون جاافتادگی' },
+  { key: 'dateScore', label: 'شارژ و کامل بودن قفسه', hint: 'قفسه‌ها پر و شارژ؛ جای خالیِ دیده‌شده در دسترس مشتری نیست (ستون قدیمی dateScore — نام حفظ شد)' },
+  { key: 'layoutScore', label: 'نظم و ترتیب چیدمان', hint: 'ردیف‌ها مرتب، هم‌جهت و بدون جاافتادگی؛ کالا در جای تعریف‌شدهٔ الگو' },
   { key: 'cleanScore', label: 'نظافت', hint: 'بدون گرد روی کالا، خط و کف پاکیزه' },
-  { key: 'labelScore', label: 'برچسب و قیمت', hint: 'جلوی هر ردیف محصول، برچسب قیمت موجود' },
+  { key: 'labelScore', label: 'برچسب و قیمت', hint: 'جلوی هر ردیف محصول، برچسب قیمت موجود و خوانا' },
+  { key: 'serveScore', label: 'برخورد و پاسخگویی به مشتری', hint: 'خوش‌رو در دسترس مشتری؛ راهنمایی پیدا کردن کالا؛ پیگیری درخواست' },
 ] as const
 
-const AVATARS: Record<string, string> = { dateScore: '📅', layoutScore: '🧱', cleanScore: '🧼', labelScore: '🏷' }
+const AVATARS: Record<string, string> = { dateScore: '📦', layoutScore: '🧱', cleanScore: '🧼', labelScore: '🏷', serveScore: '🤝' }
 
 export default function ReviewsView() {
   const { user, go } = useShell()
@@ -22,7 +25,7 @@ export default function ReviewsView() {
   const [meta, setMeta] = useState<{ blocks: any[]; staff: any[]; reviews: any[] }>({ blocks: [], staff: [], reviews: [] })
   const [blockLabel, setBlockLabel] = useState('')
   const [reviews, setReviews] = useState<any[]>([])
-  const [form, setForm] = useState({ staffId: '', staffName: '', dateScore: 3, layoutScore: 3, cleanScore: 3, labelScore: 3, note: '', points: '' })
+  const [form, setForm] = useState({ staffId: '', staffName: '', dateScore: 3, layoutScore: 3, cleanScore: 3, labelScore: 3, serveScore: 3, note: '', points: '' })
   const [filterStaff, setFilterStaff] = useState('all')
 
   useEffect(() => { void load() }, [])
@@ -37,7 +40,7 @@ export default function ReviewsView() {
   }
 
   const selectedBlock = useMemo(() => meta.blocks.find((b) => b.label === blockLabel), [meta.blocks, blockLabel])
-  const total = form.dateScore + form.layoutScore + form.cleanScore + form.labelScore
+  const total = form.dateScore + form.layoutScore + form.cleanScore + form.labelScore + form.serveScore
   const history = useMemo(
     () => (reviews || meta.reviews || []).filter((rv) => filterStaff === 'all' || rv.staffName === filterStaff).slice(0, 60),
     [reviews, meta.reviews, filterStaff],

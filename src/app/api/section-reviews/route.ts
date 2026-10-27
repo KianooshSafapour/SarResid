@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
       layoutScore5: to5(r.layoutScore),
       cleanScore5: to5(r.cleanScore),
       labelScore5: to5(r.labelScore),
+      serveScore5: to5(r.serveScore),
     })),
     blocks,
     staff: staffUsers.map((u) => ({
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest) {
     layoutScore?: number
     cleanScore?: number
     labelScore?: number
+    serveScore?: number
     note?: string
     points?: number
   }
@@ -138,7 +140,8 @@ export async function POST(req: NextRequest) {
   const layoutScore = score100(body.layoutScore)
   const cleanScore = score100(body.cleanScore)
   const labelScore = score100(body.labelScore)
-  const avg = Math.round((dateScore + layoutScore + cleanScore + labelScore) / 4)
+  const serveScore = score100(body.serveScore)
+  const avg = Math.round((dateScore + layoutScore + cleanScore + labelScore + serveScore) / 5)
   const points = body.points !== undefined ? clampInt(body.points, 0, 100, avg) : avg
 
   // responsible staff of the line: staffId (validated user) wins; free-text staffName allowed
@@ -165,6 +168,7 @@ export async function POST(req: NextRequest) {
       layoutScore,
       cleanScore,
       labelScore,
+      serveScore,
       note: body.note ? String(body.note).trim().slice(0, 500) || null : null,
       points,
     },

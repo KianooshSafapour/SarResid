@@ -830,6 +830,9 @@ model SectionReview {
   layoutScore  Int      @default(0) // 0-5 نظم و مرتب بودن چیدمان
   cleanScore   Int      @default(0) // 0-5 نظافت خط، قفسه‌ها، کف وعدم گرد روی کالا
   labelScore   Int      @default(0) // 0-5 برچسب و قیمت در برابر هر ردیف
+  /* R15: انقضا به «کنترل انقضای قفسه‌ها» (lane-check) رفت؛ به‌جایش دو شاخص عملکردی:
+     dateScore اکنون «شارژ و کامل بودن قفسه» را می‌سنجد (نام ستون حفظ شد) + serveScore جدید */
+  serveScore   Int      @default(0) // 0-5 برخورد و پاسخگویی به مشتری (R15)
   note         String?
   points       Int      @default(0) // امتیاز اهدایی
   createdAt    DateTime @default(now())

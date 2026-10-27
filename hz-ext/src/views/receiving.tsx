@@ -111,7 +111,8 @@ function faDate(s: string | null | undefined): string {
 function jShort(v: any): string {
   try {
     const d = new Date(v)
-    return isNaN(d.getTime()) ? '' : toFaDigits(formatJalali(d)).replace(/-/g, '/')
+    /* R15: تاریخ + ساعت */
+    return isNaN(d.getTime()) ? '' : `${toFaDigits(formatJalali(d)).replace(/-/g, '/')} · ${toFaDigits(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'))}`
   } catch { return '' }
 }
 

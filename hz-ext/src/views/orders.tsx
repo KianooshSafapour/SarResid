@@ -10,6 +10,7 @@ import { toFaDigits,
   formatJalaliLong, parseJalali, formatJalali, JALALI_MONTHS, jalaliMonthLength, WEEKDAY_FA, I,
   JalaliDate, MoneyInput, NumInput, printHTML,
 } from '../lib/hz'
+import { FlowChart, CountsBars } from './products'
 
 /* ─────────────────────────────────────────────────────────────
    supply/orders — «سفارش‌گذاری هوشمند» (نسخهٔ جدولی R3)
@@ -425,19 +426,61 @@ function SupplierCombo(props: { suppliers: any[]; value: string; onChange: (v: s
 function CirculationDialog({ open, onOpenChange, productId }: { open: boolean; onOpenChange: (o: boolean) => void; productId: string | null }) {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<any>(null)
+  const [trades, setTrades] = useState<any>(null) // R15: سابقهٔ قیمت هلو
 
   useEffect(() => {
-    if (!open || !productId) { setData(null); return }
+    if (!open || !productId) { setData(null); setTrades(null); return }
     setLoading(true)
-    api(`/api/products/${productId}/circulation`)
-      .then((r: any) => { if (r.ok) setData(r.data); else { toast.error(r.error || 'گردش کالا دریافت نشد'); setData(null) } })
+    Promise.all([
+      api(`/api/products/${productId}/circulation`),
+      api(`/api/trades?productId=${productId}`),
+    ])
+      .then(([r, t]: any[]) => {
+        if (r.ok) setData(r.data); else { toast.error(r.error || 'گردش کالا دریافت نشد'); setData(null) }
+        if (t.ok) setTrades(t.data); else setTrades(null)
+      })
       .finally(() => setLoading(false))
   }, [open, productId])
+
+  /* R15: مشتقات نمودار — سفارش‌ها به تفکیک روز، شمارش‌ها، قیمت ماهانه */
+  const MONTH_FA: Record<string, string> = { '1405-04': 'تیر', '1405-05': 'مرداد', '1405-06': 'شهریور', '1405-07': 'مهر', '1405-08': 'آبان', '1405-09': 'آذر', '1405-10': 'دی', '1405-11': 'بهمن', '1405-12': 'اسفند' }
+  const flowPts = useMemo(() => {
+    if (!data?.buys) return []
+    const byDay = new Map<string, { qty: number; at: string }>()
+    for (const b of data.buys as any[]) {
+      const key = jShort(b.orderedAt).split(' · ')[0] || '—'
+      const cur = byDay.get(key) ?? { qty: 0, at: b.orderedAt }
+      cur.qty += Number(b.qty ?? 0)
+      byDay.set(key, cur)
+    }
+    return [...byDay.entries()]
+      .sort((a, b) => new Date(a[1].at).getTime() - new Date(b[1].at).getTime())
+      .map(([day, v]) => ({ label: day, value: v.qty }))
+  }, [data])
+  const countRows = useMemo(
+    () => (data?.counts ?? []).map((c: any) => ({ label: faDate(c.dateJalali) || '—', systemQty: Number(c.systemQty ?? 0), countedQty: Number(c.countedQty ?? 0), diff: Number(c.diff ?? 0) })),
+    [data],
+  )
+  const buyPricePts = useMemo(
+    () => (trades?.series ?? []).filter((r: any) => Number(r.buyAvgPrice || 0) > 0).map((r: any) => ({ label: MONTH_FA[r.month] || r.month, value: Math.round(Number(r.buyAvgPrice)) })),
+    [trades],
+  )
+  const sellPricePts = useMemo(
+    () => (trades?.series ?? []).filter((r: any) => Number(r.sellAvgPrice || 0) > 0).map((r: any) => ({ label: MONTH_FA[r.month] || r.month, value: Math.round(Number(r.sellAvgPrice)) })),
+    [trades],
+  )
+  const trendInfo = useMemo(() => {
+    if (buyPricePts.length < 2) return null
+    const first = buyPricePts[0].value
+    const last = buyPricePts[buyPricePts.length - 1].value
+    if (!first) return null
+    return { first, last, pct: Math.round(((last - first) / first) * 1000) / 10 }
+  }, [buyPricePts])
 
   const s = data?.summary
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="w-[94vw] max-w-4xl max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <I.barChart size={18} /> گردش کالا — {data?.product?.name ?? '…'}
@@ -473,6 +516,42 @@ function CirculationDialog({ open, onOpenChange, productId }: { open: boolean; o
                 بازهٔ بهای واحد در سودسنج: از {money(s.minBuyPrice)} تا {money(s.maxBuyPrice)} ریال (میانگین {money(s.avgBuyPrice)})
               </div>
             )}
+
+            {/* R15: نمودار گردش سفارش + روند موجودی/شمارش */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-emerald-200/70 bg-emerald-50/40 p-2">
+                <p className="mb-1 text-[11px] font-bold text-emerald-800">گردش سفارش (تعداد در هر سفارش)</p>
+                {flowPts.length >= 1 ? <FlowChart points={flowPts} unit={data.product.unit ?? 'عدد'} height={110} /> : <p className="py-6 text-center text-[10px] text-stone-400">سفارشی ثبت نشده</p>}
+              </div>
+              <div className="rounded-lg border border-amber-200/70 bg-amber-50/40 p-2">
+                <p className="mb-1 text-[11px] font-bold text-amber-900">روند موجودی و شمارش</p>
+                {countRows.length ? <CountsBars rows={countRows} height={110} /> : <p className="py-6 text-center text-[10px] text-stone-400">انبارگردانی ثبت نشده</p>}
+              </div>
+            </div>
+
+            {/* R15: روند قیمت واقعی (هلو) + نشانگر تورم */}
+            {trades?.series?.length ? (
+              <div className="rounded-lg border border-rose-200/70 bg-rose-50/40 p-2">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+                  <p className="text-[11px] font-bold text-rose-900">روند قیمت واقعی (هلو)</p>
+                  {trendInfo ? (
+                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                      فی خرید: {money(trendInfo.first)} → {money(trendInfo.last)} ({trendInfo.pct > 0 ? '+' : ''}{fa(trendInfo.pct)}٪)
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-0.5 text-[10px] font-bold text-stone-500">فی خرید هر ماه</p>
+                    <FlowChart points={buyPricePts} unit="ریال" height={92} color="#be123c" />
+                  </div>
+                  <div>
+                    <p className="mb-0.5 text-[10px] font-bold text-stone-500">فی فروش هر ماه</p>
+                    <FlowChart points={sellPricePts} unit="ریال" height={92} color="#0e7a4a" />
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {/* تأمین‌کنندگان */}
             {Array.isArray(data.suppliers) && data.suppliers.length > 0 && (

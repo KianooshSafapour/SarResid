@@ -211,7 +211,7 @@ function StockChip({ stock, level }: { stock: number; level?: number | null }) {
 interface FlowPoint { label: string; value: number; extra?: string }
 
 /** نمودار خطی/سطحی گردش سفارش — شبکه + نشانگر + تولتیپ شناور (موس/لمس)، ارقام فارسی */
-function FlowChart({ points, unit, height = 168, color = '#0e7a4a' }: { points: FlowPoint[]; unit?: string; height?: number; color?: string }) {
+export function FlowChart({ points, unit, height = 168, color = '#0e7a4a' }: { points: FlowPoint[]; unit?: string; height?: number; color?: string }) {
   const [hover, setHover] = useState<number | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
   const w = 300, h = 100
@@ -289,7 +289,7 @@ function FlowChart({ points, unit, height = 168, color = '#0e7a4a' }: { points: 
 interface CountRow { label: string; systemQty: number; countedQty: number; diff: number }
 
 /** نمودار ستونیِ روند موجودی/شمارش — دو ستون جفتی (سیستم/شمارش) + تولتیپ */
-function CountsBars({ rows, height = 150 }: { rows: CountRow[]; height?: number }) {
+export function CountsBars({ rows, height = 150 }: { rows: CountRow[]; height?: number }) {
   const [hover, setHover] = useState<number | null>(null)
   if (rows.length === 0) return null
   const max = Math.max(...rows.flatMap((r) => [r.systemQty, r.countedQty]), 1)

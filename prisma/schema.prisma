@@ -481,6 +481,12 @@ model MarginInvoice {
   finalizedAt       DateTime? // گام ۴: فاکتور خرید نهایی شد (سند خرید + موجودی + هلو)
   finalizedById     String?
   finalizedByName   String?
+  // ── R13: گام ۵ — تأیید نهایی مدیرعامل (خانم لطفی) پیش از بایگانی؛
+  //    هم‌زمان قیمت نهایی (sellPrice) و قیمت چاپی (sellPrice2 = SellPrice2 هلو)
+  //    روی کالا به‌روز و در هلو منتشر می‌شود.
+  gmApprovedAt      DateTime?
+  gmApprovedById    String?
+  gmApprovedByName  String?
   cancelledAt       DateTime?
   cancelledByName   String?
   cancelReason      String?

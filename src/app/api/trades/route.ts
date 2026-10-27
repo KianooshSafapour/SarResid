@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
       '1405-05': 'مرداد ۱۴۰۵',
       '1405-06': 'شهریور ۱۴۰۵',
       '1405-07': 'مهر ۱۴۰۵',
+      '1405-08': 'آبان ۱۴۰۵',
     }
     const lastBuys = ids.map((pid) => {
       const list = byProduct.get(pid) ?? []
@@ -144,6 +145,7 @@ export async function GET(req: NextRequest) {
         by: ['month'],
         where: { kind: 'SELL', productId },
         _sum: { qty: true, lineTotal: true },
+        _avg: { unitPrice: true },
       }),
     ])
     const months = [...new Set([...buys.map((b) => b.month), ...sells.map((s) => s.month)])].sort()
@@ -158,6 +160,8 @@ export async function GET(req: NextRequest) {
         buyAvgPrice: Math.round((b?._avg.unitPrice ?? 0) * 100) / 100,
         sellQty: s?._sum.qty ?? 0,
         sellRevenue: s?._sum.lineTotal ?? 0,
+        /* R13: روند قیمت — میانگین فی فروش واقعیِ هر ماه (برای نمودار قیمت) */
+        sellAvgPrice: Math.round((s?._avg.unitPrice ?? 0) * 100) / 100,
       }
     })
     return ok({ productId, product, series })

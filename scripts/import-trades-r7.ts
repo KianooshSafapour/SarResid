@@ -91,6 +91,7 @@ const MONTH_KEYS: [RegExp, string][] = [
   [/مرداد/, '1405-05'],
   [/شهریور/, '1405-06'],
   [/مهر/, '1405-07'],
+  [/آبان/, '1405-08'], // R13: خريد/فروش آبان‌ماه 1405
 ]
 
 function detectTradeFile(fileName: string): { kind: 'BUY' | 'SELL'; month: string } | null {

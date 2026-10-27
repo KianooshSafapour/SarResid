@@ -44,17 +44,21 @@ const PAY_LABEL: Record<string, string> = { CASH: 'نقدی', CHEQUE: 'چک', PO
 const REVIEW_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC']
 const MANAGER_ROLES = ['OWNER', 'GM', 'ADMIN']
 const MARGIN_ROLES = ['OWNER', 'GM', 'ADMIN', 'ACC']
+/* R13 — تأیید نهایی مدیرعامل (خانم لطفی)؛ در نبودِ ایشان مالک/ادمین */
+const GM_ROLES = ['GM', 'OWNER', 'ADMIN']
 
 const STEPS: { key: string; label: string; actor: string }[] = [
   { key: 'draft', label: 'پیش‌نویس (پیش‌فاکتور)', actor: 'فاکتورنویس سودسنج' },
   { key: 'delivered', label: 'تأیید تحویل کالا', actor: 'کارمند دریافت‌کننده' },
   { key: 'reviewing', label: 'بررسی حسابداری', actor: 'حسابدار / مدیر' },
   { key: 'final', label: 'فاکتور خرید', actor: 'حسابدار / مدیر' },
+  { key: 'gm', label: 'تأیید مدیرعامل', actor: 'مدیرعامل (خانم لطفی)' },
   { key: 'archived', label: 'بایگانی سند', actor: 'حسابدار / مدیر' },
 ]
-function stepIndex(state: string): number {
-  if (state === 'archived') return 4
-  if (state === 'final') return 3
+/* R13 — گام تأیید مدیرعامل: final بدون gmApproved → گام ۳؛ با تأیید → گام ۴؛ archived → ۵ */
+function stepIndex(state: string, gmApproved?: string | null | boolean): number {
+  if (state === 'archived') return 5
+  if (state === 'final') return gmApproved ? 4 : 3
   if (state === 'reviewing') return 2
   if (state === 'delivered') return 1
   return 0
@@ -79,6 +83,8 @@ interface Row {
   dateJalali: string | null
   createdAt: string
   finalizedAt: string | null
+  gmApprovedAt: string | null
+  gmPending: boolean
 }
 interface DetailItem {
   id: string
@@ -114,6 +120,8 @@ interface Detail {
   deliveredByName: string | null
   reviewedByName: string | null
   finalizedByName: string | null
+  gmApprovedAt: string | null
+  gmApprovedByName: string | null
   cancelledByName: string | null
   cancelReason: string | null
   holooInvoiceNo: string | null
@@ -152,6 +160,7 @@ export default function InvoicesView() {
   const canReview = REVIEW_ROLES.includes(role)
   const isManager = MANAGER_ROLES.includes(role)
   const canEditDraft = MARGIN_ROLES.includes(role)
+  const canGm = GM_ROLES.includes(role)
 
   const [tab, setTab] = useState('active')
   const [q, setQ] = useState('')
@@ -268,7 +277,7 @@ export default function InvoicesView() {
   /* ── فاکتور خرید ── */
   async function doFinalize() {
     if (!detail) return
-    const okDone = await act(detail.id, { action: 'finalize', payMethod, pushToHoloo }, 'فاکتور خرید ثبت شد — سند خرید و موجودی به‌روز شد')
+    const okDone = await act(detail.id, { action: 'finalize', payMethod, pushToHoloo }, 'فاکتور خرید ثبت شد — در انتظار تأیید مدیرعامل (خانم لطفی)')
     if (okDone) setFinalizeOpen(false)
   }
 
@@ -349,8 +358,8 @@ export default function InvoicesView() {
               </h1>
               <p className="text-[12px] text-muted-foreground mt-1 leading-6">
                 پیش‌فاکتورِ ثبت‌شده در «سودسنج» را کارمندِ دریافت‌کننده تأیید تحویل می‌کند؛ خانم درویشی (یا یکی از مدیرها)
-                قیمت‌ها و حاشیهٔ سود را بررسی و اقلام مشکل‌دار را مرجوع می‌کند؛ فاکتور خرید نهایی می‌شود (موجودی + هلو)
-                و سند کاغذی در زون‌بند بایگانی می‌شود — همان‌جا هم پیدا.
+                قیمت‌ها و حاشیهٔ سود را بررسی و اقلام مشکل‌دار را مرجوع می‌کند؛ فاکتور خرید نهایی می‌شود (موجودی + هلو)؛
+                مدیرعامل (خانم لطفی) سود و قیمت‌ها را نهایی تأیید می‌کند و قیمت‌ها در هلو منتشر می‌شود؛ سپس سند کاغذی در زون‌بند بایگانی می‌شود — همان‌جا هم پیدا.
               </p>
             </div>
             {canEditDraft ? (
@@ -363,7 +372,7 @@ export default function InvoicesView() {
           <div className="flex flex-wrap items-center gap-1 text-[11px]">
             {STEPS.map((s, i) => (
               <span key={s.key} className="inline-flex items-center gap-1">
-                <span className={cn('rounded-full border px-2.5 py-1', i === 4 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-stone-50 border-stone-200 text-stone-600')}>
+                <span className={cn('rounded-full border px-2.5 py-1', i === STEPS.length - 1 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-stone-50 border-stone-200 text-stone-600')}>
                   {fa(i + 1)}. {s.label}
                   <span className="text-stone-400"> · {s.actor}</span>
                 </span>
@@ -442,7 +451,12 @@ export default function InvoicesView() {
                     <TableCell className={cn('text-[12px] font-medium', (r.margin ?? 0) < 12 ? 'text-rose-600' : (r.margin ?? 0) < 21 ? 'text-amber-600' : 'text-emerald-700')}>
                       {r.margin == null ? '—' : `${fa(Math.round(r.margin * 100) / 100)}٪`}
                     </TableCell>
-                    <TableCell><span className={cn('inline-block rounded-full border px-2 py-0.5 text-[10px]', STATE_CLS[r.state])}>{STATE_FA[r.state]}</span></TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className={cn('inline-block rounded-full border px-2 py-0.5 text-[10px]', STATE_CLS[r.state])}>{STATE_FA[r.state]}</span>
+                        {r.gmPending ? <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] text-violet-700" title="پیش از بایگانی، تأیید مدیرعامل لازم است">در انتظار مدیرعامل</span> : null}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-[11px]">{r.purchaseOrderId ? <span className="text-teal-700">ثبت‌شده</span> : '—'}</TableCell>
                     <TableCell className="text-[11px] text-emerald-700">{r.state === 'archived' ? 'در زون‌بند' : '—'}</TableCell>
                   </TableRow>
@@ -455,7 +469,7 @@ export default function InvoicesView() {
 
       {/* ── دیالوگ جزئیات + گردش‌کار ── */}
       <Dialog open={!!detail || detailLoading} onOpenChange={(o: boolean) => { if (!o) setDetail(null) }}>
-        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="w-[97vw] max-w-[1700px] max-h-[94vh] overflow-y-auto">
           {detailLoading || !detail ? (
             <div className="py-16 text-center text-muted-foreground">در حال بارگذاری فاکتور…</div>
           ) : (
@@ -476,7 +490,7 @@ export default function InvoicesView() {
               {/* استپر وضعیت */}
               <div className="flex items-center gap-1">
                 {STEPS.map((s, i) => {
-                  const cur = stepIndex(dState)
+                  const cur = stepIndex(dState, detail.gmApprovedAt)
                   const cls = dState === 'cancelled'
                     ? 'bg-stone-100 text-stone-400 border-stone-200'
                     : i < cur ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
@@ -673,17 +687,31 @@ export default function InvoicesView() {
                     (خانم درویشی یا یکی از مدیرها از دکمهٔ «بررسی حسابداری» ادامه می‌دهند).
                   </div>
                 ) : null}
-                {dState === 'final' && canReview ? (
+                {dState === 'final' && detail.gmApprovedAt ? (
                   <Button disabled={busy} onClick={() => { setArchForm({ binderId: '', folio: '', holooInvoiceNo: detail.holooInvoiceNo || '', holooReceiptNo: detail.holooReceiptNo || '', scanDataUrl: '', scanName: '' }); setArchiveOpen(true) }}>
                     <I.bookOpen size={14} /> بایگانی سند کاغذی
                   </Button>
                 ) : null}
+                {dState === 'final' && !detail.gmApprovedAt && canGm ? (
+                  <Button disabled={busy} className="bg-violet-700 hover:bg-violet-800" onClick={() => void act(detail.id, { action: 'gm-approve' }, 'تأیید مدیرعامل انجام شد — قیمت‌ها در سر رسید و هلو به‌روز شد؛ آمادهٔ بایگانی')}>
+                    <I.shieldCheck size={14} /> تأیید مدیرعامل (لطفی) و انتشار قیمت‌ها
+                  </Button>
+                ) : null}
                 {dState === 'final' ? (
-                  <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-800 leading-6">
-                    فاکتور خرید نهایی شده{detail.finalizedByName ? ` (${detail.finalizedByName})` : ''} — سند خرید{' '}
-                    {detail.order ? <b>{fa(detail.order.code)}</b> : 'ثبت‌شده'} و موجودی/قیمت کالاها به‌روز است.
-                    {detail.holooInvoiceNo ? ` شماره فاکتور هلو: ${fa(detail.holooInvoiceNo)}.` : ' اگر در هلو ثبت شد، شماره‌اش را هنگام بایگانی وارد کنید.'}
-                    حالا سند کاغذی را در زون‌کن بایگانی و «بایگانی سند کاغذی» را بزنید.
+                  <div className={cn('w-full rounded-lg border p-3 text-[11px] leading-6', detail.gmApprovedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-violet-200 bg-violet-50 text-violet-800')}>
+                    {detail.gmApprovedAt ? (
+                      <>
+                        تأیید مدیرعامل انجام شد{detail.gmApprovedByName ? ` (${detail.gmApprovedByName})` : ''} — قیمت فروش (نهایی) و قیمت چاپی (قیمت فروش ۲) روی کالاها به‌روز و در هلو منتشر شد.
+                        حالا سند کاغذی را در زون‌کن بایگانی و «بایگانی سند کاغذی» را بزنید.
+                      </>
+                    ) : (
+                      <>
+                        فاکتور خرید ثبت شده{detail.finalizedByName ? ` (${detail.finalizedByName})` : ''} — سند خرید{' '}
+                        {detail.order ? <b>{fa(detail.order.code)}</b> : 'ثبت‌شده'} و موجودی به‌روز است.
+                        {detail.holooInvoiceNo ? ` شماره فاکتور هلو: ${fa(detail.holooInvoiceNo)}.` : ''}
+                        {' '}اکنون در انتظار تأیید نهایی مدیرعامل (خانم لطفی) است؛ پس از تأیید، قیمت‌ها در هلو منتشر و بایگانی ممکن می‌شود.
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -723,7 +751,7 @@ export default function InvoicesView() {
                 <>
                   {fa(acceptedRows.length)} قلم پذیرفته ({money(acceptedTotal)} ریال)
                   {rejectedRows.length ? ` · ${fa(rejectedRows.length)} قلم مرجوعی (به تأمین‌کننده برمی‌گردد و وارد انبار نمی‌شود)` : ''}.
-                  با ثبت، سند خرید تشکیل، موجودی و قیمت‌های کالا به‌روز و (در صورت انتخاب) به هلو ارسال می‌شود.
+                  با ثبت، سند خرید تشکیل و موجودی به‌روز می‌شود و (در صورت انتخاب) فاکتور به هلو ارسال می‌شود. انتشار قیمت‌ها پس از تأیید مدیرعامل انجام می‌شود.
                 </>
               ) : null}
             </DialogDescription>

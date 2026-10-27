@@ -177,6 +177,8 @@ async function ensureProductInHoloo(
     code: p.code || firstBarcode(p.barcodesJson) || undefined,
     buyprice: p.lastBuyPrice || 0,
     sellprice: p.sellPrice || 0,
+    /* R13: قیمت چاپی = قیمت فروش ۲ (SellPrice2) — تا کالای تازه در هلو قیمت چاپی صفر نداشته باشد */
+    sellprice2: p.sellPrice2 || 0,
     countinkarton: p.unitsPerCarton || 0,
     sidegrouperpcode: defaultSideGroup,
   })

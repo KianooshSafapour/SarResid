@@ -119,6 +119,7 @@ export function invoiceListOut(inv: {
   providerDocNumber?: string | null
   purchaseOrderId?: string | null
   finalizedAt?: Date | null
+  gmApprovedAt?: Date | null
   items: { quantity: number; totalCost: number; printedPrice: number; salePrice?: number; accepted?: boolean }[]
 }) {
   const itemCount = inv.items.length
@@ -141,6 +142,8 @@ export function invoiceListOut(inv: {
     purchaseOrderId: inv.purchaseOrderId ?? null,
     archivedAt: inv.archivedAt ? inv.archivedAt.toISOString() : null,
     finalizedAt: inv.finalizedAt ? inv.finalizedAt.toISOString() : null,
+    gmApprovedAt: inv.gmApprovedAt ? inv.gmApprovedAt.toISOString() : null,
+    gmPending: inv.status === 'final' && !inv.gmApprovedAt,
     createdAt: inv.createdAt.toISOString(),
     itemCount,
     acceptedCount,

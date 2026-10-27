@@ -1307,6 +1307,34 @@ export default function ArchiveView() {
                         </p>
                       </div>
                     )}
+                    {/* R13 — مامور پخشِ دریافت‌کنندهٔ اقلام برگشتی/ضایعات */}
+                    {detail.linkedOrder?.wasteReturns?.length > 0 && (
+                      <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 text-xs">
+                        <p className="mb-1.5 font-bold text-violet-800 flex flex-wrap items-center gap-2">
+                          <I.userCheck size={13} /> اقلام برگشتی به تأمین‌کننده و مامور پخش
+                          {detail.linkedOrder.wasteRep ? (
+                            <span className="rounded-full border border-violet-300 bg-white px-2.5 py-0.5 text-[11px] font-bold text-violet-800">
+                              مامور پخش: {detail.linkedOrder.wasteRep}{detail.linkedOrder.wasteRepPhone ? ` · ${toFaDigits(detail.linkedOrder.wasteRepPhone)}` : ''}
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-stone-300 bg-white px-2.5 py-0.5 text-[10px] text-stone-500">مامور پخش ثبت نشده</span>
+                          )}
+                        </p>
+                        <ul className="space-y-1 leading-5 text-stone-700">
+                          {detail.linkedOrder.wasteReturns.map((w: any, i: number) => (
+                            <li key={i} className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-medium">{w.name}</span>
+                              <span className="text-stone-500">({fa(w.qty)} {w.unit})</span>
+                              <span className={cn('rounded-full px-1.5 py-0.5 text-[9px]', w.status === 'RETURNED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+                                {w.status === 'RETURNED' ? 'برگشت داده شد' : 'در انتظار برگشت'}
+                              </span>
+                              {w.repName ? <span className="text-[10px] text-violet-700">تحویل به {w.repName}{w.repPhone ? ` (${toFaDigits(w.repPhone)})` : ''}</span> : null}
+                              {w.returnedAtJalali ? <span className="text-[10px] text-stone-400">{fa(w.returnedAtJalali)}</span> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {detail.linkedReturn && (
                       <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3 text-xs">
                         <p className="mb-1 font-bold text-rose-800">مرجوعی متصل: {toFaDigits(detail.linkedReturn.code)} — {detail.linkedReturn.customerName || 'مشتری ناشناس'} · {money(detail.linkedReturn.totalAmount || 0)} ریال</p>

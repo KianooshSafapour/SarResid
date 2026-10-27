@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, safeJson } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
+import { tokenizeQuery, rankFuzzy } from '@/lib/fuzzy'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,14 +48,19 @@ export async function GET(req: NextRequest) {
 
   if (!q) return ok({ products: [] })
 
-  /* جست‌وجوی فازی: نام کالا شامل متن باشد (فاصله‌ها را هم برطرف می‌کنیم تا
-     «بیژن» و «بیژن صنعت» هم‌جست شوند) یا کد هولو/بانک بارکد دقیقاً بخورد
-     (R5-F: barcodesJson هم بررسی می‌شود تا کالای تازه‌ثبت‌شدهٔ «فقط بارکددار»
-     بدون کد، در جست‌وجوی سفارش‌گذاری پیدا شود) */
-  const products = await db.product.findMany({
-    where: { OR: [{ name: { contains: q } }, { code: q }, { barcodesJson: { contains: q } }] },
-    orderBy: [{ lastBuyPrice: 'desc' }, { name: 'asc' }],
-    take: limit,
+  /* R13 — جست‌وجوی فازی: کاندیدها با «هر یک از کلمات» از DB می‌آیند و در JS
+     با امتیازِ «همهٔ کلمات در هر ترتیبی» مرتب می‌شوند — «کاله بستنی»،
+     «بستنی کاله» و «وانيلي بستنی کاله» هم‌نتیجه‌اند. کد/بانک بارکد هم می‌خورد. */
+  const tokens = tokenizeQuery(q)
+  const candidates = await db.product.findMany({
+    where: {
+      OR: [
+        ...tokens.map((t) => ({ name: { contains: t } })),
+        { code: q },
+        { barcodesJson: { contains: q } },
+      ],
+    },
+    take: 800,
     select: {
       id: true, name: true, unit: true, sellPrice: true, sellPrice2: true,
       lastBuyPrice: true, code: true, stock: true, reorderLevel: true,
@@ -64,6 +70,8 @@ export async function GET(req: NextRequest) {
       barcodesJson: true, // R5-P4: ستون «کد/بارکد» سفارش‌گذاری — از select جا افتاده بود
     },
   })
+  const ranked = rankFuzzy(q, candidates)
+  const products = (ranked.matched.length ? ranked.matched : ranked.partial).slice(0, limit)
 
   if (!full) {
     return ok({

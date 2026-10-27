@@ -57,3 +57,6 @@ tool-results/
 dev.log
 docs/live-reference/
 scripts/deploy-helper.py
+# R13: دیتابیس از git خارج شد (بعد از دادهٔ آبان >۱۰۰MB — سقف گیت‌هاب)؛ مرجع داده = سرور + پشتیبان‌های /root/backups
+db/custom.db
+db/*.db

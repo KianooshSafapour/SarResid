@@ -31,6 +31,11 @@ const SPECIAL_LANES = ['سمت چپ', 'سمت راست', BATUM]
 const LANE_MAP_KEY = 'laneMap'
 /** لیست کاربرانی که اعلان بازرسی برایشان خاموش است (JSON آرایه‌ای از idها) */
 const MUTED_USERS_KEY = 'lanecheck.mutedUsers'
+/** R13 — تکلیفِ ردیف‌ها به هر نفر: {userId: [{section, lane}]} — مدیر چند ردیفِ
+ *  مشخص از بخش‌های همان نفر را برای بازبینی انقضا می‌سپارد؛ برنامهٔ روز جای
+ *  نمونهٔ تصادفی را همین تکلیف می‌گیرد. خالی = همان برنامهٔ تصادفی روزانه. */
+const ASSIGN_KEY = 'lanecheck.assignments'
+const MAX_ASSIGN_PER_USER = 12
 const MAX_LANES = 24
 const MAX_LANE_NAME = 40
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -175,6 +180,40 @@ function lanesFor(section: string, map: Record<string, string[]>): string[] {
   return Array.isArray(custom) && custom.length ? custom : DEFAULT_LANES_FULL
 }
 
+/* ───────────────── تکلیف ردیف‌ها به افراد (Setting lanecheck.assignments) ── */
+
+export interface AssignLane {
+  section: string
+  lane: string
+}
+async function readAssignments(): Promise<Record<string, AssignLane[]>> {
+  const row = await db.setting.findUnique({ where: { key: ASSIGN_KEY } })
+  const parsed = safeJson<Record<string, unknown>>(row?.value, {})
+  const out: Record<string, AssignLane[]> = {}
+  if (parsed && typeof parsed === 'object') {
+    for (const [uid, v] of Object.entries(parsed)) {
+      if (!Array.isArray(v)) continue
+      const lanes: AssignLane[] = []
+      for (const item of v) {
+        if (!item || typeof item !== 'object') continue
+        const section = String((item as Record<string, unknown>).section ?? '').trim()
+        const lane = String((item as Record<string, unknown>).lane ?? '').trim()
+        if (section && lane) lanes.push({ section, lane })
+      }
+      if (lanes.length) out[uid] = lanes.slice(0, MAX_ASSIGN_PER_USER)
+    }
+  }
+  return out
+}
+async function writeAssignments(map: Record<string, AssignLane[]>) {
+  if (!Object.keys(map).length) {
+    await db.setting.deleteMany({ where: { key: ASSIGN_KEY } })
+    return
+  }
+  const value = JSON.stringify(map)
+  await db.setting.upsert({ where: { key: ASSIGN_KEY }, create: { key: ASSIGN_KEY, value }, update: { value } })
+}
+
 /* ───────────────── خاموشی اعلان‌های بازرسی (Setting lanecheck.mutedUsers) ───────────────── */
 
 async function readMutedUsers(): Promise<string[]> {
@@ -244,12 +283,14 @@ function samplePlanLanes(pool: { section: string; lane: string }[], personKey: s
   return idx.slice(0, target).sort((a, b) => a - b).map((i) => pool[i])
 }
 
-/** برنامهٔ امروز: برای هر مسؤولِ بخش‌ها، چند ردیفِ تصادفی از مجموعهٔ ردیف‌های بخش‌هایش */
+/** برنامهٔ امروز: برای هر مسؤولِ بخش‌ها، تکلیفِ مشخصِ مدیر (اگر باشد) وگرنه
+ *  چند ردیفِ تصادفی از مجموعهٔ ردیف‌های بخش‌هایش */
 function buildTodayPlan(
   sections: SectionInfo[],
   map: Record<string, string[]>,
   todayChecks: Map<string, { status: string; merchandiserName: string; dateJalali: string }>,
   onlyUserId?: string,
+  assignments?: Record<string, AssignLane[]>,
 ): { date: string; persons: PlanPerson[] } {
   const today = todayJalaliDash()
   // گروه‌بندی بخش‌ها بر اساس مسؤول (کاربر تطبیق‌یافته یا نام آزاد)
@@ -277,9 +318,11 @@ function buildTodayPlan(
   for (const [key, g] of groups) {
     // بخش‌ها به ترتیب حروف فارسی — همان ترتیب sections
     const secs = [...new Set(g.sections)].sort((a, b) => a.localeCompare(b, 'fa'))
+    /* R13: تکلیفِ مشخصِ مدیر مقدم بر نمونهٔ تصادفی — فقط ردیف‌های همچنان معتبر */
+    const assigned = g.userId ? (assignments?.[g.userId] ?? []).filter((a) => secs.includes(a.section) && lanesFor(a.section, map).includes(a.lane)) : []
     const pool: { section: string; lane: string }[] = []
     for (const sec of secs) for (const lane of lanesFor(sec, map)) pool.push({ section: sec, lane })
-    const picked = samplePlanLanes(pool, key, today)
+    const picked = assigned.length ? assigned : samplePlanLanes(pool, key, today)
     g.sections = secs
     g.lanes = picked.map(({ section, lane }) => {
       const hit = todayChecks.get(`${section}||${lane}`)
@@ -362,12 +405,13 @@ export async function GET(req: NextRequest) {
     const where = and.length === 1 ? ownWhere : { AND: and }
 
     const orderBy = [{ dateJalali: 'desc' as const }, { createdAt: 'desc' as const }]
-    const [ownRows, filteredRows, statRows, map, todayChecks] = await Promise.all([
+    const [ownRows, filteredRows, statRows, map, todayChecks, assignments] = await Promise.all([
       db.laneCheck.findMany({ where: ownWhere as never, orderBy, take: 500 }),
       db.laneCheck.findMany({ where: where as never, orderBy, take }),
       db.laneCheck.findMany({ where: ownWhere as never, select: { status: true } }),
       readLaneMap(),
       db.laneCheck.findMany({ where: { dateJalali: todayJalaliDash() }, orderBy: { createdAt: 'desc' as const } }),
+      readAssignments(),
     ])
     const checks = filteredRows
 
@@ -391,7 +435,7 @@ export async function GET(req: NextRequest) {
     }
 
     const todayMap = new Map(todayChecks.map((c) => [`${c.sectionLabel}||${c.lane}`, { status: c.status, merchandiserName: c.merchandiserName, dateJalali: c.dateJalali } as const]))
-    const todayPlan = buildTodayPlan(sections, map, todayMap, me.id)
+    const todayPlan = buildTodayPlan(sections, map, todayMap, me.id, assignments)
 
     const stats = {
       total: statRows.length,
@@ -410,6 +454,8 @@ export async function GET(req: NextRequest) {
       merchandisers: [],
       laneMap: { defaults: DEFAULT_LANES_FULL, base: DEFAULT_LANES, special: SPECIAL_LANES, map },
       todayPlan,
+      /* R13: تکلیفِ فعلی خودم — برای نمایش «از طرف مدیر» */
+      myAssignment: assignments[me.id] ?? [],
       stats,
     })
   }
@@ -422,7 +468,7 @@ export async function GET(req: NextRequest) {
   const hasFilter = Boolean(merchandiser) || Boolean(section) || days > 0
 
   const orderBy = [{ dateJalali: 'desc' as const }, { createdAt: 'desc' as const }]
-  const [statusRows, filteredRows, map, merchUsers, todayChecks, mutedUsers] = await Promise.all([
+  const [statusRows, filteredRows, map, merchUsers, todayChecks, mutedUsers, assignments] = await Promise.all([
     db.laneCheck.findMany({ orderBy, take: 500 }), // برای نقشهٔ وضعیت: بدون فیلتر (حقیقتِ «آخرین بار»)
     hasFilter ? db.laneCheck.findMany({ where: where as never, orderBy, take }) : Promise.resolve(null),
     readLaneMap(),
@@ -432,6 +478,7 @@ export async function GET(req: NextRequest) {
     }),
     db.laneCheck.findMany({ where: { dateJalali: todayJalaliDash() }, orderBy: { createdAt: 'desc' as const } }),
     readMutedUsers(),
+    readAssignments(),
   ])
   const checks = (hasFilter ? filteredRows : statusRows.slice(0, take)) ?? []
 
@@ -463,7 +510,7 @@ export async function GET(req: NextRequest) {
   )
 
   const todayMap = new Map(todayChecks.map((c) => [`${c.sectionLabel}||${c.lane}`, { status: c.status, merchandiserName: c.merchandiserName, dateJalali: c.dateJalali } as const]))
-  const todayPlan = buildTodayPlan(sections, map, todayMap)
+  const todayPlan = buildTodayPlan(sections, map, todayMap, undefined, assignments)
   await attachRoles(todayPlan.persons)
 
   return ok({
@@ -475,6 +522,8 @@ export async function GET(req: NextRequest) {
     laneMap: { defaults: DEFAULT_LANES_FULL, base: DEFAULT_LANES, special: SPECIAL_LANES, map },
     todayPlan,
     mutedUsers,
+    /* R13: تکلیف‌های مشخص مدیر — کل نقشه برای ویرایشگر */
+    assignments,
   })
 }
 
@@ -485,6 +534,68 @@ export async function PUT(req: NextRequest) {
   if (!MANAGER_ROLES.includes(me.role)) return fail('این عملیات فقط برای مدیران ممکن است', 403)
 
   const sp = req.nextUrl.searchParams
+
+  /* ── حالت سوم (R13): تکلیف چند ردیف مشخص به یک نفر ── */
+  const assignUser = (sp.get('assign') || '').trim()
+  if (assignUser) {
+    const target = await db.user.findUnique({ where: { id: assignUser } })
+    if (!target || !target.active) return fail('کاربر یافت نشد', 404)
+
+    const body = (await req.json().catch(() => ({}))) as { lanes?: unknown; silent?: unknown }
+    const rawLanes = Array.isArray(body.lanes) ? body.lanes : null
+    if (!rawLanes) return fail('فهرست ردیف‌ها را ارسال کنید (آرایه‌ای از {section, lane})')
+
+    const [sections, map] = await Promise.all([loadSections(), readLaneMap()])
+    const known = new Set(sections.map((s) => s.label))
+    const lanes: AssignLane[] = []
+    for (const item of rawLanes) {
+      if (!item || typeof item !== 'object') continue
+      const section = String((item as Record<string, unknown>).section ?? '').trim()
+      const lane = String((item as Record<string, unknown>).lane ?? '').trim()
+      if (!section && !lane) continue
+      if (!section || !lane) return fail('هر ردیف باید بخش و نام ردیف داشته باشد')
+      if (!known.has(section)) return fail(`بخش «${section}» در فروشگاه شناخته نشد`)
+      if (!lanesFor(section, map).includes(lane)) return fail(`ردیف «${lane}» برای بخش «${section}» تعریف نشده است`)
+      if (lanes.some((l) => l.section === section && l.lane === lane)) continue
+      lanes.push({ section, lane })
+      if (lanes.length > MAX_ASSIGN_PER_USER) return fail(`برای هر نفر حداکثر ${toFaDigits(MAX_ASSIGN_PER_USER)} ردیف می‌توان تکلیف کرد`)
+    }
+
+    const all = await readAssignments()
+    if (lanes.length) all[target.id] = lanes
+    else delete all[target.id]
+    await writeAssignments(all)
+
+    /* اعلان برای خودِ نفر — تکلیف جدیدِ بازبینی انقضا */
+    let notified = false
+    if (lanes.length && body.silent !== true) {
+      const mutedUsers = await readMutedUsers()
+      if (!mutedUsers.includes(target.id)) {
+        const row = await notify({
+          userId: target.id,
+          kind: `lanecheck:assign:${target.id}:${todayJalaliDash()}`,
+          severity: 'info',
+          title: 'تکلیف بازبینی انقضا از مدیر',
+          body: `${toFaDigits(lanes.length)} ردیف برای بازبینی به شما سپرده شد: ${lanes.map((l) => `${l.section}/${l.lane}`).join(' · ')} — در «کنترل انقضای قفسه‌ها › برنامهٔ امروز»`,
+          go: '#/store/lanecheck',
+        })
+        notified = !!row
+      }
+    }
+
+    await logActivity({
+      userId: me.id,
+      userName: displayName(me),
+      action: 'lanecheck.assign',
+      actionLabel: 'تکلیف ردیف‌های انقضا',
+      category: 'store',
+      detail: lanes.length
+        ? `${displayName(target)} — ${toFaDigits(lanes.length)} ردیف: ${lanes.map((l) => `${l.section}/${l.lane}`).join(' · ')}`
+        : `${displayName(target)} — تکلیف پاک شد (بازگشت به برنامهٔ تصادفی)`,
+      entityId: target.id,
+    })
+    return ok({ userId: target.id, lanes, assignments: all, notified })
+  }
 
   /* ── حالت دوم: خاموش/روشن‌کردن اعلان‌های بازرسی یک نفر ── */
   const muteUser = (sp.get('muteUser') || '').trim()

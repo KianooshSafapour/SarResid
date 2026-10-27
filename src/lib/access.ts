@@ -136,6 +136,8 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'system/smscenter': ['OWNER', 'GM', 'ADMIN'],
   // ---- R4-7: snapshot & reset (پشتیبان و بازنشانی داده) ----
   'system/data': ['OWNER', 'GM', 'ADMIN'],
+  // ---- R13: live server monitor (پایش سرور — مدیر سامانه) ----
+  'system/monitor': ['OWNER', 'ADMIN'],
 }
 
 /** capability → default roles — mirrors hasCap (module 200150) */

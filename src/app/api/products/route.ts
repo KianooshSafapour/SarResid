@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson, clampInt } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 import { toEnDigits } from '@/lib/jalali'
+import { tokenizeQuery, rankFuzzy } from '@/lib/fuzzy'
 
 /** Roles allowed to mutate products (mirrors frontend isManager gating + ACC/PM) */
 function canMutateProducts(u: SessionUser | null): boolean {
@@ -183,6 +184,84 @@ export async function GET(req: NextRequest) {
   }
 
   // ---------- list branch ----------
+  const tokens = q ? tokenizeQuery(q) : []
+  const mg = mainGroup || group
+  const sg = subGroup || category
+
+  /* ── R13: مسیر فازی — کلمات به هر ترتیبی؛ همهٔ کالاهای دارای «همهٔ کلمات» ──
+     کاندیدها با ORِ تک‌تک توکن‌ها از DB می‌آیند، در JS امتیاز می‌گیرند
+     (تطبیق کامل مقدم؛ تطبیق جزئی فقط وقتی هیچ کامل‌ی نبود) و صفحه‌بندی
+     همان‌جا انجام می‌شود. */
+  if (q && tokens.length) {
+    const other: Record<string, unknown>[] = []
+    if (mg) other.push({ mainGroup: mg })
+    if (sg) other.push({ subGroup: sg })
+    if (status) other.push({ status })
+    if (unit) other.push({ unit })
+    const tokenOr: Record<string, unknown>[] = tokens.map((t) => ({ name: { contains: t } }))
+    tokenOr.push({ code: { contains: q } })
+    tokenOr.push({ barcodesJson: { contains: q } })
+
+    let candidates: ProductRow[]
+    if (lowStock) {
+      /* کم‌موجود: همان ستون‌به‌ستونِ raw SQL، ولی LIKE هر توکن */
+      const likes = tokens.map((t) => `%${t}%`)
+      const conds = [Prisma.sql`active = 1`, LOW_STOCK_SQL]
+      conds.push(
+        Prisma.sql`(${Prisma.join(
+          [
+            ...likes.map((l) => Prisma.sql`name LIKE ${l}`),
+            Prisma.sql`code LIKE ${`%${q}%`}`,
+            Prisma.sql`barcodesJson LIKE ${`%${q}%`}`,
+          ],
+          ' OR ',
+        )})`,
+      )
+      if (mg) conds.push(Prisma.sql`mainGroup = ${mg}`)
+      if (sg) conds.push(Prisma.sql`subGroup = ${sg}`)
+      if (status) conds.push(Prisma.sql`status = ${status}`)
+      if (unit) conds.push(Prisma.sql`unit = ${unit}`)
+      candidates = await db.$queryRaw<ProductRow[]>(
+        Prisma.sql`SELECT id, name, code, unit, lastCountDate, monthlySold, category, mainGroup, subGroup,
+                          sellPrice, sellPrice2, lastBuyPrice, stock, reorderLevel, shelfLifeDays,
+                          status, active, sectionLabel, barcodesJson
+                   FROM Product WHERE ${Prisma.join(conds, ' AND ')}
+                   ORDER BY stock ASC, name ASC
+                   LIMIT 5000`,
+      )
+      candidates = candidates.map((p) => ({ ...p, active: !!p.active })) as ProductRow[]
+    } else {
+      const whereF: Record<string, unknown> = { AND: [...other, { OR: tokenOr }] }
+      candidates = (await db.product.findMany({ where: whereF, take: 5000 })) as ProductRow[]
+    }
+    const ranked = rankFuzzy<ProductRow & { barcodesJson?: string | null }>(q, candidates as ProductRow[])
+    const list = (ranked.matched.length ? ranked.matched : ranked.partial) as ProductRow[]
+    const totalF = list.length
+    const rowsF = list.slice((page - 1) * pageSize, page * pageSize)
+    const itemsF = rowsF.map((p) => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      unit: p.unit,
+      lastCountDate: p.lastCountDate,
+      monthlySold: p.monthlySold,
+      category: p.category,
+      mainGroup: p.mainGroup,
+      subGroup: p.subGroup,
+      sellPrice: p.sellPrice,
+      sellPrice2: p.sellPrice2,
+      lastBuyPrice: p.lastBuyPrice,
+      stock: p.stock,
+      reorderLevel: p.reorderLevel,
+      shelfLifeDays: p.shelfLifeDays,
+      status: p.status,
+      sectionLabel: p.sectionLabel,
+      active: !!p.active,
+      barcodeCount: barcodeCountOf(p.barcodesJson, p.code),
+    }))
+    return ok({ items: itemsF, total: totalF, page, pageSize, pages: Math.max(1, Math.ceil(totalF / pageSize)) })
+  }
+
   const where: Record<string, unknown> = {}
   const and: Record<string, unknown>[] = []
   if (q) {
@@ -194,9 +273,7 @@ export async function GET(req: NextRequest) {
       ],
     })
   }
-  const mg = mainGroup || group
   if (mg) and.push({ mainGroup: mg })
-  const sg = subGroup || category
   if (sg) and.push({ subGroup: sg })
   if (status) and.push({ status })
   if (unit) and.push({ unit }) // R4-8

@@ -4,7 +4,7 @@ import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 import { toFaDigits, todayJalaliDash } from '@/lib/jalali'
 import { deriveItem, invoiceListOut, MARGIN_ROLES, getMarginThresholds, type MarginItemInput } from '../route'
-import { createPurchaseOrder, pushOrderToHoloo, faMoney, type PurchaseDerivedItem } from '@/lib/margin-purchase'
+import { createPurchaseOrder, pushOrderToHoloo, publishPricesToHoloo, faMoney, type PurchaseDerivedItem } from '@/lib/margin-purchase'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +17,8 @@ type RouteContext = { params: Promise<{ id: string }> }
    • لغو/بازکردن بایگانی: مدیران ارشد */
 const REVIEW_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC']
 const MANAGER_ROLES = ['OWNER', 'GM', 'ADMIN']
+/* R13 — تأیید نهایی مدیرعامل (خانم لطفی): مدیرعامل؛ در نبودِ ایشان مالک/ادمین */
+const GM_ROLES = ['GM', 'OWNER', 'ADMIN']
 
 const REJECT_REASONS = [
   'قیمت چاپی متفاوت',
@@ -52,6 +54,7 @@ const HISTORY_LABEL: Record<string, string> = {
   'start-review': 'شروع بررسی حسابداری',
   'review-save': 'ذخیرهٔ بررسی',
   finalize: 'ثبت فاکتور خرید',
+  'gm-approve': 'تأیید مدیرعامل و انتشار قیمت',
   archive: 'بایگانی سند',
   unarchive: 'بازکردن بایگانی',
   cancel: 'لغو فاکتور',
@@ -189,6 +192,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       reviewedByName: inv.reviewedByName,
       finalizedAt: inv.finalizedAt?.toISOString() ?? null,
       finalizedByName: inv.finalizedByName,
+      gmApprovedAt: inv.gmApprovedAt?.toISOString() ?? null,
+      gmApprovedByName: inv.gmApprovedByName,
       cancelledAt: inv.cancelledAt?.toISOString() ?? null,
       cancelledByName: inv.cancelledByName,
       cancelReason: inv.cancelReason,
@@ -455,6 +460,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       receivedDetail: rejectedItems.length
         ? `پس از بررسی حسابداری — ${toFaDigits(String(acceptedItems.length))} قلم پذیرفته و ${toFaDigits(String(rejectedItems.length))} قلم مرجوع تأمین‌کننده شد`
         : 'پس از بررسی حسابداری — همهٔ اقلام پذیرفته شد',
+      /* R13: انتشار قیمت‌ها به گام «تأیید مدیرعامل» موکول می‌شود */
+      publishPrices: false,
     })
 
     let holoo: { pushed: boolean; pending?: boolean; reason?: string; invoiceNo?: string } | null = null
@@ -486,11 +493,11 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       },
     })
 
-    await notifyRoles(['GM', 'OWNER', 'ADMIN', 'PM'], {
+    await notifyRoles(['GM', 'OWNER', 'ADMIN'], {
       kind: `margin:finalize:${inv.id}`,
-      severity: 'success',
-      title: 'فاکتور خرید ثبت شد',
-      body: `فاکتور #${numFa} (${inv.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${me.fullName} نهایی شد — سند خرید ${order.code} تشکیل و موجودی به‌روز شد. پس از بایگانی کاغذی، سند را در «دفتر فاکتورها» بایگانی کنید.`,
+      severity: 'warning',
+      title: 'فاکتور خرید در انتظار تأیید مدیرعامل',
+      body: `فاکتور #${numFa} (${inv.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${me.fullName} ثبت شد — سند خرید ${order.code} تشکیل و موجودی به‌روز شد. قیمت‌ها پس از تأیید مدیرعامل در هلو منتشر می‌شود؛ سپس بایگانی سند کاغذی.`,
       go: `#/finance/invoices?open=${inv.id}`,
     })
 
@@ -514,10 +521,69 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     })
   }
 
-  /* ── گام ۵: بایگانی سند — ثبت در نظام آرشیو + زون‌بند/برگه ── */
+  /* ── گام ۵ (R13): تأیید نهایی مدیرعامل — انتشار قیمت‌ها (سر رسید + هلو) ── */
+  if (action === 'gm-approve') {
+    if (!GM_ROLES.includes(me.role)) return fail('تأیید نهایی فقط برای مدیرعامل (یا مالک/ادمین در نبودِ ایشان) ممکن است', 403)
+    if (inv.status !== 'final') return fail('تأیید مدیرعامل فقط برای «فاکتور خرید» ثبت‌شده ممکن است')
+    if (inv.gmApprovedAt) return fail('این فاکتور قبلاً تأیید مدیرعامل شده است')
+
+    const accepted = inv.items.filter((it) => it.accepted !== false)
+    /* انتشار قیمت: قیمت فروش = قیمت نهایی سودسنج (salePrice)؛ قیمت چاپی = sellPrice2/SellPrice2 هلو */
+    const prices = await publishPricesToHoloo({
+      items: accepted as unknown as PurchaseDerivedItem[],
+      marginInvoiceNumber: inv.number,
+    })
+
+    const priceDetail = prices.updatedLocal
+      ? ` · قیمت ${toFaDigits(String(prices.updatedLocal))} کالا به‌روز شد` +
+        (prices.holooEnabled
+          ? prices.pushedHoloo
+            ? ` · ${toFaDigits(String(prices.pushedHoloo))} قلم در هلو (SellPrice/SellPrice2) منتشر شد`
+            : prices.reason
+              ? ` · هلو: ${prices.reason}`
+              : ''
+          : ' · هلو: در دسترس نبود، بعداً از «اتصال هلو» ارسال می‌شود')
+      : ''
+
+    const updated = await db.marginInvoice.update({
+      where: { id },
+      data: {
+        gmApprovedAt: now,
+        gmApprovedById: me.id,
+        gmApprovedByName: me.fullName,
+        historyJson: withEvent(inv.historyJson, {
+          at: nowIso,
+          by: me.fullName,
+          action: 'gm-approve',
+          detail: `مدیرعامل سود و قیمت‌های فاکتور را تأیید کرد${priceDetail} — آمادهٔ بایگانی سند کاغذی`,
+        }),
+      },
+    })
+
+    await notifyRoles(['ACC', 'OWNER', 'ADMIN', 'EXEC'], {
+      kind: `margin:gm:${inv.id}`,
+      severity: 'success',
+      title: 'تأیید مدیرعامل انجام شد — آمادهٔ بایگانی',
+      body: `فاکتور #${numFa} (${inv.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${me.fullName} تأیید شد.${prices.holooEnabled && prices.pushedHoloo ? ` قیمت ${toFaDigits(String(prices.pushedHoloo))} کالا در هلو به‌روز شد.` : ''} سند کاغذی را در زون‌بند آرشیو بایگانی کنید.`,
+      go: `#/finance/invoices?open=${inv.id}`,
+    })
+
+    await logActivity({
+      userId: me.id, userName: me.fullName,
+      action: 'margin.gmApprove', actionLabel: 'تأیید مدیرعامل فاکتور خرید',
+      category: 'profit',
+      detail: `#${numFa} — ${toFaDigits(String(prices.updatedLocal))} قیمت به‌روز / ${toFaDigits(String(prices.pushedHoloo))} در هلو`,
+      entityId: id,
+    })
+
+    return ok({ id, status: updated.status, gmApprovedAt: nowIso, gmApprovedByName: me.fullName, prices })
+  }
+
+  /* ── گام ۶: بایگانی سند — ثبت در نظام آرشیو + زون‌بند/برگه ── */
   if (action === 'archive') {
     if (!REVIEW_ROLES.includes(me.role)) return fail('بایگانی سند فقط برای حسابدار یا مدیران ممکن است', 403)
     if (inv.status !== 'final') return fail('بایگانی فقط برای «فاکتور خرید» نهایی‌شده ممکن است')
+    if (!inv.gmApprovedAt) return fail('پیش از بایگانی، تأیید نهایی مدیرعامل (خانم لطفی) لازم است — در همین پنجره دکمهٔ «تأیید مدیرعامل»')
     if (inv.archived || inv.archiveDocId) return fail('این فاکتور قبلاً بایگانی شده است')
 
     const binderId = String(body?.binderId ?? '').trim() || null

@@ -762,6 +762,32 @@ function PassportDialog({ id, open, onOpenChange, onSaved, onEdit }: { id: strin
     ((trades?.series || []) as any[]).map((r) => ({ label: MONTH_FA[r.month] || r.month, value: Math.round(Number(r.sellQty || 0) * 100) / 100, extra: `گردش فروش: ${money(r.sellRevenue || 0)} ریال` })),
     [trades])
 
+  /* ── R13: روند قیمت — فی خرید/فروش واقعی هر ماه + نشانگرهای تورم ── */
+  const priceBuyPoints: FlowPoint[] = useMemo(() =>
+    ((trades?.series || []) as any[]).filter((r) => Number(r.buyAvgPrice || 0) > 0)
+      .map((r) => ({ label: MONTH_FA[r.month] || r.month, value: Math.round(Number(r.buyAvgPrice || 0)), extra: `میانگین فی خرید ${MONTH_FA[r.month] || r.month}: ${money(r.buyAvgPrice)} ریال` })),
+    [trades])
+  const priceSellPoints: FlowPoint[] = useMemo(() =>
+    ((trades?.series || []) as any[]).filter((r) => Number(r.sellAvgPrice || 0) > 0)
+      .map((r) => ({ label: MONTH_FA[r.month] || r.month, value: Math.round(Number(r.sellAvgPrice || 0)), extra: `میانگین فی فروش ${MONTH_FA[r.month] || r.month}: ${money(r.sellAvgPrice)} ریال` })),
+    [trades])
+  const priceTrend = useMemo(() => {
+    const pct = (pts: FlowPoint[]) => {
+      if (pts.length < 2) return null
+      const first = pts[0].value
+      const last = pts[pts.length - 1].value
+      const prev = pts[pts.length - 2].value
+      if (!first || !last) return null
+      return {
+        total: Math.round(((last - first) / first) * 1000) / 10,
+        last: Math.round(((last - prev) / prev) * 1000) / 10,
+        first,
+        lastPrice: last,
+      }
+    }
+    return { buy: pct(priceBuyPoints), sell: pct(priceSellPoints) }
+  }, [priceBuyPoints, priceSellPoints])
+
   /* ── نگاشت داده→نمودار (خروجی همان چیزی است که رندر می‌شود) ── */
   const flowPoints: FlowPoint[] = useMemo(() => {
     if (!circ?.buys) return []
@@ -968,6 +994,63 @@ function PassportDialog({ id, open, onOpenChange, onSaved, onEdit }: { id: strin
                 </div>
               ) : (
                 <ChartEmpty emoji="📊" title="سابقهٔ هلو برای این کالا ثبت نشده" hint="دادهٔ خرید/فروش تیر تا مهر ۱۴۰۵ از هلو درون‌ریزی شده — اگر این کالا در آن دوره معامله نشده باشد نموداری نیست" />
+              )}
+            </section>
+
+            {/* ── R13: روند قیمت (تورم) — فی خرید/فروش واقعی + نشانگرها ── */}
+            <section className="rounded-xl border border-rose-200/70 bg-rose-50/40 p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-black text-rose-900"><I.trendingUp size={14} /> روند قیمت — چقدر گران شده؟ (دادهٔ واقعی هلو)</p>
+                {priceTrend.buy || priceTrend.sell ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {priceTrend.buy ? (
+                      <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-rose-800">
+                        فی خرید از {money(priceTrend.buy.first)} به {money(priceTrend.buy.lastPrice)} ({fa(priceTrend.buy.total > 0 ? '+' : '')}{fa(priceTrend.buy.total)}٪)
+                      </span>
+                    ) : null}
+                    {priceTrend.sell ? (
+                      <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-emerald-800">
+                        فی فروش از {money(priceTrend.sell.first)} به {money(priceTrend.sell.lastPrice)} ({fa(priceTrend.sell.total > 0 ? '+' : '')}{fa(priceTrend.sell.total)}٪)
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              {priceBuyPoints.length >= 1 || priceSellPoints.length >= 1 ? (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-[10px] font-bold text-stone-500">فی خرید هر ماه (ریال)</p>
+                      <FlowChart points={priceBuyPoints} unit="ریال" height={130} color="#be123c" />
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[10px] font-bold text-stone-500">فی فروش هر ماه (ریال)</p>
+                      <FlowChart points={priceSellPoints} unit="ریال" height={130} color="#0e7a4a" />
+                    </div>
+                  </div>
+                  {/* نشانگرهای تورم ماه‌به‌ماه */}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {(trades?.series || []).slice(-3).map((r: any, i: number, arr: any[]) => {
+                      const prev = i > 0 ? arr[i - 1] : null
+                      const bPrev = prev?.buyAvgPrice || 0
+                      const bCur = r.buyAvgPrice || 0
+                      const chg = bPrev > 0 && bCur > 0 ? Math.round(((bCur - bPrev) / bPrev) * 1000) / 10 : null
+                      return (
+                        <span key={r.month} className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-bold text-stone-700">
+                          {MONTH_FA[r.month] || r.month}
+                          {chg === null ? '' : chg >= 0
+                            ? <span className="text-rose-600"> ↗ {fa(chg)}٪</span>
+                            : <span className="text-emerald-600"> ↘ {fa(Math.abs(chg))}٪</span>}
+                        </span>
+                      )
+                    })}
+                    <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-bold text-violet-800">قیمت چاپی امروز: {money(p?.sellPrice2 ?? 0)} ریال</span>
+                    <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold text-sky-800">قیمت فروش (نهایی): {money(p?.sellPrice ?? 0)} ریال</span>
+                  </div>
+                  <p className="mt-1.5 text-center text-[10px] text-stone-400">میانگین فیِ فاکتورهای واقعی هر ماه — تیر تا آبان ۱۴۰۵</p>
+                </>
+              ) : (
+                <ChartEmpty emoji="💹" title="قیمت ثبت‌شده‌ای برای این کالا نیست" hint="اگر این کالا در فایل‌های خرید/فروش هلو معامله شده باشد، روند قیمت همین‌جا ساخته می‌شود" />
               )}
             </section>
 

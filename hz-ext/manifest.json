@@ -429,6 +429,17 @@
     "ADMIN"
    ],
    "replaces": false
+  },
+  {
+   "key": "system/monitor",
+   "src": "monitor",
+   "section": "system",
+   "title": "پایش سرور",
+   "roles": [
+    "OWNER",
+    "ADMIN"
+   ],
+   "replaces": false
   }
  ],
  "removeNavKeys": [

@@ -134,6 +134,7 @@ async function detail(id: string) {
     avgPrintedPrice: printed.avgPrintedPrice,
     printedPriceCount: printed.printedPriceCount,
     status: p.status,
+    holooErp: p.holooErp ?? null, // R13: پیوند هلو (برای انتشار قیمت و پایش اتصال)
     sectionLabel: p.sectionLabel, // R5-P4
     supplierId: primaryLink?.supplierId ?? null, // R5-P4: تأمین‌کنندهٔ اصلی
     supplierName: primarySup?.name ?? null,

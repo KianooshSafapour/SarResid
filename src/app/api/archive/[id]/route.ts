@@ -26,6 +26,12 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       include: { items: { select: { name: true, qty: true, unitBuyPrice: true }, take: 60 } },
     })
     if (ord) {
+      /* R13 — اقلام ضایعات/مرجوعیِ برگشتی همراه مامور پخش (نمایندهٔ تأمین‌کننده) */
+      const wastes = await db.wasteRecord.findMany({
+        where: { orderId: ord.id },
+        select: { name: true, qty: true, unit: true, reason: true, status: true, repName: true, repPhone: true, returnedAtJalali: true, supplierName: true },
+        take: 80,
+      })
       linkedOrder = {
         id: ord.id,
         code: ord.code,
@@ -35,6 +41,19 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
         totalAmount: ord.totalAmount,
         payMethod: ord.payMethod,
         items: ord.items.map((it) => ({ name: it.name, qty: it.qty, unitBuyPrice: it.unitBuyPrice })),
+        wasteReturns: wastes.map((w) => ({
+          name: w.name,
+          qty: w.qty,
+          unit: w.unit,
+          reason: w.reason,
+          status: w.status,
+          repName: w.repName,
+          repPhone: w.repPhone,
+          returnedAtJalali: w.returnedAtJalali,
+          supplierName: w.supplierName,
+        })),
+        wasteRep: wastes.find((w) => w.repName)?.repName ?? null,
+        wasteRepPhone: wastes.find((w) => w.repPhone)?.repPhone ?? null,
       }
     }
   }

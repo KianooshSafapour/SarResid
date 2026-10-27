@@ -138,6 +138,8 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'system/data': ['OWNER', 'GM', 'ADMIN'],
   // ---- R13: live server monitor (پایش سرور — مدیر سامانه) ----
   'system/monitor': ['OWNER', 'ADMIN'],
+  // ---- R14: AI assistant (دستیار هوشمند z.ai) ----
+  'system/ai': ['OWNER', 'ADMIN'],
 }
 
 /** capability → default roles — mirrors hasCap (module 200150) */

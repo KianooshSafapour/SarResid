@@ -1300,15 +1300,17 @@ export default function OrdersView() {
         {/* ══ سفارش جدید — جدولی + طرف حساب ══ */}
         <TabsContent value="new" className="mt-4 space-y-4">
 
+          {/* R14: طرف حساب و ضایعاتِ همان تأمین‌کننده کنار هم — به‌جای دو نوار تمام‌عرض */}
+          <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12">
           {/* طرف حساب (تأمین‌کننده) — نخستین کارت سربرگ سفارش */}
-          <Card>
+          <Card className="xl:col-span-5">
             <CardHeader className="space-y-3 pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <I.handshake size={18} /> طرف حساب (تأمین‌کننده)
                 {supplierId && supplierId !== 'none' && <Badge variant="secondary" className="text-[11px]">انتخاب‌شده</Badge>}
               </CardTitle>
               <p className="text-xs leading-5 text-stone-500">
-                تأمین‌کنندهٔ این سفارش را همین ابتدا مشخص کنید (اختیاری) — در کادر زیر همان‌جا تایپ کنید (نام / کد / تلفن) و از فهرست بازشو انتخاب کنید؛ کلیدهای ↑↓ و Enter هم کار می‌کند.
+                تأمین‌کنندهٔ این سفارش را مشخص کنید (اختیاری) — تایپ کنید (نام / کد / تلفن) و از فهرست بازشو انتخاب کنید؛ کلیدهای ↑↓ و Enter هم کار می‌کند.
               </p>
               <SupplierCombo suppliers={suppliers} value={supplierId} onChange={setSupplierId} />
             </CardHeader>
@@ -1337,7 +1339,7 @@ export default function OrdersView() {
               فقط وقتی طرف حساب انتخاب شده و قلم در انتظار دارد ظاهر می‌شود؛
               اقلام علامت‌خورده با ثبت سفارش SELECTED می‌شوند و در دریافت، برگشت می‌خورند. */}
           {waste && (waste.items ?? []).length > 0 && (
-            <Card className="border-amber-300">
+            <Card className="border-amber-300 xl:col-span-7">
               <CardHeader className="space-y-2 pb-2">
                 <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                   <I.alertTriangle size={17} className="shrink-0 text-amber-600" /> ضایعاتِ این تأمین‌کننده — برای برگشت با همین سفارش
@@ -1374,6 +1376,7 @@ export default function OrdersView() {
               </CardContent>
             </Card>
           )}
+          </div>
 
           {/* جست‌وجوی سریع کالا */}
           <Card>
@@ -1423,7 +1426,7 @@ export default function OrdersView() {
                   </div>
                   <div className="max-h-[420px] overflow-y-auto overflow-x-auto rounded-xl border border-stone-200 bg-white">
                     {/* R9-V2 (الف): جدول نتایج با نظم کامل — سربرگ کهرباییِ همیشه‌سبک، ستون‌های هم‌عرض، ردیف‌های هم‌قد */}
-                    <table dir="rtl" className="w-full min-w-[1000px] text-sm">
+                    <table dir="rtl" className="w-full min-w-[900px] text-sm">
                       <thead>
                         <tr>
                           <th className="sticky top-0 z-10 h-9 whitespace-nowrap bg-stone-100 px-2 text-right align-middle text-[11px] font-bold text-stone-500">نام کالا</th>
@@ -1594,7 +1597,7 @@ export default function OrdersView() {
                       ردیف‌های هم‌قد (min-h + ساختار یکسان)، کنترل‌ها همیشه در همان ستون و همان ارتفاع.
                       نام بلند؟ truncate + title — دیگر هیچ سطری «پلکانی» نمی‌شود. ── */
                 <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-                  <div className="min-w-[980px]">
+                  <div className="min-w-[900px]">
                     {/* سربرگ ستون‌ها — دقیقاً همان قالب گرید سطرها */}
                     <div dir="rtl"
                       className="grid h-9 grid-cols-[minmax(200px,1.6fr)_150px_150px_84px_132px_132px_44px] items-center gap-x-2 bg-stone-100 px-3 text-[11px] font-bold text-stone-500">

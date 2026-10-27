@@ -440,6 +440,17 @@
     "ADMIN"
    ],
    "replaces": false
+  },
+  {
+   "key": "system/ai",
+   "src": "ai",
+   "section": "system",
+   "title": "دستیار هوشمند",
+   "roles": [
+    "OWNER",
+    "ADMIN"
+   ],
+   "replaces": false
   }
  ],
  "removeNavKeys": [

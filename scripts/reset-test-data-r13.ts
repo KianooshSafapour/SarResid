@@ -235,6 +235,9 @@ async function main() {
     if (r.count > 0) console.log(`   ✓ ${label}: ${r.count} حذف شد`)
   }
 
+  /* R14: نگاشت زون‌بندِ خودکار — فعلاً فقط دادهٔ تست می‌تواند داشت؛ کلید حذف می‌شود */
+  await db.setting.deleteMany({ where: { key: 'archive.autoBind' } }).catch(() => {})
+
   /* کلیدهای تورِ KV هم دادهٔ تست‌اند */
   const tourKeys = await db.setting.findMany({ where: { key: { startsWith: 'tour:' } } })
   if (tourKeys.length) {

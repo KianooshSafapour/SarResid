@@ -96,8 +96,10 @@ export default function MonitorView() {
     )
   }
 
-  const cpuSpark = history.length > 1
-    ? `M ${history.map((v, i) => `${(i / Math.max(1, history.length - 1)) * 100},${40 - (v / 100) * 36}`).join(' L ')}`
+  /* R14: از همان نخستین نمونه یک خطِ صاف رسم می‌شود — نه پس از ۵ ثانیه */
+  const sparkPts = history.length === 1 ? [history[0], history[0]] : history
+  const cpuSpark = sparkPts.length > 1
+    ? `M ${sparkPts.map((v, i) => `${(i / Math.max(1, sparkPts.length - 1)) * 100},${40 - (v / 100) * 36}`).join(' L ')}`
     : ''
 
   return (

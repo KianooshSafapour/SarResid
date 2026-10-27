@@ -44,7 +44,7 @@ const PAY_LABEL: Record<string, string> = { CASH: 'نقدی', CHEQUE: 'چک', PO
 const REVIEW_ROLES = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC']
 const MANAGER_ROLES = ['OWNER', 'GM', 'ADMIN']
 const MARGIN_ROLES = ['OWNER', 'GM', 'ADMIN', 'ACC']
-/* R13 — تأیید نهایی مدیرعامل (خانم لطفی)؛ در نبودِ ایشان مالک/ادمین */
+/* R13 — تأیید نهایی مدیر کل (خانم لطفی)؛ در نبودِ ایشان مالک/ادمین */
 const GM_ROLES = ['GM', 'OWNER', 'ADMIN']
 
 const STEPS: { key: string; label: string; actor: string }[] = [
@@ -52,10 +52,10 @@ const STEPS: { key: string; label: string; actor: string }[] = [
   { key: 'delivered', label: 'تأیید تحویل کالا', actor: 'کارمند دریافت‌کننده' },
   { key: 'reviewing', label: 'بررسی حسابداری', actor: 'حسابدار / مدیر' },
   { key: 'final', label: 'فاکتور خرید', actor: 'حسابدار / مدیر' },
-  { key: 'gm', label: 'تأیید مدیرعامل', actor: 'مدیرعامل (خانم لطفی)' },
+  { key: 'gm', label: 'تأیید مدیر کل', actor: 'مدیر کل (خانم لطفی)' },
   { key: 'archived', label: 'بایگانی سند', actor: 'حسابدار / مدیر' },
 ]
-/* R13 — گام تأیید مدیرعامل: final بدون gmApproved → گام ۳؛ با تأیید → گام ۴؛ archived → ۵ */
+/* R13 — گام تأیید مدیر کل: final بدون gmApproved → گام ۳؛ با تأیید → گام ۴؛ archived → ۵ */
 function stepIndex(state: string, gmApproved?: string | null | boolean): number {
   if (state === 'archived') return 5
   if (state === 'final') return gmApproved ? 4 : 3
@@ -122,6 +122,7 @@ interface Detail {
   finalizedByName: string | null
   gmApprovedAt: string | null
   gmApprovedByName: string | null
+  autoArchiveBinder: { id: string; name: string; code: string; shelf: string | null; cabinet: string | null } | null
   cancelledByName: string | null
   cancelReason: string | null
   holooInvoiceNo: string | null
@@ -169,6 +170,9 @@ export default function InvoicesView() {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  /* R14: بایگانی خودکار — چک پیش‌فرض روشن؛ زون‌بندِ شرکت از سرور می‌آید */
+  const [autoArchive, setAutoArchive] = useState(true)
+  const [saveBinder, setSaveBinder] = useState(true)
 
   /* ویرایش بررسی (قیمت/پذیرش) */
   const [reviewEdits, setReviewEdits] = useState<Record<string, { totalCost?: number; printedPrice?: number; accepted?: boolean; rejectReason?: string }>>({})
@@ -277,7 +281,7 @@ export default function InvoicesView() {
   /* ── فاکتور خرید ── */
   async function doFinalize() {
     if (!detail) return
-    const okDone = await act(detail.id, { action: 'finalize', payMethod, pushToHoloo }, 'فاکتور خرید ثبت شد — در انتظار تأیید مدیرعامل (خانم لطفی)')
+    const okDone = await act(detail.id, { action: 'finalize', payMethod, pushToHoloo }, 'فاکتور خرید ثبت شد — در انتظار تأیید مدیر کل (خانم لطفی)')
     if (okDone) setFinalizeOpen(false)
   }
 
@@ -305,6 +309,7 @@ export default function InvoicesView() {
       detail.id,
       {
         action: 'archive',
+        saveBinder,
         binderId: archForm.binderId,
         folio: archForm.folio || undefined,
         holooInvoiceNo: archForm.holooInvoiceNo || undefined,
@@ -313,7 +318,7 @@ export default function InvoicesView() {
       },
       'سند در بایگانی ثبت شد — کاغذ را در زون‌بند جا بدهید',
     )
-    if (okDone) { setArchiveOpen(false); setArchForm({ binderId: '', folio: '', holooInvoiceNo: '', holooReceiptNo: '', scanDataUrl: '', scanName: '' }) }
+    if (okDone) { setArchiveOpen(false); setSaveBinder(true); setArchForm({ binderId: '', folio: '', holooInvoiceNo: '', holooReceiptNo: '', scanDataUrl: '', scanName: '' }) }
   }
   function onScanFile(e: any) {
     const f = e.target.files?.[0]
@@ -359,7 +364,7 @@ export default function InvoicesView() {
               <p className="text-[12px] text-muted-foreground mt-1 leading-6">
                 پیش‌فاکتورِ ثبت‌شده در «سودسنج» را کارمندِ دریافت‌کننده تأیید تحویل می‌کند؛ خانم درویشی (یا یکی از مدیرها)
                 قیمت‌ها و حاشیهٔ سود را بررسی و اقلام مشکل‌دار را مرجوع می‌کند؛ فاکتور خرید نهایی می‌شود (موجودی + هلو)؛
-                مدیرعامل (خانم لطفی) سود و قیمت‌ها را نهایی تأیید می‌کند و قیمت‌ها در هلو منتشر می‌شود؛ سپس سند کاغذی در زون‌بند بایگانی می‌شود — همان‌جا هم پیدا.
+                مدیر کل (خانم لطفی) سود و قیمت‌ها را نهایی تأیید می‌کند و قیمت‌ها در هلو منتشر می‌شود؛ سپس سند کاغذی در زون‌بند بایگانی می‌شود — همان‌جا هم پیدا.
               </p>
             </div>
             {canEditDraft ? (
@@ -454,7 +459,7 @@ export default function InvoicesView() {
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         <span className={cn('inline-block rounded-full border px-2 py-0.5 text-[10px]', STATE_CLS[r.state])}>{STATE_FA[r.state]}</span>
-                        {r.gmPending ? <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] text-violet-700" title="پیش از بایگانی، تأیید مدیرعامل لازم است">در انتظار مدیرعامل</span> : null}
+                        {r.gmPending ? <span className="inline-block rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] text-violet-700" title="پیش از بایگانی، تأیید مدیر کل لازم است">در انتظار مدیر کل</span> : null}
                       </div>
                     </TableCell>
                     <TableCell className="text-[11px]">{r.purchaseOrderId ? <span className="text-teal-700">ثبت‌شده</span> : '—'}</TableCell>
@@ -693,15 +698,34 @@ export default function InvoicesView() {
                   </Button>
                 ) : null}
                 {dState === 'final' && !detail.gmApprovedAt && canGm ? (
-                  <Button disabled={busy} className="bg-violet-700 hover:bg-violet-800" onClick={() => void act(detail.id, { action: 'gm-approve' }, 'تأیید مدیرعامل انجام شد — قیمت‌ها در سر رسید و هلو به‌روز شد؛ آمادهٔ بایگانی')}>
-                    <I.shieldCheck size={14} /> تأیید مدیرعامل (لطفی) و انتشار قیمت‌ها
-                  </Button>
+                  <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-violet-200 bg-violet-50/60 p-2.5">
+                    <Button
+                      disabled={busy}
+                      className="bg-violet-700 hover:bg-violet-800"
+                      onClick={() => void act(detail.id, { action: 'gm-approve', autoArchive: autoArchive && !!detail.autoArchiveBinder }, detail.autoArchiveBinder && autoArchive ? 'تأیید مدیر کل انجام شد — قیمت‌ها منتشر و سند خودکار بایگانی شد' : 'تأیید مدیر کل انجام شد — قیمت‌ها در سر رسید و هلو به‌روز شد؛ آمادهٔ بایگانی')}
+                    >
+                      <I.shieldCheck size={14} /> تأیید مدیر کل (لطفی) و انتشار قیمت‌ها
+                    </Button>
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-violet-900" title="اگر برای این شرکت زون‌بند تعیین شده باشد، سند همان‌جا و با برگهٔ خودکارِ بعدی بایگانی می‌شود">
+                      <Checkbox checked={autoArchive} onCheckedChange={(v: boolean) => setAutoArchive(v === true)} />
+                      بایگانی خودکار
+                    </label>
+                    {detail.autoArchiveBinder ? (
+                      <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800" title={detail.autoArchiveBinder.cabinet ? `${detail.autoArchiveBinder.cabinet} ‹ ${detail.autoArchiveBinder.shelf ?? ''}` : undefined}>
+                        زون‌بندِ این شرکت: «{detail.autoArchiveBinder.name}» · برگهٔ بعدی خودکار
+                      </span>
+                    ) : (
+                      <span className="text-[10px] leading-4 text-stone-500">
+                        زون‌بندی برای این شرکت تعیین نشده — پس از تأیید، از «بایگانی سند کاغذی» بایگانی و ذخیرهٔ زون‌بند کنید تا فاکتورهای بعدی خودکار شوند.
+                      </span>
+                    )}
+                  </div>
                 ) : null}
                 {dState === 'final' ? (
                   <div className={cn('w-full rounded-lg border p-3 text-[11px] leading-6', detail.gmApprovedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-violet-200 bg-violet-50 text-violet-800')}>
                     {detail.gmApprovedAt ? (
                       <>
-                        تأیید مدیرعامل انجام شد{detail.gmApprovedByName ? ` (${detail.gmApprovedByName})` : ''} — قیمت فروش (نهایی) و قیمت چاپی (قیمت فروش ۲) روی کالاها به‌روز و در هلو منتشر شد.
+                        تأیید مدیر کل انجام شد{detail.gmApprovedByName ? ` (${detail.gmApprovedByName})` : ''} — قیمت فروش (نهایی) و قیمت چاپی (قیمت فروش ۲) روی کالاها به‌روز و در هلو منتشر شد.
                         حالا سند کاغذی را در زون‌کن بایگانی و «بایگانی سند کاغذی» را بزنید.
                       </>
                     ) : (
@@ -709,7 +733,7 @@ export default function InvoicesView() {
                         فاکتور خرید ثبت شده{detail.finalizedByName ? ` (${detail.finalizedByName})` : ''} — سند خرید{' '}
                         {detail.order ? <b>{fa(detail.order.code)}</b> : 'ثبت‌شده'} و موجودی به‌روز است.
                         {detail.holooInvoiceNo ? ` شماره فاکتور هلو: ${fa(detail.holooInvoiceNo)}.` : ''}
-                        {' '}اکنون در انتظار تأیید نهایی مدیرعامل (خانم لطفی) است؛ پس از تأیید، قیمت‌ها در هلو منتشر و بایگانی ممکن می‌شود.
+                        {' '}اکنون در انتظار تأیید نهایی مدیر کل (خانم لطفی) است؛ پس از تأیید، قیمت‌ها در هلو منتشر و بایگانی ممکن می‌شود.
                       </>
                     )}
                   </div>
@@ -751,7 +775,7 @@ export default function InvoicesView() {
                 <>
                   {fa(acceptedRows.length)} قلم پذیرفته ({money(acceptedTotal)} ریال)
                   {rejectedRows.length ? ` · ${fa(rejectedRows.length)} قلم مرجوعی (به تأمین‌کننده برمی‌گردد و وارد انبار نمی‌شود)` : ''}.
-                  با ثبت، سند خرید تشکیل و موجودی به‌روز می‌شود و (در صورت انتخاب) فاکتور به هلو ارسال می‌شود. انتشار قیمت‌ها پس از تأیید مدیرعامل انجام می‌شود.
+                  با ثبت، سند خرید تشکیل و موجودی به‌روز می‌شود و (در صورت انتخاب) فاکتور به هلو ارسال می‌شود. انتشار قیمت‌ها پس از تأیید مدیر کل انجام می‌شود.
                 </>
               ) : null}
             </DialogDescription>
@@ -810,6 +834,10 @@ export default function InvoicesView() {
                 </SelectContent>
               </Select>
             </div>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-2 text-[11px] font-bold text-emerald-800" title="زون‌بند انتخابی برای این شرکت ذخیره می‌شود؛ فاکتورهای بعدیِ همین شرکت با تأیید مدیر کل خودکار بایگانی می‌شوند">
+              <Checkbox checked={saveBinder} onCheckedChange={(v: boolean) => setSaveBinder(v === true)} />
+              این زون‌بند را برای این شرکت ذخیره کن — بایگانی خودکارِ فاکتورهای بعدی
+            </label>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-[11px] font-medium text-stone-600">برگه/جیب</label>

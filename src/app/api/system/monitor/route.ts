@@ -192,7 +192,7 @@ export async function GET(_req: NextRequest) {
     runtime: {
       platform: `${os.platform()} ${os.arch()}`,
       hostname: os.hostname(),
-      bun: typeof Bun !== 'undefined' ? Bun.version : null,
+      bun: (globalThis as unknown as { Bun?: { version?: string } }).Bun?.version ?? null,
       node: process.version,
       processUptimeSec: Math.round(process.uptime()),
       serverUptimeSec: Math.round(os.uptime()),

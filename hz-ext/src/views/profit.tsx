@@ -556,9 +556,9 @@ export default function ProfitView() {
 
   useEffect(() => { void load() }, [])
 
-  /* ─── «بازکردن در فاکتورنویس» — hash ‏#/finance/builder?id=… از دفتر فاکتورها/آمار (R12: سودسنج زیر بخش مالی) ─── */
+  /* ─── «بازکردن در فاکتورنویس» — hash ‏#/finance/builder?id=… از دفتر فاکتورها/آمار (R12: سودسنج زیر بخش مالی؛ R14: پیشوند قدیمی profit هم پذیرفته می‌شود) ─── */
   function invoiceIdFromHash(): string | null {
-    const m = String(typeof location !== 'undefined' ? location.hash || '' : '').match(/#\/profit\/builder\?id=([A-Za-z0-9_-]+)/)
+    const m = String(typeof location !== 'undefined' ? location.hash || '' : '').match(/#\/(?:finance|profit)\/builder\?id=([A-Za-z0-9_-]+)/)
     return m ? m[1] : null
   }
   async function loadInvoiceForEdit(id: string) {

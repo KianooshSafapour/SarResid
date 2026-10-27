@@ -294,6 +294,11 @@ model Order {
   createdByName String?
   holooErp      String? // شناسه ErpCode سفارش خرید ثبت‌شده در هلو
   receivedAt    DateTime?
+  // ── R14: تأیید مدیر کل (خانم لطفی) پس از ثبت حسابداری — پیش از بستن سفارش؛
+  //    هم‌زمان قیمت‌های فاکتور سودسنجِ متصل منتشر می‌شود
+  gmApprovedAt    DateTime?
+  gmApprovedById  String?
+  gmApprovedByName String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

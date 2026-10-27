@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 import { canApproveOrdersUser } from '@/lib/access'
-import { toFaDigits, addDaysJalaliDash, todayJalaliDash } from '@/lib/jalali'
+import { toFaDigits, toEnDigits, addDaysJalaliDash, todayJalaliDash } from '@/lib/jalali'
 
 const MANAGERS = ['OWNER', 'GM', 'ADMIN', 'EXEC']
 
@@ -26,6 +26,8 @@ type OrderExtras = {
   approvedByName?: string | null
   receivedById?: string | null
   receivedByName?: string | null
+  offScheduleNote?: string | null
+  offScheduleDays?: number | null
   verifiedById?: string | null
   verifiedByName?: string | null
   marginInvoiceNumber?: number | null
@@ -129,6 +131,9 @@ async function detail(id: string) {
     approvedById: extras.approvedById ?? null,
     receivedById: extras.receivedById ?? null,
     verifiedById: extras.verifiedById ?? null,
+    /* R14: تأیید مدیر کل پس از ثبت حسابداری */
+    gmApprovedAt: o.gmApprovedAt ? o.gmApprovedAt.toISOString() : null,
+    gmApprovedByName: o.gmApprovedByName ?? null,
     historyJson,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
@@ -200,6 +205,25 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 }
 
 /** PATCH /api/orders/[id] — workflow actions; response is the updated detail (+mismatch for receive) */
+/** R14 — ردپای «تأیید مدیر کل» روی فاکتور سودسنجِ متصلِ سفارش */
+function linkedInvoiceHistory(
+  inv: { historyJson: string },
+  by: string,
+): string {
+  try {
+    const list = JSON.parse(inv.historyJson || '[]') as { at?: string; by?: string; action?: string; detail?: string }[]
+    list.push({
+      at: new Date().toISOString(),
+      by,
+      action: 'gm-approve',
+      detail: 'مدیر کل از مسیر سفارش‌ها تأیید کرد — قیمت‌ها در سر رسید و هلو به‌روز شد',
+    })
+    return JSON.stringify(list.slice(-80))
+  } catch {
+    return inv.historyJson
+  }
+}
+
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser()
   if (!user) return fail('ابتدا وارد شوید', 401)
@@ -404,6 +428,19 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       if (o.status !== 'APPROVED') return fail('این سفارش در وضعیت دریافت نیست')
       /* R10: دریافت کالا برای همهٔ کارکنان باز است (مالک: «همه باید بتوانند دریافت کنند») —
          فقط کاربر لاگین‌شده لازم است؛ کنترل دو‌نفره در مرحلهٔ راستی‌آزمایی اعمال می‌شود. */
+      /* R14: دریافت خارج از تاریخ تحویل — کاربر هشدار را تأیید و توضیح نوشته است */
+      const offNote = String(body.offScheduleNote ?? '').trim().slice(0, 300)
+      const offDays = Number(body.offScheduleDays)
+      if (offNote) {
+        extras.offScheduleNote = offNote
+        extras.offScheduleDays = Number.isFinite(offDays) ? offDays : null
+        await pushHistory(extras, {
+          at: now,
+          by,
+          action: 'off-schedule',
+          detail: `دریافت ${offDays > 0 ? `${toFaDigits(String(offDays))} روز زودتر` : offDays < 0 ? `${toFaDigits(String(Math.abs(offDays)))} روز دیرتر` : 'خارج از تاریخ'} از تاریخ تحویل (${toFaDigits(o.deliveryDate ?? '—')}) — توضیح کاربر: ${offNote}`,
+        })
+      }
       await pushHistory(extras, { at: now, by, action: 'start-receive', detail: 'شروع دریافت کالا در انبار' })
       await saveExtras(o.id, extras)
       await db.order.update({ where: { id: o.id }, data: { status: 'RECEIVING' } })
@@ -675,6 +712,46 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return ok(d ? { ...d, mismatch } : { mismatch })
     }
 
+    /* ── R14: اسکن بارکد در فرم دریافت — بارکد جدیدِ کالا در بانک بارکد ثبت می‌شود ── */
+    case 'scan-barcode': {
+      if (!['RECEIVING', 'RECEIVED'].includes(o.status)) return fail('اسکن فقط در حین دریافت ممکن است')
+      const itemId = String(body.itemId ?? '')
+      const code = toEnDigits(String(body.barcode ?? '')).replace(/[^0-9]/g, '')
+      if (!itemId) return fail('قلم سفارش مشخص نیست')
+      if (!/^\d{4,20}$/.test(code)) return fail('قالب بارکد نامعتبر است (۴ تا ۲۰ رقم)')
+      const it = o.items.find((x) => x.id === itemId)
+      if (!it) return fail('این قلم در سفارش نیست')
+      if (!it.productId) return fail('این قلم به کالای بانک متصل نیست — بارکد فقط برای اقلام متصل ثبت می‌شود')
+      const prod = await db.product.findUnique({ where: { id: it.productId }, select: { id: true, name: true, code: true, barcodesJson: true, holooErp: true } })
+      if (!prod) return fail('کالای این قلم یافت نشد')
+      const bank = safeJson<string[]>(prod.barcodesJson, [])
+      if (code === prod.code || bank.includes(code)) return ok({ known: true, added: false, barcode: code })
+      bank.push(code)
+      await db.product.update({ where: { id: prod.id }, data: { barcodesJson: JSON.stringify(bank.slice(0, 60)) } })
+      await logActivity({
+        userId: user.id,
+        userName: by,
+        action: 'order_scan_barcode',
+        actionLabel: 'بارکد جدید از فرم دریافت',
+        category: 'orders',
+        detail: `${code} → ${prod.name} (سفارش ${o.code})`,
+        entityId: prod.id,
+      })
+      /* هلو: سرویس Apex (PDF) برای افزودن بارکد/Morecodes اندپوینت نوشتاری ندارد؛
+         ثبت در بانک خودمان + لاگ برای پیگیری دستی/آتی */
+      await db.holooSyncLog
+        .create({
+          data: {
+            kind: 'BARCODE_ADD',
+            status: 'FAIL',
+            statsJson: JSON.stringify({ orderCode: o.code, productCode: prod.code, barcode: code, holooErp: prod.holooErp ?? null }),
+            error: 'سرویس وب Apex هلو بارکد افزوردن را پشتیبانی نمی‌کند (PDF فاقد اندپوینت Morecodes نوشتاری) — در خود هلو ثبت شود',
+          },
+        })
+        .catch(() => {})
+      return ok({ known: false, added: true, barcode: code })
+    }
+
     case 'verify': {
       if (o.status !== 'RECEIVED') return fail('فقط سفارش دریافت‌شده قابل راستی‌آزمایی است')
       /* R11: راستی‌آزمایی برای همهٔ کارکنان باز است (هر کارمندِ دیگری غیر از دریافت‌کنندهٔ همان سفارش).
@@ -884,13 +961,78 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         detail: `ثبت ${o.code} در حسابداری — جمع ${faMoney(totalAmount)} ریال${archiveDocId ? ' + سند آرشیو' : ''}`,
         entityId: o.id,
       })
+      /* R14: اعلان به مدیر کل — سفارش در انتظار تأیید ایشان است */
+      for (const role of ['GM', 'OWNER', 'ADMIN']) {
+        await db.notification.create({
+          data: {
+            role,
+            kind: `order:gm:${o.id}`,
+            severity: 'warning',
+            title: 'سفارش در انتظار تأیید مدیر کل',
+            body: `سفارش ${o.code} (${o.supplierName ?? 'بدون تأمین‌کننده'}) توسط ${by} در حسابداری ثبت شد — پس از تأیید مدیر کل (خانم لطفی)، قیمت‌ها منتشر و سفارش قابل بستن است.`,
+            go: `#/supply/receiving?open=${o.id}`,
+          },
+        }).catch(() => {})
+      }
       const dAcc = await detail(o.id)
       return ok(dAcc ? { ...dAcc, archiveDocId, marginInvoiceId, marginInvoiceNumber, holoo } : { archiveDocId, marginInvoiceId, marginInvoiceNumber, holoo })
+    }
+
+    /* ── R14: تأیید مدیر کل (خانم لطفی) — پس از ثبت حسابداری، پیش از بستن سفارش.
+       هم‌زمان قیمت‌های فاکتور سودسنجِ متصل (sellPrice=نهایی، sellPrice2=قیمت چاپی)
+       روی کالا و در هلو منتشر می‌شود. ── */
+    case 'gm-approve': {
+      if (o.status !== 'ACCOUNTED') return fail('تأیید مدیر کل فقط برای سفارشِ ثبت‌شده در حسابداری ممکن است')
+      if (!['GM', 'OWNER', 'ADMIN'].includes(user.role)) return fail('تأیید مدیر کل فقط برای مدیر کل (خانم لطفی) یا مالک/ادمین ممکن است', 403)
+      if (o.gmApprovedAt) return fail('این سفارش قبلاً تأیید مدیر کل شده است')
+
+      let prices: { updatedLocal: number; pushedHoloo: number; reason?: string } | null = null
+      const linkedInv = await db.marginInvoice.findFirst({ where: { purchaseOrderId: o.id }, include: { items: true } })
+      if (linkedInv && !linkedInv.gmApprovedAt) {
+        const { publishPricesToHoloo } = await import('@/lib/margin-purchase')
+        prices = await publishPricesToHoloo({
+          items: linkedInv.items.filter((it) => it.accepted !== false),
+          marginInvoiceNumber: linkedInv.number,
+        })
+        await db.marginInvoice.update({
+          where: { id: linkedInv.id },
+          data: {
+            gmApprovedAt: new Date(),
+            gmApprovedById: user.id,
+            gmApprovedByName: by,
+            historyJson: linkedInvoiceHistory(linkedInv, by),
+          },
+        })
+      }
+
+      await pushHistory(extras, {
+        at: now,
+        by,
+        action: 'gm-approve',
+        detail: `تأیید مدیر کل (خانم لطفی) — ${by}${prices ? ` · قیمت ${toFaDigits(String(prices.updatedLocal))} کالا به‌روز شد${prices.pushedHoloo ? ` و ${toFaDigits(String(prices.pushedHoloo))} قلم در هلو منتشر شد` : ''}` : ''} — آمادهٔ بستن سفارش`,
+      })
+      await saveExtras(o.id, extras)
+      await db.order.update({
+        where: { id: o.id },
+        data: { gmApprovedAt: new Date(), gmApprovedById: user.id, gmApprovedByName: by },
+      })
+      await logActivity({
+        userId: user.id,
+        userName: by,
+        action: 'order_gm_approve',
+        actionLabel: 'تأیید مدیر کل سفارش',
+        category: 'orders',
+        detail: `${o.code}${prices ? ` — ${toFaDigits(String(prices.updatedLocal))} قیمت به‌روز / ${toFaDigits(String(prices.pushedHoloo))} در هلو` : ''}`,
+        entityId: o.id,
+      })
+      const dGm = await detail(o.id)
+      return ok(dGm ? { ...dGm, prices } : { prices })
     }
 
     case 'final-approve': {
       if (o.status !== 'ACCOUNTED') return fail('فقط سفارش ثبت‌شده در حسابداری قابل بستن است')
       if (!manager) return fail('تأیید نهایی فقط با دسترسی مدیران ممکن است', 403)
+      if (!o.gmApprovedAt) return fail('پیش از بستن سفارش، تأیید مدیر کل (خانم لطفی) لازم است')
       await pushHistory(extras, { at: now, by, action: 'final-approve', detail: 'سفارش بسته شد' })
       await saveExtras(o.id, extras)
       await db.order.update({ where: { id: o.id }, data: { status: 'DONE' } })

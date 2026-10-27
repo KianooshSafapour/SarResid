@@ -4,8 +4,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-  Checkbox,
-  money, toman, fa, toEnDigits, toFaDigits, formatJalali, I,
+  Checkbox, Textarea,
+  money, toman, fa, toEnDigits, toFaDigits, formatJalali, todayJalali, jalaliToDate, I,
   MoneyInput, NumInput,
 } from '../lib/hz'
 
@@ -178,6 +178,8 @@ export default function ReceivingView() {
   /* فرم دریافت (مرحلهٔ ۲) */
   const [rows, setRows] = useState<any[] | null>(null)
   const [actBusy, setActBusy] = useState<string | null>(null)
+  /* R14: دریافت خارج از پنجرهٔ تحویل — تأیید + توضیح اجباری */
+  const [offDlg, setOffDlg] = useState<{ open: boolean; days: number; note: string } | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   /* کالای اضافی (add-item) */
@@ -211,6 +213,8 @@ export default function ReceivingView() {
   const canVerify = !!user
   const canAccount = ['OWNER', 'GM', 'ADMIN', 'EXEC', 'ACC'].includes(role)
   const isManager = ['OWNER', 'GM', 'ADMIN', 'EXEC'].includes(role)
+  /* R14 — تأیید مدیر کل (نقش GM = خانم لطفی، مدیر کل؛ در نبودِ ایشان مالک/ادمین) */
+  const isGmRole = ['GM', 'OWNER', 'ADMIN'].includes(role)
   /* R10: اصل دو‌نفره — اگر کاربر جاری همان دریافت‌کننده باشد، راستی‌آزمایی خودش ممنوع است */
   const isReceiver = !!(detail?.receivedBy?.id && user?.id && detail.receivedBy.id === user.id)
 
@@ -289,6 +293,10 @@ export default function ReceivingView() {
       receivedQty: it.receivedQty != null ? it.receivedQty : it.qty,
       returnedQty: it.returnedQty ?? 0,
       returnReason: it.returnReason ?? '',
+      /* R14: اسکن بارکد همین ردیف */
+      productId: it.productId ?? null,
+      scanInput: '',
+      scanState: (it.productId == null ? 'na' : 'idle') as 'na' | 'idle' | 'ok' | 'new' | 'err',
     })))
   }
 
@@ -305,13 +313,52 @@ export default function ReceivingView() {
     return r.data
   }
 
-  /* شروع دریافت — درِ انبار باز می‌شود */
-  async function startReceive() {
+  /* شروع دریافت — درِ انبار باز می‌شود.
+     R14: اگر امروز با تاریخ تحویل سفارش یکی نیست، ابتدا هشدار + توضیح اجباری می‌گیریم. */
+  async function startReceive(offNote?: string, offDays?: number) {
     if (!detail) return
-    const d = await patchAction(detail.id, 'start-receive', undefined, 'start')
+    const extra = offNote ? { offScheduleNote: offNote, offScheduleDays: offDays } : undefined
+    const d = await patchAction(detail.id, 'start-receive', extra, 'start')
     if (!d) return
     toast.success(`دریافت ${d.code} شروع شد — اقلام را همان‌طور که رسیدند ثبت کنید`)
     initRows(d.items ?? [])
+  }
+
+  /* R14: آیا دریافت خارج از پنجرهٔ تحویل است؟ مثبت = زودتر، منفی = دیرتر */
+  function offScheduleDaysOf(): number | null {
+    const dd = detail?.deliveryDate
+    if (!dd || !/^\d{4}-\d{2}-\d{2}$/.test(dd)) return null
+    try {
+      const [y1, m1, d1] = dd.split('-').map(Number)
+      const [y2, m2, d2] = todayJalali().split('-').map(Number)
+      const a = jalaliToDate(y1, m1, d1).getTime()
+      const b = jalaliToDate(y2, m2, d2).getTime()
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null
+      return Math.round((a - b) / 86400000)
+    } catch {
+      return null
+    }
+  }
+
+  /* R14: اسکن بارکد یک ردیف — شناخته؟ ✓ جدید؟ ثبت در بانک بارکد (+صف هلو) */
+  async function scanBarcode(i: number) {
+    if (!detail) return
+    const it = rows?.[i]
+    if (!it || !it.productId) return
+    const code = String(it.scanInput ?? '').trim()
+    if (!code) return
+    const r = await api(`/api/orders/${detail.id}`, { method: 'PATCH', body: { action: 'scan-barcode', itemId: it.id, barcode: code } })
+    if (!r.ok) {
+      patchRow(i, { scanState: 'err' })
+      return toast.error(r.error || 'اسکن ثبت نشد')
+    }
+    if (r.data?.known) {
+      patchRow(i, { scanState: 'ok', scanInput: '' })
+      toast.success(`بارکد ${toFaDigits(code)} با این کالا مطابقت دارد ✓`)
+    } else {
+      patchRow(i, { scanState: 'new', scanInput: '' })
+      toast.success(`بارکد جدید ${toFaDigits(code)} برای «${it.name}» ثبت شد — در بانک بارکد سر رسید و صف هلو`)
+    }
   }
 
   /* ── ویرایش سطر فرم (clamp مرجوعی ≤ دریافت؛ پاک‌کردن علت در صفر) ── */
@@ -532,6 +579,13 @@ export default function ReceivingView() {
   }
 
   /* ── بستن سفارش (مرحلهٔ ۵) ── */
+  /* R14 — تأیید مدیر کل پس از ثبت حسابداری (انتشار قیمت‌ها در سر رسید + هلو) */
+  async function gmApprove() {
+    if (!detail) return
+    const d = await patchAction(detail.id, 'gm-approve', undefined, 'gm-approve')
+    if (d) toast.success('تأیید مدیر کل انجام شد — قیمت‌ها منتشر شد؛ می‌توانید سفارش را ببندید')
+  }
+
   async function finalApprove() {
     if (!detail) return
     const d = await patchAction(detail.id, 'final-approve', undefined, 'final')
@@ -827,7 +881,15 @@ export default function ReceivingView() {
                 </p>
                 {canReceive ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => void startReceive()} disabled={actBusy === 'start'} className="gap-2">
+                    <Button
+                      onClick={() => {
+                        const off = offScheduleDaysOf()
+                        if (off != null && off !== 0) setOffDlg({ open: true, days: off, note: '' })
+                        else void startReceive()
+                      }}
+                      disabled={actBusy === 'start'}
+                      className="gap-2"
+                    >
                       {actBusy === 'start' ? <I.loader size={16} className="animate-spin" /> : <I.play size={16} />} شروع دریافت کالا
                     </Button>
                   </div>
@@ -915,6 +977,21 @@ export default function ReceivingView() {
                             <span className="truncate text-xs font-bold text-stone-700" title={it.name}>{it.name}</span>
                             <span className="flex flex-wrap items-center gap-1 text-[10px] text-stone-400">
                               <span>سفارش: {fa(it.qty)}</span>
+                              {it.productId ? (
+                                <span className="flex items-center gap-1" title="بارکد کالا را با اسکنر در این کادر بزنید و Enter — اگر بارکد جدید باشد برای همین کالا ثبت می‌شود">
+                                  <Input
+                                    value={it.scanInput}
+                                    onChange={(e: any) => patchRow(i, { scanInput: e.target.value })}
+                                    onKeyDown={(e: any) => { if (e.key === 'Enter') { e.preventDefault(); void scanBarcode(i) } }}
+                                    placeholder="اسکن بارکد…"
+                                    dir="ltr"
+                                    className="h-6 w-32 border-stone-200 bg-white px-1.5 text-[10px] focus-visible:ring-teal-400"
+                                  />
+                                  {it.scanState === 'ok' ? <span className="rounded bg-emerald-100 px-1 py-px font-bold text-emerald-700">✓ مطابقت</span> : null}
+                                  {it.scanState === 'new' ? <span className="rounded bg-sky-100 px-1 py-px font-bold text-sky-700">بارکد جدید ثبت شد</span> : null}
+                                  {it.scanState === 'err' ? <span className="rounded bg-rose-100 px-1 py-px font-bold text-rose-700">خطا</span> : null}
+                                </span>
+                              ) : null}
                               {printedDiffers && (
                                 <span className="rounded border border-amber-300 bg-amber-100 px-1 py-px font-bold text-amber-800"
                                   title={`قیمت چاپی فاکتور (${money(it.printedPrice)} ریال) با قیمت فروش فعلی این کالا (${money(it.productSellPrice)} ریال) فرق دارد`}>
@@ -1294,19 +1371,36 @@ export default function ReceivingView() {
                   </div>
                 ) : null}
                 <p className="text-xs leading-5 text-stone-500">
-                  ثبت حسابداری انجام شده است — حساب‌ها، سند آرشیو و فاکتور سودسنج همین سفارش آماده‌اند؛ با بستن، پروندهٔ تحویل کامل می‌شود.
+                  ثبت حسابداری انجام شده است — حساب‌ها، سند آرشیو و فاکتور سودسنج همین سفارش آماده‌اند؛
+                  پس از تأیید مدیر کل (خانم لطفی) — که قیمت‌ها را نیز در هلو منتشر می‌کند — با بستن، پروندهٔ تحویل کامل می‌شود.
                 </p>
-                {isManager ? (
-                  <div className="flex justify-end">
-                    <Button onClick={() => void finalApprove()} disabled={actBusy === 'final'} className="gap-1">
-                      {actBusy === 'final' ? <I.loader size={15} className="animate-spin" /> : <I.check size={15} />} بستن سفارش
+                {/* R14: گام تأیید مدیر کل — پیش از بستن سفارش */}
+                {d?.gmApprovedAt ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-[11px] font-bold text-emerald-800">
+                    <I.shieldCheck size={14} className="-mt-0.5 inline align-middle" /> تأیید مدیر کل انجام شد{d.gmApprovedByName ? ` (${d.gmApprovedByName})` : ''} — قیمت‌ها منتشر شد؛ آمادهٔ بستن.
+                  </div>
+                ) : isGmRole ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-200 bg-violet-50 p-2.5">
+                    <span className="text-[11px] leading-5 text-violet-800">
+                      <I.shieldCheck size={14} className="-mt-0.5 inline align-middle" /> این سفارش در انتظار تأیید نهایی شماست (مدیر کل — خانم لطفی).
+                      با تأیید، قیمت فروش/قیمت چاپی روی کالاها و در هلو منتشر می‌شود.
+                    </span>
+                    <Button onClick={() => void gmApprove()} disabled={!!actBusy} className="gap-1 bg-violet-700 hover:bg-violet-800">
+                      {actBusy === 'gm-approve' ? <I.loader size={15} className="animate-spin" /> : <I.shieldCheck size={15} />} تأیید مدیر کل (لطفی) و انتشار قیمت‌ها
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white p-2.5 text-[11px] text-stone-500">
-                    <I.clock size={14} className="text-stone-400" /> در انتظار بستن توسط مدیر.
+                  <div className="flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 p-2.5 text-[11px] text-violet-800">
+                    <I.clock size={14} className="text-violet-400" /> در انتظار تأیید مدیر کل (خانم لطفی) — پس از ایشان، مدیر سفارش را می‌بندد.
                   </div>
                 )}
+                {isManager ? (
+                  <div className="flex justify-end">
+                    <Button onClick={() => void finalApprove()} disabled={actBusy === 'final' || !d?.gmApprovedAt} className="gap-1" title={d?.gmApprovedAt ? undefined : 'پیش از بستن، تأیید مدیر کل لازم است'}>
+                      {actBusy === 'final' ? <I.loader size={15} className="animate-spin" /> : <I.check size={15} />} بستن سفارش
+                    </Button>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           )}
@@ -1469,6 +1563,44 @@ export default function ReceivingView() {
             <Button variant="outline" onClick={() => setAddDlg(null)}>انصراف</Button>
             <Button onClick={() => void submitAdd()} disabled={actBusy === 'add'} className="gap-1">
               {actBusy === 'add' ? <I.loader size={15} className="animate-spin" /> : <I.plus size={15} />} افزودن قلم
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── R14: هشدار دریافت خارج از تاریخ تحویل ── */}
+      <Dialog open={!!offDlg?.open} onOpenChange={(o: boolean) => { if (!o) setOffDlg(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <I.alertTriangle size={17} /> دریافت خارج از تاریخ تحویل
+            </DialogTitle>
+            <DialogDescription className="text-[12px] leading-6">
+              تاریخ تحویل این سفارش {fa(detail?.deliveryDate ?? '—')} است —
+              {(offDlg?.days ?? 0) > 0
+                ? ` یعنی ${fa(Math.abs(offDlg?.days ?? 0))} روز زودتر از موعد دریافت می‌کنید.`
+                : ` یعنی ${fa(Math.abs(offDlg?.days ?? 0))} روز دیرتر از موعد دریافت می‌کنید.`}
+              {' '}اگر مطمئنید، دلیل آن را بنویسید (حداقل ۵ حرف) تا در پروندهٔ سفارش ثبت شود.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={offDlg?.note ?? ''}
+            onChange={(e: any) => setOffDlg((d) => (d ? { ...d, note: e.target.value } : d))}
+            placeholder="مثلاً: تأمین‌کننده زودتر از قرار آورد / ترخیص به‌دلیل کمبود موجودی جلو افتاد…"
+            className="min-h-20 text-xs"
+          />
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOffDlg(null)}>انصراف</Button>
+            <Button
+              className="gap-1 bg-rose-700 hover:bg-rose-800"
+              disabled={(offDlg?.note ?? '').trim().length < 5 || actBusy === 'start'}
+              onClick={() => {
+                if (!offDlg) return
+                setOffDlg(null)
+                void startReceive(offDlg.note.trim(), offDlg.days)
+              }}
+            >
+              <I.alertTriangle size={14} /> تأیید دریافت خارج از موعد و ثبت توضیح
             </Button>
           </DialogFooter>
         </DialogContent>

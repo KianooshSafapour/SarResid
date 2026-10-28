@@ -117,6 +117,7 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   'system/holoo': ['OWNER', 'GM', 'ADMIN'],
   'tasks/reports': ['*'],
   'tasks/problems': ['*'],
+  'tasks/requests': ['*'], // R16: درخواست‌های کارکنان — گردش‌کار شفاف
   'tasks/tasks': ['*'],
   'tasks/checklists': ['*'],
   'tasks/sops': ['*'],
@@ -138,9 +139,9 @@ export const PAGE_DEFAULTS: Record<string, string[]> = {
   // ---- R4-7: snapshot & reset (پشتیبان و بازنشانی داده) ----
   'system/data': ['OWNER', 'GM', 'ADMIN'],
   // ---- R13: live server monitor (پایش سرور — مدیر سامانه) ----
-  'system/monitor': ['OWNER', 'ADMIN'],
+  'system/monitor': ['OWNER', 'ADMIN', 'GM'],
   // ---- R14: AI assistant (دستیار هوشمند z.ai) ----
-  'system/ai': ['OWNER', 'ADMIN'],
+  'system/ai': ['OWNER', 'ADMIN', 'GM'],
 }
 
 /** capability → default roles — mirrors hasCap (module 200150) */

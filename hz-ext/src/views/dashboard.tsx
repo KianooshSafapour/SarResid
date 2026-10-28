@@ -497,7 +497,24 @@ export default function DashboardView() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-base font-extrabold text-stone-700">
-                    {greeting}، {user?.honorific ? `${user.honorific} ` : ''}{user?.fullName || 'همکار گرامی'}
+                    {greeting}
+
+            {/* R16: نامهٔ شیفت — نخستین کار هر شیفت: صبح‌نامه/عصرنامه */}
+            <button
+              type="button"
+              onClick={() => go('tasks/reports')}
+              className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border-2 border-teal-300 bg-gradient-to-l from-teal-50 to-emerald-50 px-4 py-3 text-right shadow-sm transition-all hover:border-teal-500 hover:shadow"
+              title="خلاصهٔ شیفت قبل و کارهای این شیفت — گزارش تحویل شیفت"
+            >
+              <span className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-600 text-lg text-white">🗞️</span>
+                <span>
+                  <span className="block text-sm font-black text-teal-900">{hour < 15 ? 'صبح‌نامهٔ امروز' : 'عصرنامهٔ امروز'}</span>
+                  <span className="block text-[11px] leading-5 text-teal-700">چه گذشت در شیفتِ قبل و چه باید در این شیفت انجام شود — قبل از هر کاری بخوانید</span>
+                </span>
+              </span>
+              <span className="shrink-0 rounded-lg bg-teal-600 px-3 py-1.5 text-[11px] font-bold text-white">باز کردن نامهٔ شیفت</span>
+            </button>، {user?.honorific ? `${user.honorific} ` : ''}{user?.fullName || 'همکار گرامی'}
                   </span>
                   {/* شخصی‌سازی میزکار — دکمهٔ فشرده در سربرگ (R5-P5: از ردیف اقدامات سریع حذف شد) */}
                   <button

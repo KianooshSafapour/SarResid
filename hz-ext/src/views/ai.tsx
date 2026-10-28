@@ -18,7 +18,7 @@ const SUGGESTIONS = [
 
 export default function AiView() {
   const { user } = useShell()
-  const allowed = !!user && ['OWNER', 'ADMIN'].includes(String(user.role))
+  const allowed = !!user && ['OWNER', 'ADMIN', 'GM'].includes(String(user.role))
 
   const [settings, setSettings] = useState<AiSettings | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])

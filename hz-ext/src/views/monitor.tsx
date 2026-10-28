@@ -84,7 +84,7 @@ export default function MonitorView() {
     return () => { if (timer.current) clearInterval(timer.current) }
   }, [auto])
 
-  const allowed = !!user && ['OWNER', 'ADMIN'].includes(String(user.role))
+  const allowed = !!user && ['OWNER', 'ADMIN', 'GM'].includes(String(user.role))
   if (!allowed) {
     return (
       <Card>

@@ -317,6 +317,16 @@
    "replaces": true
   },
   {
+   "key": "tasks/requests",
+   "src": "requests",
+   "section": "tasks",
+   "title": "درخواست‌ها",
+   "roles": [
+    "*"
+   ],
+   "replaces": false
+  },
+  {
    "key": "tasks/sops",
    "src": "sops",
    "section": "tasks",
@@ -452,6 +462,7 @@
    "title": "پایش سرور",
    "roles": [
     "OWNER",
+    "GM",
     "ADMIN"
    ],
    "replaces": false
@@ -463,6 +474,7 @@
    "title": "دستیار هوشمند",
    "roles": [
     "OWNER",
+    "GM",
     "ADMIN"
    ],
    "replaces": false

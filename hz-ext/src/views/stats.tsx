@@ -16,6 +16,7 @@ export default function StatsView() {
   const [loading, setLoading] = useState(true)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [shift, setShift] = useState<any>(null)
 
   const load = (f = from, t = to) => {
     setLoading(true)
@@ -28,6 +29,7 @@ export default function StatsView() {
       .finally(() => setLoading(false))
   }
   useEffect(() => { load('', '') }, [])
+  useEffect(() => { api('/api/analytics/shifts').then((r: any) => { if (r.ok) setShift(r.data) }) }, [])
 
   const k = data?.kpis
   const dist = data?.distribution
@@ -118,6 +120,65 @@ export default function StatsView() {
                   )}
                 </div>
               </div>
+
+              {/* R16: تحلیل دو-شیفته + ساعتی + مقایسه با هفتهٔ قبل */}
+              {shift ? (
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                  <div className="rounded-xl border border-stone-200 bg-white p-3">
+                    <p className="text-[12px] font-bold text-stone-700">شیفت‌های امروز</p>
+                    <div className="mt-2 space-y-2">
+                      {(['M','A'] as const).map((k) => (
+                        <div key={k} className="flex items-center justify-between rounded-lg bg-stone-50 p-2 text-[11px]">
+                          <span className="font-bold text-stone-700">{shift.today[k].label}</span>
+                          <span className="text-stone-600">{fa(shift.today[k].count)} رخداد · <b className="text-emerald-700">{money(shift.today[k].amount)}</b> ریال</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 rounded-lg bg-teal-50 p-2 text-[10px] leading-4 text-teal-800">
+                      مقایسه با هفتهٔ قبل: {shift.compare.countPct == null ? '—' : `${shift.compare.countPct > 0 ? '+' : ''}${fa(shift.compare.countPct)}٪ رخداد · ${shift.compare.amountPct == null ? '—' : `${shift.compare.amountPct > 0 ? '+' : ''}${fa(shift.compare.amountPct)}٪ مبلغ`}`}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white p-3 lg:col-span-2">
+                    <p className="text-[12px] font-bold text-stone-700">عملکرد ساعتی — امروز در برابر دیروز</p>
+                    <div className="mt-2 flex h-28 items-end gap-0.5" dir="ltr">
+                      {shift.hourly.map((h: any) => {
+                        const mx = Math.max(1, ...shift.hourly.map((x: any) => x.today.amount + x.yesterday.amount))
+                        return (
+                          <div key={h.hour} className="flex flex-1 flex-col items-center justify-end gap-0.5" title={`${fa(h.hour)}:۰۰ — امروز ${money(h.today.amount)} · دیروز ${money(h.yesterday.amount)} ریال`}>
+                            <div className="flex w-full items-end justify-center gap-px" style={{ height: '96px' }}>
+                              <div className="w-1/2 rounded-t bg-stone-300" style={{ height: `${Math.max(2, (h.yesterday.amount / mx) * 92)}px` }} />
+                              <div className="w-1/2 rounded-t bg-teal-500" style={{ height: `${Math.max(2, (h.today.amount / mx) * 92)}px` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-[9px] text-stone-400" dir="rtl">
+                      <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-teal-500" /> امروز</span>
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-stone-300" /> دیروز
+                      </span>
+                      <span dir="ltr">۰ … ۲۳</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white p-3 lg:col-span-3">
+                    <p className="text-[12px] font-bold text-stone-700">هفت روز اخیر به تفکیک شیفت (صبح/عصر)</p>
+                    <div className="mt-2 grid grid-cols-7 gap-1" dir="rtl">
+                      {shift.week.map((d: any, i: number) => (
+                        <div key={i} className="rounded-lg border border-stone-100 bg-stone-50 p-1.5 text-center" title={d.date}>
+                          <div className="text-[9px] text-stone-400" dir="ltr">{d.date.slice(5)}</div>
+                          <div className="mt-1 text-[9px]">صبح</div>
+                          <div className="h-14 rounded bg-emerald-200" style={{ height: `${Math.min(56, d.M.count * 8)}px` }} title={`صبح: ${fa(d.M.count)} رخداد`} />
+                          <div className="text-[9px] text-stone-600">{fa(d.M.count)}</div>
+                          <div className="mt-1 text-[9px]">عصر</div>
+                          <div className="rounded bg-amber-200" style={{ height: `${Math.min(56, d.A.count * 8)}px` }} title={`عصر: ${fa(d.A.count)} رخداد`} />
+                          <div className="text-[9px] text-stone-600">{fa(d.A.count)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {/* فهرست حاشیهٔ قرمز — با بازبینی در فاکتورنویسِ درست */}
               <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3">

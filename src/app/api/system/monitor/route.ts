@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic'
  *   runtime — نسخهٔ bun/node، آپ‌تایم پروسه و سرور، لود ۱/۵/۱۵ دقیقه
  */
 
-const MONITOR_ROLES = ['OWNER', 'ADMIN']
+const MONITOR_ROLES = ['OWNER', 'ADMIN', 'GM'] // R16: مدیر کل دسترسی کامل
 
 function promisifyExec(cmd: string, args: string[]): Promise<{ out: string; code: number | null }> {
   return new Promise((resolve) => {

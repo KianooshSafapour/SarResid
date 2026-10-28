@@ -6,7 +6,7 @@ import { getAiConfig, setAiSettings, aiChatRaw, AI_DEFAULT_BASE_URL, AI_DEFAULT_
 
 export const dynamic = 'force-dynamic'
 
-const AI_ROLES = ['OWNER', 'ADMIN']
+const AI_ROLES = ['OWNER', 'ADMIN', 'GM'] // R16
 
 /**
  * GET /api/ai/settings — وضعیت پیکربندی دستیار (کلید ماسک می‌شود)

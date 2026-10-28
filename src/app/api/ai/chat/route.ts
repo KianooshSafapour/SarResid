@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
  * دسترسی: مالک/ادمین (مدیر سامانه) — با کلید z.ai که در تنظیمات ذخیره شده.
  */
 
-const AI_ROLES = ['OWNER', 'ADMIN']
+const AI_ROLES = ['OWNER', 'ADMIN', 'GM'] // R16
 
 /* ─────────────────── ابزارهای فقط-خواندنی پلتفرم ─────────────────── */
 

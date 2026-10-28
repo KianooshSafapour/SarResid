@@ -641,6 +641,27 @@ model Floorplan {
 
 /// ردیف‌های چیدمان هر بخش (نام مدل تاریخی: ZoneColumn) برای کنترل تاریخ چرخشی (B3)
 /// R5-E: ردیف = ردیف کالا روی قفسه — دارای محصولات و ظرفیت و وضعیت شارژ
+// ═══ R16: درخواست‌ها — کارکنان و مشتریان (گردش‌کار شفاف: ثبت ← بررسی ← تأیید/رد ← انجام) ═══
+model StaffRequest {
+  id            String   @id @default(cuid())
+  code          String   @unique // REQ-101
+  kind          String   // NEW_PRODUCT | SUPPLY | REPAIR | SOFTWARE | CUSTOMER | OTHER
+  title         String
+  body          String?
+  productId     String?  // برای درخواست کالای جدید (اگر به کالا ختم شد)
+  customerId    String?  // درخواست‌های پیگیری مشتری
+  status        String   @default("SUBMITTED") // SUBMITTED | SEEN | APPROVED | REJECTED | DONE
+  priority      String   @default("NORMAL") // LOW | NORMAL | HIGH
+  requestedById String
+  requestedByName String
+  handledById   String?
+  handledByName String?
+  resultNote    String?
+  historyJson   String   @default("[]") // [{at,by,action,detail}] — زنجیرهٔ فرمان و مرحله
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
 model ZoneColumn {
   id           String   @id @default(cuid())
   planId       String

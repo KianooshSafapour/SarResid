@@ -156,7 +156,7 @@ export default function StatsView() {
                     <div className="mt-1 flex items-center justify-between text-[9px] text-stone-400" dir="rtl">
                       <span className="flex items-center gap-2">
                         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-teal-500" /> امروز</span>
-                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-stone-300" /> دیروز
+                        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-stone-300" /> دیروز</span>
                       </span>
                       <span dir="ltr">۰ … ۲۳</span>
                     </div>

@@ -100,7 +100,7 @@
   border-radius: 0.25rem;
 }
 
-/* hz-ext standard utilities (138 rules — R11: fixes silently-missing classes like bg-teal-700; DO NOT EDIT) */
+/* hz-ext standard utilities (140 rules — R11: fixes silently-missing classes like bg-teal-700; DO NOT EDIT) */
 .-left-1\.5{left:calc(var(--spacing)*-1.5)}
 .-mt-0\.5{margin-top:calc(var(--spacing)*-0.5)}
 .accent-emerald-600{accent-color:var(--color-emerald-600)}
@@ -109,6 +109,7 @@
 .bg-amber-100\/70{background-color:color-mix(in oklab,var(--color-amber-100)70%,transparent)}
 .bg-amber-50\/30{background-color:color-mix(in oklab,var(--color-amber-50)30%,transparent)}
 .bg-amber-800{background-color:var(--color-amber-800)}
+.bg-emerald-200{background-color:var(--color-emerald-200)}
 .bg-emerald-50\/30{background-color:color-mix(in oklab,var(--color-emerald-50)30%,transparent)}
 .bg-orange-500{background-color:var(--color-orange-500)}
 .bg-orange-50{background-color:var(--color-orange-50)}
@@ -235,6 +236,7 @@
 .text-violet-600{color:var(--color-violet-600)}
 .text-violet-900{color:var(--color-violet-900)}
 .to-amber-50{--tw-gradient-to:var(--color-amber-50);--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from)var(--tw-gradient-from-position),var(--tw-gradient-to)var(--tw-gradient-to-position))}
+.to-emerald-50{--tw-gradient-to:var(--color-emerald-50);--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from)var(--tw-gradient-from-position),var(--tw-gradient-to)var(--tw-gradient-to-position))}
 .to-rose-50{--tw-gradient-to:var(--color-rose-50);--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from)var(--tw-gradient-from-position),var(--tw-gradient-to)var(--tw-gradient-to-position))}
 .to-stone-100{--tw-gradient-to:var(--color-stone-100);--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from)var(--tw-gradient-from-position),var(--tw-gradient-to)var(--tw-gradient-to-position))}
 .to-teal-50{--tw-gradient-to:var(--color-teal-50);--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from)var(--tw-gradient-from-position),var(--tw-gradient-to)var(--tw-gradient-to-position))}

@@ -46,7 +46,7 @@ const CHIP: Record<string, { label: string; cls: string; dot: string }> = {
 }
 
 interface DayInfo { dayIdx: number; date: string; label: string }
-interface UserInfo { id: string; fullName: string; honorific: string; role: string; title: string }
+interface UserInfo { id: string; fullName: string; honorific: string; role: string; title: string; defaultShift?: string | null }
 interface Asg { id: string; userId: string; date: string; dayIdx: number; shift: string }
 interface LockedDay { userId: string; date: string; dayIdx: number }
 interface HourlyLeave { userId: string; date: string; dayIdx: number; hours: number }
@@ -77,6 +77,9 @@ export default function ShiftsView() {
   const [open, setOpen] = useState<{ userId: string; dayIdx: number } | null>(null)
   const [groupF, setGroupF] = useState('ALL')
   const [busy, setBusy] = useState(false)
+  /* R17: شیفت پیش‌فرض پرسنل — تنظیم یک‌باره به‌جای خانه‌به‌خانهٔ هر هفته */
+  const [defOpen, setDefOpen] = useState<string | null>(null)
+  const [defBusy, setDefBusy] = useState(false)
 
   const todaySlash = todayJalali()
   const weekStart = useMemo(() => addJalaliDays(anchor, -wdIdx(anchor)), [anchor])
@@ -205,32 +208,66 @@ export default function ShiftsView() {
     void load(weekStart)
   }
 
-  /* ─── کپی از هفتهٔ قبل ─── */
+  /* ─── کپی از هفتهٔ قبل (R17: رفع باگ — کلید روی dayIdx هفته، نه تاریخ هفتهٔ جاری) ─── */
   async function copyPrev() {
     if (!isMgr || loading) return
     const prev = addJalaliDays(weekStart, -7)
     const r = await api(`/api/hr/shifts${qs({ week: toDash(prev) })}`)
     if (!r.ok) return toast.error(r.error || 'خواندن هفتهٔ قبل ناموفق بود')
     const prevMap = new Map<string, ShiftVal>()
-    for (const a of (r.data?.assignments || []) as Asg[]) prevMap.set(`${a.userId}:${a.date}`, normShift(a.shift))
+    for (const a of (r.data?.assignments || []) as Asg[]) {
+      if (a.dayIdx != null) prevMap.set(`${a.userId}:${a.dayIdx}`, normShift(a.shift))
+      else prevMap.set(`${a.userId}:${a.date}`, normShift(a.shift)) // پشتیبان دادهٔ قدیمی
+    }
+    if (!prevMap.size) return toast.info('هفتهٔ قبل شیفت ثبت‌شده‌ای ندارد — چیزی برای کپی نیست')
+    const next = { ...cells }
     let copied = 0
-    setCells((cur) => {
-      const next = { ...cur }
-      for (const u of data?.users || []) {
-        for (let i = 0; i < 7; i++) {
-          const k = `${u.id}:${i}`
-          if (locked.has(k)) continue // روز مرخصیِ قفل‌شده دست‌نخورده می‌ماند
-          const v = prevMap.get(`${u.id}:${toDash(days[i])}`) ?? ''
-          if ((next[k] ?? '') !== v) {
-            if (v === '') delete next[k]
-            else next[k] = v
-            copied++
-          }
+    for (const u of data?.users || []) {
+      for (let i = 0; i < 7; i++) {
+        const k = `${u.id}:${i}`
+        if (locked.has(k)) continue // روز مرخصیِ قفل‌شده دست‌نخورده می‌ماند
+        const v = prevMap.get(k) ?? ''
+        if ((next[k] ?? '') !== v) {
+          if (v === '') delete next[k]
+          else next[k] = v
+          copied++
         }
       }
-      return next
-    })
-    toast.success(`از هفتهٔ ${faSlashD(prev)} کپی شد — بازبینی کنید و «ذخیرهٔ برنامه» را بزنید`)
+    }
+    setCells(next)
+    toast.success(`از هفتهٔ ${faSlashD(prev)} کپی شد${copied ? ` (${faD(copied)} خانه)` : ' — بدون تغییر'} — بازبینی کنید و «ذخیرهٔ برنامه» را بزنید`)
+  }
+
+  /* ─── R17: ذخیرهٔ شیفت پیش‌فرض یک نفر (بلافاصله، مستقل از برنامهٔ هفته) ─── */
+  async function saveDefault(userId: string, shift: '' | 'MORNING' | 'EVENING' | 'BOTH') {
+    if (!isMgr || defBusy) return
+    setDefBusy(true)
+    const r = await api('/api/hr/shifts', { method: 'PUT', body: { defaults: [{ userId, shift }] } })
+    setDefBusy(false)
+    if (!r.ok) return toast.error(r.error || 'ذخیرهٔ شیفت پیش‌فرض ناموفق بود')
+    setDefOpen(null)
+    void load(weekStart)
+    toast.success(shift === '' ? 'شیفت پیش‌فرض حذف شد' : 'شیفت پیش‌فرض ذخیره شد ✓ — با «پرکردن با پیش‌فرض‌ها» هفته‌ها را یک‌جا پر کنید')
+  }
+
+  /* ─── R17: پرکردن خانه‌های خالی هفته با شیفت پیش‌فرض پرسنل ─── */
+  function fillDefaults() {
+    if (!isMgr || !data) return
+    const next = { ...cells }
+    let n = 0
+    for (const u of data.users || []) {
+      const def = u.defaultShift
+      if (!def) continue
+      for (let i = 0; i < 7; i++) {
+        const k = `${u.id}:${i}`
+        if (locked.has(k) || next[k]) continue
+        next[k] = def as ShiftVal
+        n++
+      }
+    }
+    if (!n) return toast.info('خانهٔ خالیِ پیش‌فرض‌داری نمانده — یا هنوز شیفت پیش‌فرض کسی تعیین نشده است')
+    setCells(next)
+    toast.success(`${faD(n)} خانه با شیفت پیش‌فرض پر شد — بازبینی کنید و «ذخیرهٔ برنامه» را بزنید`)
   }
 
   /* ─── پرش ماه ─── */
@@ -302,6 +339,10 @@ export default function ShiftsView() {
             <div className="mr-auto flex flex-wrap items-center gap-1.5">
               {isMgr && (
                 <>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5" disabled={loading || !data || !(data?.users || []).some((u: UserInfo) => u.defaultShift)} onClick={fillDefaults}
+                    title="خانه‌های خالی این هفته را با شیفت پیش‌فرض هر نفر پر می‌کند — پس از بازبینی، ذخیره کنید">
+                    <I.zap size={14} /> پرکردن با پیش‌فرض‌ها
+                  </Button>
                   <Button variant="outline" size="sm" className="h-9 gap-1.5" disabled={loading || !data} onClick={() => void copyPrev()}>
                     <I.history size={14} /> کپی از هفتهٔ قبل
                   </Button>
@@ -361,6 +402,45 @@ export default function ShiftsView() {
                         <TableCell className="sticky right-0 z-10 border-l border-stone-200 bg-white align-middle group-hover:bg-stone-50">
                           <div className="text-[12.5px] font-bold leading-5 text-stone-800">{u.fullName}</div>
                           <div className="text-[10px] leading-4 text-stone-400">{u.title || ''}</div>
+                          {/* R17: شیفت پیش‌فرض — تنظیم یک‌باره به‌جای هر روزِ هر هفته */}
+                          <div className="relative mt-1">
+                            {isMgr ? (
+                              <button type="button" onClick={() => { setDefOpen(defOpen === u.id ? null : u.id); setOpen(null) }}
+                                title={u.defaultShift ? `شیفت پیش‌فرض: ${CHIP[u.defaultShift!]?.label ?? u.defaultShift} — برای تغییر کلیک کنید` : 'تعیین شیفت پیش‌فرض این نفر (پرکردن خودکار هفته‌ها)'}
+                                className={cn('inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold transition-colors',
+                                  u.defaultShift ? cn(CHIP[u.defaultShift!]?.cls, 'hover:shadow-sm') : 'border-dashed border-stone-300 text-stone-400 hover:border-teal-400 hover:text-teal-600')}>
+                                {u.defaultShift ? <>پیش‌فرض: {CHIP[u.defaultShift!]?.label ?? u.defaultShift}</> : <>+ شیفت پیش‌فرض</>}
+                              </button>
+                            ) : u.defaultShift ? (
+                              <span className={cn('inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-bold', CHIP[u.defaultShift]?.cls)}>پیش‌فرض: {CHIP[u.defaultShift]?.label}</span>
+                            ) : null}
+                            {defOpen === u.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setDefOpen(null)} />
+                                <div className="absolute top-full right-0 z-50 mt-1 w-44 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl" dir="rtl">
+                                  <div className="px-2 pb-1 pt-0.5 text-[10px] font-bold text-stone-400">شیفت پیش‌فرض {u.fullName}</div>
+                                  {(['MORNING', 'EVENING', 'BOTH'] as const).map((s) => (
+                                    <button key={s} type="button" disabled={defBusy}
+                                      onClick={() => { void saveDefault(u.id, s) }}
+                                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-right text-xs font-bold text-stone-700 transition-colors hover:bg-stone-100 disabled:opacity-50">
+                                      <span className={cn('h-2.5 w-2.5 rounded-full', CHIP[s].dot)} />
+                                      {CHIP[s].label}
+                                    </button>
+                                  ))}
+                                  {u.defaultShift && (
+                                    <button type="button" disabled={defBusy}
+                                      onClick={() => { void saveDefault(u.id, '') }}
+                                      className="mt-0.5 flex w-full items-center gap-2 rounded-lg border-t border-stone-100 px-2 py-1.5 text-right text-[11px] font-bold text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50">
+                                      <I.trash size={13} /> حذف پیش‌فرض
+                                    </button>
+                                  )}
+                                  <div className="mt-1 border-t border-stone-100 px-1.5 pt-1 text-[9px] leading-4 text-stone-400">
+                                    برای پرکردن خودکار هفته‌ها: «پرکردن با پیش‌فرض‌ها» را بزنید
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                         {days.map((d, i) => {
                           const k = `${u.id}:${i}`
@@ -385,6 +465,16 @@ export default function ShiftsView() {
                                     className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold',
                                       meta!.cls, canOpen && 'hover:shadow-sm', !canOpen && 'cursor-default', changed && 'ring-2 ring-amber-300')}>
                                     {meta!.label}
+                                  </button>
+                                ) : u.defaultShift && CHIP[u.defaultShift] ? (
+                                  /* R17: خانهٔ خالی با شیفت پیش‌فرضِ نفر — پیش‌نمایش کم‌رنگ؛ با «پرکردن با پیش‌فرض‌ها» ثبت می‌شود */
+                                  <button type="button"
+                                    disabled={!canOpen}
+                                    onClick={() => canOpen && setOpen(isOpen ? null : { userId: u.id, dayIdx: i })}
+                                    title={isMgr ? `شیفت پیش‌فرض این نفر «${CHIP[u.defaultShift!]?.label}» است — هنوز ثبت نشده؛ با «پرکردن با پیش‌فرض‌ها» یا انتخاب دستی ثبت کنید` : `شیفت پیش‌فرض: ${CHIP[u.defaultShift!]?.label}`}
+                                    className={cn('inline-flex h-[26px] w-full max-w-[86px] items-center justify-center gap-1 rounded-full border border-dashed px-2 text-[10px] font-bold opacity-45',
+                                      CHIP[u.defaultShift!]!.cls, isMgr && 'hover:opacity-100')}>
+                                    {CHIP[u.defaultShift!]!.label} · پیش‌فرض
                                   </button>
                                 ) : isMgr ? (
                                   <button type="button"
@@ -464,7 +554,7 @@ export default function ShiftsView() {
 
           <p className="text-[10.5px] leading-5 text-stone-400">
             {isMgr
-              ? 'روی هر خانه کلیک کنید و شیفت را انتخاب کنید (صبح / عصر / صبح و عصر / مرخصی / تعطیل). «صبح و عصر» برای پرسنلی است که هر دو شیفتِ همان روز را کار می‌کنند. روزهای مرخصیِ تأییدشده با قفل نمایش داده می‌شوند و تغییرشان فقط از بخش «مرخصی‌ها» ممکن است.'
+              ? 'روی هر خانه کلیک کنید و شیفت را انتخاب کنید (صبح / عصر / صبح و عصر / مرخصی / تعطیل). راه میان‌بر: «شیفت پیش‌فرض» هر نفر را یک‌بار در ابتدای ردیفش تعیین کنید و هر هفته فقط «پرکردن با پیش‌فرض‌ها» را بزنید — تنها موارد استثنا را دستی اصلاح کنید. روزهای مرخصیِ تأییدشده با قفل نمایش داده می‌شوند و تغییرشان فقط از بخش «مرخصی‌ها» ممکن است.'
               : 'این برنامه فقط برای مشاهده است؛ تعیین شیفت توسط مدیران انجام می‌شود.'}
           </p>
         </CardContent>

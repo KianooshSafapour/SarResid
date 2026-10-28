@@ -147,8 +147,9 @@ export default function AttendanceView() {
   const [rows, setRows] = useState<Record<string, any>>({})
   const [onLeave, setOnLeave] = useState<Record<string, { type: string; hours: number; days: number }>>({})
   const [unresolved, setUnresolved] = useState<any[]>([])
-  /* فیلتر شیفت روز (برنامهٔ شیفت هفتگی) + جمع‌بندی ماه برای سیستم حقوق */
-  const [dayShiftF, setDayShiftF] = useState<'ALL' | 'MORNING' | 'EVENING'>('ALL')
+  /* فیلتر شیفت روز (برنامهٔ شیفت هفتگی) + جمع‌بندی ماه برای سیستم حقوق
+     R17: مدیرِ قفل‌شده روی یک شیفت (مثل مدیر شیفت عصر) به‌طور پیش‌فرض فقط پرسنلِ همان شیفت را می‌بیند */
+  const [dayShiftF, setDayShiftF] = useState<'ALL' | 'MORNING' | 'EVENING'>(canSwitchShift ? 'ALL' : 'EVENING')
   const [monthSum, setMonthSum] = useState<any>(null)
   const [payBusy, setPayBusy] = useState(false)
 
@@ -541,6 +542,11 @@ export default function AttendanceView() {
             </div>
           </div>
           <p className="pt-1.5 text-[11px] leading-5 text-stone-400">
+            {!canSwitchShift && dayShiftF !== 'ALL' && (
+              <span className="mb-1 block rounded-lg bg-teal-50 px-2 py-1 font-bold text-teal-800">
+                فقط پرسنلِ شیفتِ خودتان نمایش داده می‌شود ({sm.label}) — برای دیدن همهٔ پرسنل، فیلتر «همهٔ پرسنل» را بزنید. شیفتِ هر نفر از «برنامهٔ شیفت هفتگی» (و شیفت پیش‌فرضِ او) خوانده می‌شود.
+              </span>
+            )}
             نوع ورود، اجازهٔ مدیر را در خود دارد: «مرخصی» یعنی با اجازهٔ مدیر و «غیبت» یعنی بدون اجازه. اضافه‌کار و غیبت به‌طور خودکار در ورودی‌های حقوق همان ماه اعمال می‌گردد؛ همهٔ پرسنل فعال — از جمله خودتان — بررسی می‌شوند.
             معیارهای چهارگانه سه سطح دارند: «مناسب» = مطابق استاندارد · «نقص جزئی» = انحراف کوچک قابل‌جبران در همان شیفت (تذکر شفاهی) · «نامناسب» = نیازمند پیگیری همان روز. نقص جزئی فقط در آمار ماهانه دیده می‌شود و در «موارد نیازمند پیگیری» شمرده نمی‌شود.
           </p>

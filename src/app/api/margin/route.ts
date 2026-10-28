@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { ok, fail, logActivity } from '@/lib/api'
 import { getSessionUser } from '@/lib/auth'
 import { todayJalaliDash, formatJalaliDash, toFaDigits } from '@/lib/jalali'
+import { notify } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -258,21 +259,34 @@ export async function POST(req: NextRequest) {
   const maxNumber = await db.marginInvoice.aggregate({ _max: { number: true } })
   const number = (maxNumber._max.number ?? 0) + 1
 
+  /* R17: ثبت در سودسنج یعنی کالا تحویلِ تحویل‌شده است — پیش‌فاکتور همزمان با ثبت،
+     «تحویل‌شده» می‌شود و مستقیم در انتظار بررسی حسابداری است؛ گام «تأیید تحویل کالا»
+     حذف شد (دریافت فیزیکیِ واقعی از مسیر «دریافت کالا»ی سفارش‌ها انجام می‌شود). */
+  const now = new Date()
   const created = await db.marginInvoice.create({
     data: {
       number,
       supplierId,
       supplierName,
       note,
-      status: 'draft',
+      status: 'delivered',
+      deliveredAt: now,
+      deliveredById: me.id,
+      deliveredByName: me.fullName,
       providerDocNumber,
       dateJalali: (typeof body?.dateJalali === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dateJalali.trim())) ? body.dateJalali.trim() : todayJalaliDash(),
       historyJson: JSON.stringify([
         {
-          at: new Date().toISOString(),
+          at: now.toISOString(),
           by: me.fullName,
           action: 'create',
-          detail: `پیش‌نویس پیش‌فاکتور — ${items.length} قلم${supplierName ? ` · ${supplierName}` : ''} — پس از تحویل کالا، از دفتر فاکتورها (بخش مالی) ادامه دهید`,
+          detail: `ثبت پیش‌فاکتور سودسنج — ${items.length} قلم${supplierName ? ` · ${supplierName}` : ''}`,
+        },
+        {
+          at: now.toISOString(),
+          by: me.fullName,
+          action: 'deliver',
+          detail: 'ثبت در سودسنج = کالا تحویل‌شده — بدون نیاز به تأیید جداگانه؛ در انتظار بررسی حسابداری',
         },
       ]),
       items: { create: items },
@@ -288,6 +302,15 @@ export async function POST(req: NextRequest) {
     detail: `#${toFaDigits(String(number))} — ${supplierName} — ${items.length} قلم`,
     entityId: created.id,
   })
+
+  await notify({
+    role: 'ACC',
+    kind: `margin:deliver:${created.id}`,
+    severity: 'info',
+    title: 'پیش‌فاکتور سودسنج ثبت شد — در انتظار بررسی حسابداری',
+    body: `فاکتور #${toFaDigits(String(number))} (${supplierName ?? 'بدون تأمین‌کننده'}) توسط ${me.fullName} ثبت شد — کالا همزمان با ثبت تحویل‌شده است؛ بررسی قیمت‌ها و حاشیهٔ سود نوبت حسابداری است.`,
+    go: `#/finance/invoices?open=${created.id}`,
+  }).catch(() => {})
 
   return ok({ id: created.id, number: created.number, status: created.status, archived: created.archived, providerDocNumber })
 }

@@ -4,7 +4,12 @@
  */
 import { useState, useEffect, api, useShell, toast, cn, Button, Input, Textarea, Card, CardContent, CardHeader, CardTitle, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, fa, toFaDigits, formatJalali, I } from '../lib/hz'
 
-const KIND_ICON: Record<string, string> = { NEW_PRODUCT: '🧺', SUPPLY: '📦', REPAIR: '🛠️', SOFTWARE: '💻', CUSTOMER: '💐', OTHER: '📝' }
+/* R17: آیکون‌های لوسید به‌جای ایموجی — هم‌زبان با سایر بخش‌های پلتفرم */
+const KIND_ICON: Record<string, any> = { NEW_PRODUCT: I.packagePlus, SUPPLY: I.carton, REPAIR: I.wrench, SOFTWARE: I.monitor, CUSTOMER: I.handshake, OTHER: I.penLine }
+function KindIcon({ kind, size = 15, className = '' }: { kind: string; size?: number; className?: string }) {
+  const C = KIND_ICON[kind] || I.penLine
+  return <C size={size} className={className} />
+}
 const STATUS_CLS: Record<string, string> = {
   SUBMITTED: 'bg-stone-100 text-stone-700 border-stone-200',
   SEEN: 'bg-sky-100 text-sky-800 border-sky-200',
@@ -113,7 +118,7 @@ export default function RequestsView() {
                     className={cn('w-full rounded-xl border p-3 text-right transition-colors hover:border-teal-400',
                       r.priority === 'HIGH' ? 'border-amber-300 bg-amber-50/40' : 'border-stone-200 bg-white')}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-lg">{KIND_ICON[r.kind] ?? '📝'}</span>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-500"><KindIcon kind={r.kind} size={15} /></span>
                       <span className="font-mono text-[11px] font-bold text-stone-400" dir="ltr">{r.code}</span>
                       <span className="min-w-0 flex-1 truncate text-sm font-bold text-stone-800">{r.title}</span>
                       {r.priority === 'HIGH' ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-800">فوری</span> : null}
@@ -149,7 +154,7 @@ export default function RequestsView() {
               <Select value={form.kind} onValueChange={(v: string) => setForm((c) => ({ ...c, kind: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {kinds.map((k) => <SelectItem key={k.key} value={k.key}>{KIND_ICON[k.key]} {k.label}</SelectItem>)}
+                  {kinds.map((k) => <SelectItem key={k.key} value={k.key}><span className="flex items-center gap-1.5"><KindIcon kind={k.key} size={13} /> {k.label}</span></SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -187,7 +192,9 @@ export default function RequestsView() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex flex-wrap items-center gap-2">
-                  {KIND_ICON[detail.kind]} {detail.code} — {detail.title}
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-500"><KindIcon kind={detail.kind} size={16} /></span>
+                  <span className="font-mono text-[12px] font-bold text-stone-400" dir="ltr">{detail.code}</span>
+                  <span className="min-w-0 flex-1 truncate">{detail.title}</span>
                   <span className={cn('rounded-full border px-2 py-0.5 text-[10px]', STATUS_CLS[detail.status])}>{detail.statusLabel}</span>
                 </DialogTitle>
                 <DialogDescription>{detail.kindLabel} · از {detail.requestedByName}{detail.handledByName ? ` · دست‌اندرکار: ${detail.handledByName}` : ''}</DialogDescription>

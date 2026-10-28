@@ -6,12 +6,12 @@ import { db } from '@/lib/db'
  * row are appended at the end in user insertion order.
  */
 export async function orderedUsers(): Promise<
-  Array<{ id: string; username: string; fullName: string; honorific: string; role: string; title: string; active: boolean }>
+  Array<{ id: string; username: string; fullName: string; honorific: string; role: string; title: string; active: boolean; defaultShift: string | null }>
 > {
   const [personnel, users] = await Promise.all([db.personnel.findMany(), db.user.findMany()])
   const userById = new Map(users.map((u) => [u.id, u]))
   const usedUserIds = new Set<string>()
-  const ordered: Array<{ id: string; username: string; fullName: string; honorific: string; role: string; title: string; active: boolean }> = []
+  const ordered: Array<{ id: string; username: string; fullName: string; honorific: string; role: string; title: string; active: boolean; defaultShift: string | null }> = []
 
   for (const p of personnel) {
     const direct = userById.get(p.userId)

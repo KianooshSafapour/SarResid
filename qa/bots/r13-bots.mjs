@@ -94,7 +94,7 @@ async function suiteGmWorkflow() {
 
   /* بایگانی پیش از تأیید مدیرعامل ممنوع */
   const earlyArchive = await acc.req(`/api/margin/${invId}`, 'PATCH', { action: 'archive', binderId: 'x' })
-  check('gm', 'بایگانی پیش از تأیید مدیرعامل رد می‌شود', earlyArchive.ok === false && /مدیرعامل/.test(earlyArchive.error || ''), earlyArchive.error || '')
+  check('gm', 'بایگانی پیش از تأیید مدیر کل رد می‌شود', earlyArchive.ok === false && /مدیر کل|مدیرعامل/.test(earlyArchive.error || ''), earlyArchive.error || '')
 
   /* نقش‌ها: حسابدار و صندوقدار نمی‌توانند تأیید کنند */
   const accTry = await acc.req(`/api/margin/${invId}`, 'PATCH', { action: 'gm-approve' })
@@ -167,7 +167,7 @@ async function suiteMonitor() {
   check('monitor', 'cpu/mem/db/services کامل است', r.ok && r.data?.cpu?.pct != null && r.data?.mem?.total > 0 && Array.isArray(r.data?.services) && r.data?.db?.latencyMs != null)
   check('monitor', 'سرویس sarresid-web زنده است', (r.data?.services || []).some((s) => s.name === 'sarresid-web'))
   const g = await gm.req('/api/system/monitor')
-  check('monitor', 'مدیرعامل دسترسی ندارد (۴۰۳)', g.ok === false && g._status === 403)
+  check('monitor', 'مدیر کل دسترسی دارد (سیاست R16)', g.ok === true)
   const c = await cashier.req('/api/system/monitor')
   check('monitor', 'صندوقدار دسترسی ندارد (۴۰۳)', c.ok === false && c._status === 403)
 }

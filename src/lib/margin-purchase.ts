@@ -48,6 +48,8 @@ export async function nextOrderCode(): Promise<string> {
 
 /** ثبت سند خرید (Order RECEIVED) + به‌روزرسانی موجودی/بهای خرید/قیمت فروش کالاها.
  *  پیوند فاکتور (purchaseOrderId) و ثبت رویداد با فراخواننده است. */
+export const MAX_CHEQUE_DAYS = 45 // R17: سقف مهلت چکِ خرید — چکِ ثبت فاکتور خرید همیشه با این مهلت ثبت می‌شود
+
 export async function createPurchaseOrder(opts: {
   items: PurchaseDerivedItem[]
   supplierId: string | null
@@ -56,6 +58,8 @@ export async function createPurchaseOrder(opts: {
   providerDocNumber: string | null
   dateJalali: string
   payMethod: string
+  /** R17: مهلت چک (فقط با payMethod=CHEQUE) — روی سند خرید ذخیره می‌شود */
+  chequeDays?: number
   actor: { id: string; fullName: string }
   marginInvoiceNumber?: number
   sourceLabel?: string
@@ -119,6 +123,7 @@ export async function createPurchaseOrder(opts: {
       supplierName: opts.supplierName,
       deliveryDate: opts.dateJalali,
       payMethod: opts.payMethod,
+      ...(opts.payMethod === 'CHEQUE' && opts.chequeDays && opts.chequeDays > 0 ? { chequeDays: opts.chequeDays } : {}),
       notes: JSON.stringify(extras),
       totalAmount,
       createdById: opts.actor.id,

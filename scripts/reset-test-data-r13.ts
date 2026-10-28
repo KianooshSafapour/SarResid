@@ -13,14 +13,16 @@
  *     بعد از ۱۴۰۵/۰۸/۴ که تأمین‌کنندهٔ تستی ندارد) و اسناد خرید متصل به همان‌ها
  *     + ArchiveDocumentهای متصل به فاکتورهای نگه‌داشته‌شده
  *
- *   حذف می‌شود (تست/Dummy — هر دو منبع: کاربر و ربات‌ها):
- *     بقیهٔ MarginInvoice/Item · سفارش‌ها و اقلام تست · چک‌ها · مرجوعی‌ها
- *     ضایعات · بازرسی‌های ردیف · انبارگردانی‌ها · ارزیابی بخش · اعلان‌ها
- *     گزارش فعالیت · پیامک‌های خروجی · اسنپ‌شات‌ها · لاگ هلو · حضوروغیاب
- *     مرخصی · وظایف · شیفت‌ها · گزارش شیفت · تیکت ریل‌تایم · پیام‌ها
- *     بازخورد · مشکل‌ها · دیوار · کمپین/CRM · PriceCheck · ManagerReview
- *     PerformanceScore · StaffCheck · TaskOrder · DateCheck · ZoneCount
- *     Payment/PaymentPlan (تست) · Customer (تست)
+ *   حذف می‌شود (فقط اثر آزمایشی قابل‌اثبات — سیاست R17):
+ *     فاکتورهای سودسنجِ تست + اقلام و اسناد خرید همان‌ها + آرشیوِ متصل به آنها
+ *     چک‌های AUTO متصل به اسناد حذف‌شده (یا AUTOهای یتیم) — چک‌های واقعی می‌مانند
+ *     درخواست‌های کارکنانِ ثبت‌شده توسط بات‌ها (عنوان شامل «بات»)
+ *     کلیدهای KV تور (بازدید دوبارهٔ تورها) + تیکت ریل‌تایمِ منقضی
+ *
+ *   R17: دادهٔ واقعیِ روزمرهٔ کارکنان دیگر هرگز پاک نمی‌شود — برنامهٔ شیفت،
+ *     مرخصی، حضوروغیاب، حقوق، مرجوعی، ضایعات، انبارگردانی، ارزیابی چیدمان،
+ *     کنترل انقضا، مشکل‌ها/پیام‌ها/دیوار، CRM/مشتریان، گزارش فعالیت (ردپا)،
+ *     اعلان‌ها، پیامک‌ها، اسنپ‌شات‌ها و لاگ هلو همه حفظ می‌شوند
  *
  * اجرا:  bun scripts/reset-test-data-r13.ts           → فقط گزارش (DRY RUN)
  *        APPLY=1 bun scripts/reset-test-data-r13.ts   → اعمال واقعی
@@ -103,56 +105,22 @@ async function main() {
   }
   console.log(`اسناد آرشیو متصل به سفارشِ تست: حذف=${p.dropDocIds.length}`)
 
-  /* شمارش همهٔ گروه‌های حذف */
+  /* شمارش اثر آزمایشی قابل‌اثبات (سیاست R17 — فقط همین‌ها حذف می‌شوند) */
   const counts: [string, number | Promise<number>][] = [
     ['OrderItem (سفارش‌های تست)', db.orderItem.count({ where: { orderId: { in: p.dropOrderIds } } })],
     ['MarginItem (فاکتورهای تست)', db.marginItem.count({ where: { invoiceId: { in: p.dropMarginIds } } })],
     ['MarginInvoice (فاکتورهای تست)', db.marginInvoice.count({ where: { id: { in: p.dropMarginIds } } })],
     ['Order (تست)', db.order.count({ where: { id: { in: p.dropOrderIds } } })],
     ['ArchiveDocument (متصل به تست)', db.archiveDocument.count({ where: { id: { in: p.dropDocIds } } })],
-    ['Cheque', db.cheque.count()],
-    ['ReturnRequest', db.returnRequest.count()],
-    ['ReturnItem', db.returnItem.count()],
-    ['ReturnPayment', db.returnPayment.count()],
-    ['Payment', db.payment.count()],
-    ['PaymentPlan', db.paymentPlan.count()],
-    ['WasteRecord', db.wasteRecord.count()],
-    ['LaneCheck', db.laneCheck.count()],
-    ['CountSchedule', db.countSchedule.count()],
-    ['StockCount', db.stockCount.count()],
-    ['StockCountItem', db.stockCountItem.count()],
-    ['SectionReview', db.sectionReview.count()],
-    ['PriceCheck', db.priceCheck.count()],
-    ['ZoneCount', db.zoneCount.count()],
-    ['Notification', db.notification.count()],
-    ['ActivityLog', db.activityLog.count()],
-    ['SmsOutbox', db.smsOutbox.count()],
-    ['DataSnapshot', db.dataSnapshot.count()],
-    ['HolooSyncLog', db.holooSyncLog.count()],
-    ['RealtimeTicket', db.realtimeTicket.count()],
-    ['ShiftAssignment', db.shiftAssignment.count()],
-    ['ShiftReport', db.shiftReport.count()],
-    ['LeaveRequest', db.leaveRequest.count()],
-    ['Attendance* (ShiftReport)', db.shiftReport.count()],
-    ['PayrollRecord', db.payrollRecord.count()],
-    ['Task', db.task.count()],
-    ['TaskOrder', db.taskOrder.count()],
-    ['StaffCheck', db.staffCheck.count()],
-    ['Message', db.message.count()],
-    ['Broadcast', db.broadcast.count()],
-    ['Feedback', db.feedback.count()],
-    ['Problem', db.problem.count()],
-    ['WallPost', db.wallPost.count()],
-    ['Customer', db.customer.count()],
-    ['Campaign', db.campaign.count()],
-    ['CrmEvent', db.crmEvent.count()],
-    ['ManagerReview', db.managerReview.count()],
-    ['PerformanceScore', db.performanceScore.count()],
-    ['ChecklistState', db.checklistState.count()],
-    ['DateCheck', db.dateCheck.count()],
-    ['UserPermOverride', db.userPermOverride.count()],
+    ['Cheque (AUTO متصل به تست/یتیم)', db.cheque.count({
+      where: { OR: [
+        { orderId: { in: p.dropOrderIds } },
+        { AND: [{ number: { startsWith: 'AUTO-' } }, { orderId: null }] },
+      ] },
+    })],
+    ['StaffRequest (بات)', db.staffRequest.count({ where: { title: { contains: 'بات' } } })],
+    ['RealtimeTicket (منقضی)', db.realtimeTicket.count({ where: { expiresAt: { lt: new Date() } } })],
   ]
-  console.log('\n── اقلام حذفی ──')
   let total = 0
   for (const [label, cnt] of counts) {
     const n = await cnt
@@ -189,54 +157,24 @@ async function main() {
     ['WasteRecord.orderId unlink', db.wasteRecord.updateMany({ where: { orderId: { in: p.dropOrderIds } }, data: { orderId: null, orderCode: null } })],
     ['MarginInvoice', db.marginInvoice.deleteMany({ where: { id: { in: p.dropMarginIds } } })],
     ['Order', db.order.deleteMany({ where: { id: { in: p.dropOrderIds } } })],
-    ['Cheque', db.cheque.deleteMany({})],
-    ['ReturnItem', db.returnItem.deleteMany({})],
-    ['ReturnPayment', db.returnPayment.deleteMany({})],
-    ['ReturnRequest', db.returnRequest.deleteMany({})],
-    ['Payment', db.payment.deleteMany({})],
-    ['PaymentPlan', db.paymentPlan.deleteMany({})],
-    ['WasteRecord', db.wasteRecord.deleteMany({})],
-    ['LaneCheck', db.laneCheck.deleteMany({})],
-    ['CountSchedule', db.countSchedule.deleteMany({})],
-    ['StockCountItem', db.stockCountItem.deleteMany({})],
-    ['StockCount', db.stockCount.deleteMany({})],
-    ['SectionReview', db.sectionReview.deleteMany({})],
-    ['PriceCheck', db.priceCheck.deleteMany({})],
-    ['ZoneCount', db.zoneCount.deleteMany({})],
-    ['Notification', db.notification.deleteMany({})],
-    ['ActivityLog', db.activityLog.deleteMany({})],
-    ['SmsOutbox', db.smsOutbox.deleteMany({})],
-    ['DataSnapshot', db.dataSnapshot.deleteMany({})],
-    ['HolooSyncLog', db.holooSyncLog.deleteMany({})],
-    ['RealtimeTicket', db.realtimeTicket.deleteMany({})],
-    ['ShiftAssignment', db.shiftAssignment.deleteMany({})],
-    ['ShiftReport', db.shiftReport.deleteMany({})],
-    ['LeaveRequest', db.leaveRequest.deleteMany({})],
-    ['PayrollRecord', db.payrollRecord.deleteMany({})],
-    ['Task', db.task.deleteMany({})],
-    ['TaskOrder', db.taskOrder.deleteMany({})],
-    ['StaffCheck', db.staffCheck.deleteMany({})],
-    ['Message', db.message.deleteMany({})],
-    ['Broadcast', db.broadcast.deleteMany({})],
-    ['Feedback', db.feedback.deleteMany({})],
-    ['Problem', db.problem.deleteMany({})],
-    ['WallPost', db.wallPost.deleteMany({})],
-    ['CrmEvent', db.crmEvent.deleteMany({})],
-    ['Campaign', db.campaign.deleteMany({})],
-    ['Customer', db.customer.deleteMany({})],
-    ['ManagerReview', db.managerReview.deleteMany({})],
-    ['PerformanceScore', db.performanceScore.deleteMany({})],
-    ['ChecklistState', db.checklistState.deleteMany({})],
-    ['DateCheck', db.dateCheck.deleteMany({})],
-    ['UserPermOverride', db.userPermOverride.deleteMany({})],
+    /* R17: چک‌ها — فقط AUTOهای متصل به اسناد حذف‌شده یا AUTOهای یتیم؛ چک واقعی هرگز */
+    ['Cheque (AUTO تست)', db.cheque.deleteMany({
+      where: { OR: [
+        { orderId: { in: p.dropOrderIds } },
+        { AND: [{ number: { startsWith: 'AUTO-' } }, { orderId: null }] },
+      ] },
+    })],
+    /* R17: درخواست‌های کارکنانِ بات‌ها (عنوان شامل «بات») */
+    ['StaffRequest (بات)', db.staffRequest.deleteMany({ where: { title: { contains: 'بات' } } })],
+    /* R17: تیکت ریل‌تایمِ منقضی — فنی و بی‌اثر، پاک‌سازی امن */
+    ['RealtimeTicket (منقضی)', db.realtimeTicket.deleteMany({ where: { expiresAt: { lt: new Date() } } })],
   ]
   for (const [label, op] of ops) {
     const r = await op as { count: number }
     if (r.count > 0) console.log(`   ✓ ${label}: ${r.count} حذف شد`)
   }
 
-  /* R14: نگاشت زون‌بندِ خودکار — فعلاً فقط دادهٔ تست می‌تواند داشت؛ کلید حذف می‌شود */
-  await db.setting.deleteMany({ where: { key: 'archive.autoBind' } }).catch(() => {})
+  /* R17: نگاشت زون‌بندِ خودکار (archive.autoBind) پیکربندیِ واقعی است — حفظ می‌شود */
 
   /* کلیدهای تورِ KV هم دادهٔ تست‌اند */
   const tourKeys = await db.setting.findMany({ where: { key: { startsWith: 'tour:' } } })

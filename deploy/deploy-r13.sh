@@ -37,6 +37,9 @@ cd "$APP"
 echo "── ۴/۱۰ اسکیمای دیتابیس (ستون‌های افزودنی R13 — بدون تغییر داده) ──"
 DATABASE_URL="file:$APP/db/custom.db" "$BUN"x prisma db push 2>&1 | tail -3
 
+echo "── ۴b/۱۰ مهاجرت R17: پیش‌نویس‌های سودسنج → تحویل‌شده (idempotent) ──"
+cd "$APP" && "$BUN" scripts/migrate-drafts-delivered-r17.ts 2>&1 | tail -3
+
 echo "── ۵/۱۰ بیلد پروداکشن (با رقص public/_next) ──"
 export NEXT_TELEMETRY_DISABLED=1
 rm -rf /tmp/r13-public-next

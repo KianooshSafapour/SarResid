@@ -2,9 +2,9 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
-import { toFaDigits, todayJalaliDash } from '@/lib/jalali'
+import { toFaDigits, todayJalaliDash, addDaysJalaliDash } from '@/lib/jalali'
 import { deriveItem, invoiceListOut, MARGIN_ROLES, getMarginThresholds, type MarginItemInput } from '../route'
-import { createPurchaseOrder, pushOrderToHoloo, publishPricesToHoloo, faMoney, type PurchaseDerivedItem } from '@/lib/margin-purchase'
+import { createPurchaseOrder, pushOrderToHoloo, publishPricesToHoloo, faMoney, MAX_CHEQUE_DAYS, type PurchaseDerivedItem } from '@/lib/margin-purchase'
 
 export const dynamic = 'force-dynamic'
 
@@ -220,8 +220,11 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   const inv = await db.marginInvoice.findUnique({ where: { id } })
   if (!inv) return fail('فاکتور یافت نشد', 404)
   if (inv.archived) return fail('فاکتور بایگانی‌شده قابل ویرایش نیست؛ ابتدا بایگانی را باز کنید')
-  if (inv.status === 'delivered' || inv.status === 'reviewing')
-    return fail('این فاکتور تحویل شده و در گردش‌کار بررسی است — ویرایش اقلام از «بررسی حسابداری» در دفتر فاکتورها انجام می‌شود')
+  /* R17: سودسنج = تحویل‌شده؛ تا پیش از شروع بررسی حسابداری، ثبت‌کننده می‌تواند اصلاح کند */
+  if (inv.status === 'reviewing')
+    return fail('این فاکتور در بررسی حسابداری است — ویرایش اقلام از «بررسی حسابداری» در دفتر فاکتورها انجام می‌شود')
+  if (inv.status === 'delivered' && inv.reviewedAt)
+    return fail('بررسی حسابداری این فاکتور آغاز شده — ویرایش از «بررسی حسابداری» در دفتر فاکتورها انجام می‌شود')
   if (inv.status === 'cancelled') return fail('فاکتور لغوشده قابل ویرایش نیست')
 
   const body = await req.json().catch(() => null)
@@ -346,15 +349,30 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   /* ── گام ۳: شروع بررسی حسابداری ── */
   if (action === 'start-review') {
     if (!REVIEW_ROLES.includes(me.role)) return fail('بررسی حسابداری فقط برای حسابدار یا مدیران ممکن است', 403)
-    if (inv.status !== 'delivered' && inv.status !== 'reviewing') return fail('بررسی فقط برای فاکتور «تحویل‌شده» ممکن است — ابتدا تأیید تحویل')
+    if (inv.status !== 'delivered' && inv.status !== 'reviewing' && inv.status !== 'draft')
+      return fail('بررسی فقط برای فاکتور «تحویل‌شده» (یا پیش‌نویس قدیمی) ممکن است')
+    /* R17: پیش‌نویس‌های قدیمی (پیش از R17) همزمان تحویل‌شده فرض می‌شوند — ثبت سودسنج = تحویل */
+    const legacyDeliver = inv.status === 'draft'
+      ? {
+          deliveredAt: inv.deliveredAt ?? now,
+          deliveredById: inv.deliveredById ?? me.id,
+          deliveredByName: inv.deliveredByName ?? me.fullName,
+        }
+      : null
     const updated = await db.marginInvoice.update({
       where: { id },
       data: {
+        ...(legacyDeliver ?? {}),
         status: 'reviewing',
         reviewedAt: now,
         reviewedById: me.id,
         reviewedByName: me.fullName,
-        historyJson: withEvent(inv.historyJson, { at: nowIso, by: me.fullName, action: 'start-review', detail: 'بررسی قیمت‌ها و حاشیهٔ سود آغاز شد' }),
+        historyJson: withEvent(
+          legacyDeliver
+            ? withEvent(inv.historyJson, { at: nowIso, by: legacyDeliver.deliveredByName, action: 'deliver', detail: 'سند قدیمی — ثبت سودسنج = تحویل‌شده' })
+            : inv.historyJson,
+          { at: nowIso, by: me.fullName, action: 'start-review', detail: 'بررسی قیمت‌ها و حاشیهٔ سود آغاز شد' },
+        ),
       },
     })
     return ok({ id, status: updated.status })
@@ -449,6 +467,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     const payMethod = ['CASH', 'CHEQUE', 'POS'].includes(String(body.payMethod)) ? String(body.payMethod) : 'CASH'
     const pushToHoloo = body.pushToHoloo === true
+    /* R17: چکِ پرداخت خرید همیشه با سقف مهلت (۴۵ روز) ثبت می‌شود — سررسید = تاریخ فاکتور + مهلت */
+    const chequeDays = payMethod === 'CHEQUE' ? Math.max(1, Math.min(MAX_CHEQUE_DAYS, Math.round(Number(body?.chequeDays) || MAX_CHEQUE_DAYS))) : 0
 
     const { order, totalAmount, stockUpdated } = await createPurchaseOrder({
       items: acceptedItems as unknown as PurchaseDerivedItem[],
@@ -458,6 +478,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       providerDocNumber: inv.providerDocNumber,
       dateJalali: inv.dateJalali || todayJalaliDash(),
       payMethod,
+      chequeDays,
       actor: { id: me.id, fullName: me.fullName },
       marginInvoiceNumber: inv.number,
       sourceLabel: 'ثبت فاکتور خرید از دفتر فاکتورها (پس از بررسی حسابداری)',
@@ -479,6 +500,41 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       })
     }
 
+    /* R17: چک خودکار خرید — پرداخت چکی، همزمان چک پیش‌نویس (PENDING_OWNER) می‌سازد؛
+       سقف مهلت ۴۵ روز؛ سررسید = تاریخ فاکتور + مهلت (idempotent با orderId) */
+    let cheque: { number: string; dueDate: string; amount: number } | null = null
+    if (payMethod === 'CHEQUE' && chequeDays > 0) {
+      const existingCheque = await db.cheque.findFirst({ where: { orderId: order.id }, select: { id: true } })
+      if (!existingCheque) {
+        const chequeBase = inv.dateJalali && /^\d{4}-\d{2}-\d{2}$/.test(inv.dateJalali) ? inv.dateJalali : todayJalaliDash()
+        const dueDate = addDaysJalaliDash(chequeBase, chequeDays)
+        const row = await db.cheque.create({
+          data: {
+            number: `AUTO-${order.code}`,
+            amount: totalAmount,
+            status: 'PENDING_OWNER',
+            recipient: inv.supplierName,
+            selfIssued: false,
+            dueDate,
+            note: `چک خودکار فاکتور خرید #${numFa} — مهلت ${toFaDigits(String(chequeDays))} روز`,
+            orderId: order.id,
+            orderCode: order.code,
+            historyJson: JSON.stringify([
+              { at: nowIso, by: 'system', action: 'auto-create', detail: `ثبت خودکار هنگام ثبت فاکتور خرید #${numFa} از دفتر فاکتورها` },
+            ]),
+          },
+        })
+        cheque = { number: row.number, dueDate, amount: totalAmount }
+        await notifyRoles(['OWNER', 'GM'], {
+          kind: `cheque:auto:${row.id}`,
+          severity: 'info',
+          title: 'چک خودکار خرید ثبت شد',
+          body: `چک ${faMoney(totalAmount)} ریالی برای فاکتور #${numFa} (سند ${order.code}) ثبت شد — سررسید ${toFaDigits(dueDate)}؛ آمادهٔ نوشتن.`,
+          go: '#/finance/cheques',
+        })
+      }
+    }
+
     await db.marginInvoice.update({
       where: { id },
       data: {
@@ -492,7 +548,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           at: nowIso,
           by: me.fullName,
           action: 'finalize',
-          detail: `فاکتور خرید نهایی شد — سند خرید ${order.code} · ${toFaDigits(String(acceptedItems.length))} قلم پذیرفته، ${toFaDigits(String(rejectedItems.length))} قلم مرجوعی · جمع پذیرفته ${faMoney(totalAmount)} ریال${holoo ? (holoo.pushed ? ' · ثبت شد در هلو' : ' · هلو: در صف ارسال') : ''}`,
+          detail: `فاکتور خرید نهایی شد — سند خرید ${order.code} · ${toFaDigits(String(acceptedItems.length))} قلم پذیرفته، ${toFaDigits(String(rejectedItems.length))} قلم مرجوعی · جمع پذیرفته ${faMoney(totalAmount)} ریال${cheque ? ` · چک ${toFaDigits(String(chequeDays))} روزه (سررسید ${toFaDigits(cheque.dueDate)}) خودکار ثبت شد` : ''}${holoo ? (holoo.pushed ? ' · ثبت شد در هلو' : ' · هلو: در صف ارسال') : ''}`,
         }),
       },
     })
@@ -522,6 +578,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       acceptedCount: acceptedItems.length,
       rejectedCount: rejectedItems.length,
       holoo,
+      cheque,
     })
   }
 
@@ -847,8 +904,8 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   if (!inv) return fail('فاکتور یافت نشد', 404)
   if (inv.archived) return fail('فاکتور بایگانی‌شده قابل حذف نیست؛ ابتدا بایگانی را باز کنید')
   if (inv.purchaseOrderId) return fail('برای این فاکتور سند خرید ثبت شده — ابتدا از مسیر سفارش‌ها اصلاح کنید')
-  if (inv.status === 'delivered' || inv.status === 'reviewing')
-    return fail('فاکتورِ در گردش‌کار (تحویل‌شده/در بررسی) قابل حذف نیست — ابتدا لغوش کنید')
+  if (inv.status === 'reviewing')
+    return fail('فاکتورِ در بررسی حسابداری قابل حذف نیست — ابتدا لغوش کنید')
 
   await db.marginInvoice.delete({ where: { id } })
   await logActivity({

@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
     weekEnd,
     today,
     days: dates.map((date, dayIdx) => ({ dayIdx, date, label: jalaliDashWeekdayName(date) })),
-    users: activeUsers.map((u) => ({ id: u.id, fullName: u.fullName, honorific: u.honorific, role: u.role, title: u.title })),
+    users: activeUsers.map((u) => ({ id: u.id, fullName: u.fullName, honorific: u.honorific, role: u.role, title: u.title, defaultShift: u.defaultShift ?? null })),
     assignments: mapped.map((a) => ({
       id: a.id,
       userId: a.userId,
@@ -207,10 +207,12 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * PUT /api/hr/shifts {weekStart, rows:[{userId, dayIdx, shift}]} → ذخیرهٔ گروهی هفته.
- *  shift ∈ '' | MORNING | EVENING | LEAVE | OFF — مقدار «''» یعنی پاک‌کردن شیفت آن روز.
- *  weekStart هر تاریخی از هفتهٔ هدف باشد، ابتدا به شنبهٔ همان هفته تراز می‌شود.
- *  روزهای مرخصیِ تأییدشدهٔ تمام‌روز رد می‌شوند (skipped) و هیچ‌وقت بازنویسی نمی‌شوند.
+ * PUT /api/hr/shifts {weekStart?, rows?:[{userId, dayIdx, shift}], defaults?:[{userId, shift}]}
+ *  • rows: ذخیرهٔ گروهی هفته — shift ∈ '' | MORNING | EVENING | BOTH | LEAVE | OFF
+ *    (مقدار «''» یعنی پاک‌کردن شیفت آن روز؛ weekStart به شنبهٔ همان هفته تراز می‌شود؛
+ *    روزهای مرخصیِ تأییدشدهٔ تمام‌روز رد می‌شوند)
+ *  • defaults (R17): تعیین شیفت پیش‌فرض هر پرسنل — 'MORNING'|'EVENING'|'BOTH'|'' (حذف).
+ *    هر کدام مستقل کار می‌کند؛ اگر فقط defaults باشد rows لازم نیست.
  */
 export async function PUT(req: NextRequest) {
   const user = await getSessionUser()
@@ -219,10 +221,36 @@ export async function PUT(req: NextRequest) {
 
   const body = await req.json().catch(() => null)
   const weekStartParam = typeof body?.weekStart === 'string' && DATE_RE.test(body.weekStart) ? body.weekStart : ''
-  if (!weekStartParam) return fail('هفته نامعتبر است')
   const rawRows = Array.isArray(body?.rows) ? body.rows.slice(0, 400) : []
-  if (!rawRows.length) return fail('ردیفی برای ذخیره وجود ندارد')
+  const rawDefaults = Array.isArray(body?.defaults) ? body.defaults.slice(0, 100) : []
+  if (!rawRows.length && !rawDefaults.length) return fail('ردیفی برای ذخیره وجود ندارد')
 
+  /* ── R17: شیفت پیش‌فرض پرسنل ── */
+  let defaultsSaved = 0
+  const DEFAULT_SHIFTS = ['MORNING', 'EVENING', 'BOTH']
+  for (const d of rawDefaults) {
+    const userId = typeof d?.userId === 'string' ? d.userId : ''
+    const shift = String(d?.shift ?? '')
+    if (!userId) continue
+    if (shift !== '' && !DEFAULT_SHIFTS.includes(shift)) continue
+    const target = await db.user.findUnique({ where: { id: userId } })
+    if (!target || !target.active) continue
+    await db.user.update({ where: { id: userId }, data: { defaultShift: shift === '' ? null : shift } })
+    defaultsSaved++
+  }
+  if (defaultsSaved > 0 && !rawRows.length) {
+    await logActivity({
+      userId: user.id,
+      userName: user.fullName,
+      action: 'shift.defaults',
+      actionLabel: 'شیفت',
+      category: 'shift',
+      detail: `شیفت پیش‌فرض ${defaultsSaved} نفر به‌روزرسانی شد`,
+    })
+    return ok({ saved: 0, cleared: 0, skipped: [], defaultsSaved })
+  }
+
+  if (!weekStartParam) return fail('هفته نامعتبر است')
   const { weekStart, dates } = weekDates(weekStartParam)
 
   let saved = 0
@@ -276,7 +304,7 @@ export async function PUT(req: NextRequest) {
     })
   }
 
-  return ok({ saved, cleared, skipped })
+  return ok({ saved, cleared, skipped, defaultsSaved })
 }
 
 /** DELETE /api/hr/shifts?id= */

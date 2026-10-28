@@ -5,7 +5,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
   Checkbox,
-  money, toman, fa, toEnDigits, toFaDigits, formatJalali, I,
+  money, toman, fa, toEnDigits, toFaDigits, formatJalali, addJalaliDays, todayJalali, I,
   MoneyInput, NumInput,
 } from '../lib/hz'
 
@@ -49,7 +49,7 @@ const GM_ROLES = ['GM', 'OWNER', 'ADMIN']
 
 const STEPS: { key: string; label: string; actor: string }[] = [
   { key: 'draft', label: 'پیش‌نویس (پیش‌فاکتور)', actor: 'فاکتورنویس سودسنج' },
-  { key: 'delivered', label: 'تأیید تحویل کالا', actor: 'کارمند دریافت‌کننده' },
+  { key: 'delivered', label: 'تحویل‌شده (ثبت سودسنج)', actor: 'فاکتورنویس سودسنج' },
   { key: 'reviewing', label: 'بررسی حسابداری', actor: 'حسابدار / مدیر' },
   { key: 'final', label: 'فاکتور خرید', actor: 'حسابدار / مدیر' },
   { key: 'gm', label: 'تأیید مدیر کل', actor: 'مدیر کل (خانم لطفی)' },
@@ -181,6 +181,8 @@ export default function InvoicesView() {
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [payMethod, setPayMethod] = useState('CASH')
+  /* R17: مهلت چک خرید — پیش‌فرض و سقف: ۴۵ روز */
+  const [chequeDays, setChequeDays] = useState('45')
   const [pushToHoloo, setPushToHoloo] = useState(true)
   const [holooEnabled, setHolooEnabled] = useState<boolean | null>(null)
   const [binders, setBinders] = useState<BinderRow[]>([])
@@ -281,8 +283,33 @@ export default function InvoicesView() {
   /* ── فاکتور خرید ── */
   async function doFinalize() {
     if (!detail) return
-    const okDone = await act(detail.id, { action: 'finalize', payMethod, pushToHoloo }, 'فاکتور خرید ثبت شد — در انتظار تأیید مدیر کل (خانم لطفی)')
-    if (okDone) setFinalizeOpen(false)
+    setBusy(true)
+    try {
+      const r = await api('/api/margin/' + detail.id, {
+        method: 'PATCH',
+        body: {
+          action: 'finalize',
+          payMethod,
+          ...(payMethod === 'CHEQUE' ? { chequeDays: Number(toEnDigits(chequeDays)) || 45 } : {}),
+          pushToHoloo,
+        },
+      })
+      if (r.ok) {
+        const cheque = r.data?.cheque
+        toast.success(
+          'فاکتور خرید ثبت شد — در انتظار تأیید مدیر کل (خانم لطفی)'
+          + (cheque ? ` · چک ${fa(toEnDigits(chequeDays) || '45')} روزه تا سررسید ${fa(String(cheque.dueDate).replace(/-/g, '/'))} خودکار ثبت شد` : ''),
+        )
+        if (refreshBadges) refreshBadges()
+        await openDetail(detail.id)
+        await load()
+        setFinalizeOpen(false)
+      } else {
+        toast.error(r.error || 'عملیات ناموفق بود')
+      }
+    } finally {
+      setBusy(false)
+    }
   }
 
   /* ── بایگانی ── */
@@ -619,7 +646,7 @@ export default function InvoicesView() {
                     {rejectedRows.length ? <span className="rounded-full bg-rose-100 text-rose-800 px-2 py-1">{fa(rejectedRows.length)} قلم مرجوعی تأمین‌کننده</span> : null}
                   </div>
                   <div className="flex flex-wrap gap-2 pt-1">
-                    <Button size="sm" disabled={busy || acceptedRows.length === 0} onClick={() => { setPayMethod('CASH'); setFinalizeOpen(true) }}>
+                    <Button size="sm" disabled={busy || acceptedRows.length === 0} onClick={() => { setPayMethod('CASH'); setChequeDays('45'); setFinalizeOpen(true) }}>
                       <I.check size={14} /> ثبت فاکتور خرید ({fa(acceptedRows.length)} قلم)
                     </Button>
                     {dState === 'delivered' ? (
@@ -670,10 +697,19 @@ export default function InvoicesView() {
               {/* ── اقدامات بر اساس وضعیت ── */}
               <div className="flex flex-wrap gap-2">
                 {dState === 'draft' ? (
+                  /* R17: سند قدیمیِ «پیش‌نویس» — ثبت سودسنج = تحویل‌شده؛ گام تأیید تحویل حذف شد.
+                     حسابدار/مدیر مستقیم بررسی را شروع می‌کند؛ ثبت‌کننده هم می‌تواند ویرایش کند. */
                   <>
-                    <Button disabled={busy} onClick={() => void act(detail.id, { action: 'deliver' }, 'تحویل کالا تأیید شد — در انتظار بررسی حسابداری')}>
-                      <I.check size={14} /> تأیید تحویل کالا
-                    </Button>
+                    {canReview ? (
+                      <Button disabled={busy} onClick={() => void act(detail.id, { action: 'start-review' }, 'بررسی حسابداری آغاز شد — تحویل کالا: ثبت‌شده در سودسنج')}>
+                        <I.search size={14} /> شروع بررسی حسابداری
+                      </Button>
+                    ) : (
+                      <div className="text-[11px] text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 w-full">
+                        کالا با ثبتِ این فاکتور در سودسنج تحویل‌شده فرض می‌شود — تأیید جداگانه لازم ندارد.
+                        ادامهٔ کار با خانم درویشی یا مدیرها (دکمهٔ «بررسی حسابداری»).
+                      </div>
+                    )}
                     {canEditDraft ? (
                       <Button variant="outline" disabled={busy} onClick={() => { setDetail(null); go(`finance/builder?id=${detail.id}`) }}>
                         <I.pencil size={14} /> ویرایش در فاکتورنویس
@@ -688,7 +724,7 @@ export default function InvoicesView() {
                 ) : null}
                 {dState === 'delivered' && !canReview ? (
                   <div className="text-[11px] text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 w-full">
-                    تحویل تأیید شده ({detail.deliveredByName ? `توسط ${detail.deliveredByName}` : ''}) — در انتظار بررسی حسابداری
+                    کالا همزمان با ثبت سودسنج تحویل شده است — در انتظار بررسی حسابداری
                     (خانم درویشی یا یکی از مدیرها از دکمهٔ «بررسی حسابداری» ادامه می‌دهند).
                   </div>
                 ) : null}
@@ -786,7 +822,7 @@ export default function InvoicesView() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] font-medium text-stone-600">روش پرداخت</label>
-                <Select value={payMethod} onValueChange={setPayMethod}>
+                <Select value={payMethod} onValueChange={(v: string) => { setPayMethod(v); if (v === 'CHEQUE' && !chequeDays) setChequeDays('45') }}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CASH">{PAY_LABEL.CASH}</SelectItem>
@@ -802,6 +838,18 @@ export default function InvoicesView() {
                 </label>
               </div>
             </div>
+            {payMethod === 'CHEQUE' ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2.5">
+                <label className="text-[11px] font-medium text-amber-900">مهلت چک (روز) — سقف: ۴۵ روز</label>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <NumInput value={chequeDays} onChange={(v: string) => setChequeDays(String(Math.min(45, Math.max(1, Number(toEnDigits(v)) || 45))))} placeholder="45" className="w-20" />
+                  <span className="text-[11px] leading-5 text-amber-800">
+                    چک {fa(toEnDigits(chequeDays) || '45')} روزه هنگام ثبت، خودکار در «چک‌ها» ثبت می‌شود —
+                    سررسید: <b className="num">{fa(addJalaliDays(todayJalali(), Number(toEnDigits(chequeDays)) || 45).replace(/-/g, '/'))}</b>
+                  </span>
+                </div>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFinalizeOpen(false)}>انصراف</Button>

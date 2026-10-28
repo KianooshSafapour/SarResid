@@ -26,6 +26,7 @@ model User {
   points      Int       @default(0)
   active      Boolean   @default(true)
   lastLoginAt DateTime?
+  defaultShift String? // R17: شیفت پیش‌فرض 'MORNING'|'EVENING'|'BOTH' — مبنای پرکردن برنامهٔ هفتگی و فیلتر بررسی تیم
   createdAt   DateTime  @default(now())
 }
 

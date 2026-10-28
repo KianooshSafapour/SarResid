@@ -1032,7 +1032,7 @@ export default function ProfitView() {
     })
     setSaving(false)
     if (!r.ok) return toast.error(r.error || 'ثبت فاکتور ناموفق بود')
-    toast.success(`پیش‌نویس شماره ${toFaDigits(String(r.data?.number ?? ''))} با ${fa(items.length)} قلم ثبت شد — وضعیت سفارش را در «سفارش‌ها» ببینید`)
+    toast.success(`پیش‌فاکتور ${toFaDigits(String(r.data?.number ?? ''))} با ${fa(items.length)} قلم ثبت و «تحویل‌شده» شد — در انتظار بررسی حسابداری از دفتر فاکتورها`)
     newInvoice()
     go('supply/orders')
   }

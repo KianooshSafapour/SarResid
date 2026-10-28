@@ -120,8 +120,13 @@ export async function GET(req: NextRequest) {
   // پرسنل عادی اول، مدیران آخر — مرور روزانه راحت‌تر
   const rank = (role: string) => (MANAGER_ROLES.includes(role) ? 1 : 0)
   const sortedStaff = [...staff].sort((a, b) => rank(a.role) - rank(b.role))
-  // شیفت همان روز: دادهٔ قدیمی NIGHT → EVENING (شیفت شب وجود ندارد)
+  // شیفت همان روز: برنامهٔ هفتگی؛ اگر تعیین نشده بود، شیفت پیش‌فرض پرسنل (R17) —
+  // تا فهرست «پرسنل هر شیفت» همیشه درست باشد، حتی هفته‌هایی که خانه‌به‌خانه پر نشده‌اند.
+  // دادهٔ قدیمی NIGHT → EVENING (شیفت شب وجود ندارد)؛ تعطیل/مرخصیِ صریح پیش‌فرض را بی‌اثر می‌کند.
   const shiftOfDay = new Map<string, string>()
+  for (const u of staff) {
+    if (u.defaultShift) shiftOfDay.set(u.id, u.defaultShift === 'NIGHT' ? 'EVENING' : u.defaultShift)
+  }
   for (const a of dayAssignments) {
     shiftOfDay.set(a.userId, a.shift === 'NIGHT' ? 'EVENING' : a.shift)
   }

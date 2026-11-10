@@ -1,0 +1,14 @@
+{
+  "views": [
+    { "key": "supply/orders", "src": "orders", "section": "supply", "title": "سفارش‌گذاری هوشمند", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "ACC"], "replaces": true },
+    { "key": "profit/builder", "src": "profit", "section": "profit", "title": "سودسنج پیشرفته", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "ACC", "PM"], "replaces": true },
+    { "key": "tasks/tasks", "src": "tasks", "section": "tasks", "title": "دستور کار و وظایف من", "roles": ["*"], "replaces": true },
+    { "key": "finance/cheques", "src": "cheques", "section": "finance", "title": "چک و تقویم پرداخت", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "ACC"], "replaces": true },
+    { "key": "returns/new", "src": "returns", "section": "returns", "title": "ثبت مرجوعی جدید", "roles": ["*"], "replaces": true },
+    { "key": "tasks/attendance", "src": "attendance", "section": "tasks", "title": "کنترل شیفت پرسنل", "roles": ["OWNER", "GM", "ADMIN", "EXEC"], "replaces": false },
+    { "key": "store/reviews", "src": "reviews", "section": "store", "title": "ارزیابی چیدمان و عملکرد", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM"], "replaces": false },
+    { "key": "store/stockcount", "src": "stockcount", "section": "store", "title": "انبارگردانی و شمارش", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM", "SK"], "replaces": false },
+    { "key": "hr/performance", "src": "performance", "section": "hr", "title": "کارنامه عملکرد کارکنان", "roles": ["OWNER", "GM", "ADMIN", "EXEC"], "replaces": false },
+    { "key": "store/liveboard", "src": "liveboard", "section": "store", "title": "نقشه زنده فروشگاه", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM", "SK"], "replaces": false }
+  ]
+}

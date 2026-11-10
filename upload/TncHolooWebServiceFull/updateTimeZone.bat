@@ -1,0 +1,1 @@
+start java -jar "%~dp0JarFile\tzupdater.jar" -u

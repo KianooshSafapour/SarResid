@@ -1,0 +1,447 @@
+{
+  "planId": "cmver6uof0000t0eycdamyai7",
+  "savedAt": "2026-10-22T04:57:59.071Z",
+  "note": "پشتیبان موقعیت بلوک‌ها پیش از reposition-blocks",
+  "blocks": [
+    {
+      "id": "cmver6uog0001t0eyalef0ikv",
+      "kind": "ENTRANCE",
+      "label": "خروجی",
+      "x": 65,
+      "y": 1814,
+      "w": 216,
+      "h": 170,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0002t0eymmdij8v5",
+      "kind": "ENTRANCE",
+      "label": "ورودی",
+      "x": 1165,
+      "y": 1814,
+      "w": 216,
+      "h": 170,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0003t0eyewo9xf93",
+      "kind": "CASHIER_U",
+      "label": "صندوق ۱",
+      "x": 108,
+      "y": 1501,
+      "w": 86,
+      "h": 170,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0004t0eyjrzggiz8",
+      "kind": "CASHIER_U",
+      "label": "صندوق ۲",
+      "x": 210,
+      "y": 1501,
+      "w": 86,
+      "h": 170,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0005t0eyh7p7a45k",
+      "kind": "CASHIER_U",
+      "label": "صندوق ۳",
+      "x": 313,
+      "y": 1501,
+      "w": 86,
+      "h": 170,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0006t0eysnaaa2ie",
+      "kind": "CASHIER_U",
+      "label": "صندوق ۴",
+      "x": 415,
+      "y": 1501,
+      "w": 86,
+      "h": 170,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0007t0ey9t6gjgrq",
+      "kind": "CHECKOUT",
+      "label": "مسیر پرداخت",
+      "x": 108,
+      "y": 1697,
+      "w": 394,
+      "h": 91,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0008t0ey0jzo4jog",
+      "kind": "SHELF",
+      "label": "قفسه روبه‌روی صندوق",
+      "x": 108,
+      "y": 1331,
+      "w": 394,
+      "h": 144,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0009t0eyus8oa04e",
+      "kind": "SHELF",
+      "label": "قفسه پشت صندوق",
+      "x": 108,
+      "y": 1175,
+      "w": 394,
+      "h": 144,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000at0eyj9eez4ra",
+      "kind": "SHELF",
+      "label": "قفسه کنارِ راست صندوق",
+      "x": 512,
+      "y": 1175,
+      "w": 54,
+      "h": 300,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000bt0eyzqfqo6eg",
+      "kind": "SHELF",
+      "label": "قفسه کنارِ چپ صندوق",
+      "x": 38,
+      "y": 1175,
+      "w": 54,
+      "h": 300,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000ct0eyhqakwydw",
+      "kind": "GONDOLA",
+      "label": "گوندولا ۵",
+      "x": 97,
+      "y": 809,
+      "w": 421,
+      "h": 274,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000dt0eyjgis5vtu",
+      "kind": "SHELF",
+      "label": "گ۵ — سر شرقی",
+      "x": 523,
+      "y": 822,
+      "w": 40,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000et0eyxjmak8uo",
+      "kind": "SHELF",
+      "label": "گ۵ — سر غربی",
+      "x": 59,
+      "y": 822,
+      "w": 40,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000ft0eykv8juwd0",
+      "kind": "GONDOLA",
+      "label": "گوندولا ۶",
+      "x": 97,
+      "y": 483,
+      "w": 421,
+      "h": 274,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000gt0ey0dh10d12",
+      "kind": "SHELF",
+      "label": "گ۶ — سر شرقی",
+      "x": 523,
+      "y": 496,
+      "w": 40,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000ht0eyosmboyxw",
+      "kind": "SHELF",
+      "label": "گ۶ — سر غربی",
+      "x": 59,
+      "y": 496,
+      "w": 40,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000it0eyu1vzm5ea",
+      "kind": "SHELF",
+      "label": "قفسه دیوار غربی",
+      "x": 16,
+      "y": 313,
+      "w": 40,
+      "h": 783,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000jt0eypm77g2ic",
+      "kind": "SHELF",
+      "label": "قفسه دیوار شمالیِ بخش چپ",
+      "x": 81,
+      "y": 261,
+      "w": 437,
+      "h": 196,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000kt0eyvna0su7i",
+      "kind": "FRIDGE_SHOWCASE",
+      "label": "ویترین سرد",
+      "x": 81,
+      "y": 39,
+      "w": 281,
+      "h": 183,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000lt0ey2g9f68z5",
+      "kind": "FRIDGE_CLOSED",
+      "label": "یخچال",
+      "x": 378,
+      "y": 39,
+      "w": 97,
+      "h": 183,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000mt0eyerduy625",
+      "kind": "FRIDGE_OPEN",
+      "label": "یخچال باز",
+      "x": 496,
+      "y": 39,
+      "w": 302,
+      "h": 183,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000nt0ey3hv87owf",
+      "kind": "GONDOLA",
+      "label": "گوندولا ۱",
+      "x": 566,
+      "y": 561,
+      "w": 92,
+      "h": 757,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000ot0eysjq7fkzw",
+      "kind": "SHELF",
+      "label": "گ۱ — سر شمالی",
+      "x": 558,
+      "y": 476,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000pt0eypsfme2wi",
+      "kind": "SHELF",
+      "label": "گ۱ — سر جنوبی",
+      "x": 558,
+      "y": 1325,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000qt0ey1rze6h8q",
+      "kind": "GONDOLA",
+      "label": "گوندولا ۲",
+      "x": 696,
+      "y": 561,
+      "w": 92,
+      "h": 757,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000rt0eyb6rfq19x",
+      "kind": "SHELF",
+      "label": "گ۲ — سر شمالی",
+      "x": 688,
+      "y": 476,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000st0eyuerqu559",
+      "kind": "SHELF",
+      "label": "گ۲ — سر جنوبی",
+      "x": 688,
+      "y": 1325,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000tt0eyag2369un",
+      "kind": "GONDOLA",
+      "label": "گوندولا ۳",
+      "x": 825,
+      "y": 561,
+      "w": 92,
+      "h": 757,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000ut0ey5ais6bbq",
+      "kind": "SHELF",
+      "label": "گ۳ — سر شمالی",
+      "x": 817,
+      "y": 476,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000vt0ey4xe4pfna",
+      "kind": "SHELF",
+      "label": "گ۳ — سر جنوبی",
+      "x": 817,
+      "y": 1325,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000wt0eyhmbehh92",
+      "kind": "GONDOLA",
+      "label": "گوندولا ۴",
+      "x": 955,
+      "y": 561,
+      "w": 92,
+      "h": 757,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000xt0eyi4qwylex",
+      "kind": "SHELF",
+      "label": "گ۴ — سر شمالی",
+      "x": 947,
+      "y": 476,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000yt0eyejitleqm",
+      "kind": "SHELF",
+      "label": "گ۴ — سر جنوبی",
+      "x": 947,
+      "y": 1325,
+      "w": 108,
+      "h": 78,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog000zt0eyl80lw4ib",
+      "kind": "FREEZER_ICECREAM",
+      "label": "بستنی A",
+      "x": 1090,
+      "y": 561,
+      "w": 97,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0010t0ey3ju6r4cb",
+      "kind": "FREEZER_ICECREAM",
+      "label": "بستنی B",
+      "x": 1203,
+      "y": 561,
+      "w": 97,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0011t0eyzmi3vg4l",
+      "kind": "FREEZER_ICECREAM",
+      "label": "بستنی C",
+      "x": 1090,
+      "y": 848,
+      "w": 97,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0012t0eyuxisf763",
+      "kind": "FREEZER_ICECREAM",
+      "label": "بستنی D",
+      "x": 1203,
+      "y": 848,
+      "w": 97,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0013t0eyohzo6ri1",
+      "kind": "FREEZER_ICECREAM",
+      "label": "بستنی E",
+      "x": 1090,
+      "y": 1136,
+      "w": 97,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0014t0eyi053hjkh",
+      "kind": "FREEZER_ICECREAM",
+      "label": "بستنی F",
+      "x": 1203,
+      "y": 1136,
+      "w": 97,
+      "h": 248,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0015t0eywyyemikw",
+      "kind": "FRIDGE_CLOSED",
+      "label": "فریزر محصولات منجمد",
+      "x": 1332,
+      "y": 561,
+      "w": 140,
+      "h": 392,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0016t0eylnfbajnj",
+      "kind": "BAKERY",
+      "label": "میز شیرینی و بیسکویت",
+      "x": 1332,
+      "y": 1018,
+      "w": 140,
+      "h": 287,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0017t0eyrvuaxd8b",
+      "kind": "SHELF",
+      "label": "قفسه آجیل و تخمه",
+      "x": 1494,
+      "y": 561,
+      "w": 40,
+      "h": 744,
+      "rotation": 0
+    },
+    {
+      "id": "cmver6uog0018t0eys7dchsy6",
+      "kind": "CUSTOM",
+      "label": "اسباب‌بازی",
+      "x": 1403,
+      "y": 1736,
+      "w": 113,
+      "h": 183,
+      "rotation": 0
+    }
+  ]
+}

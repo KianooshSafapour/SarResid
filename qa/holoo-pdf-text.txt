@@ -1,0 +1,1752 @@
+
+
+===== PAGE 1 =====
+نصب وب سرویس 
+جهت نصب ابتدا در مسیر فایل های وب سرویس بر روی  Config  کلیک نموده تا اجرا شود در پنجره
+نمایش داده شده مشخصات مسیر Sql Server   که هلو بر روی آن نصب می باشد را وارد و بر روی  
+دکمهTest Connection    کلیک نموده و در صورت برقراری ارتباط با موفقیت ،  دکمهok   را انتخاب 
+نمایید. سپس در مسیر وب سرویس فایل  Install   را به صورتRun As Administrator  اجرا نمایید تا
+وبسرویس نصب گردد. جهت اطمینان از نصب وب سرویس می بایست در مسیر سرویس های ویندوز 
+سرویسی با نام  TncHolooWebService   اضافه شده وStart   باشد در صورتیکه مراحل فوق انجام ولی 
+سرویس نصب نشد   در مسیر وب سرویس  در  فولدر  Java JRE   فایلjre-8u231-windows-x64.exe 
+را اجرا نمایید و منتظر بمانید تا صفحه نصب باز شده و سپس نصب نمایید و در نهایت بعد از نصب مجددا
+در مسیر وب سرویس فایل  Install   را نصب نموده و طبق توضیحات فوق برررسی نمایید که وب سرویس
+نصب و Start شده باشد 
+ 
+ 
+ 
+متدها و پارامترها   
+ 
+آدرس وب سرویس (Address: )                      http://{IPSystem}:8080/TncHoloo/api   
+ 
+لاگینLogin : ) 
+برای استفاده از وب سرویس ابتدامی باست لاگین شوید .  
+ 
+{Address} /Login URL 
+PostHttp Method 
+Comment Type Parameter 
+نام کاربری اجباری  string username 
+کلمه عبور اجباری  string userpass 
+نام بانک اطلاعاتی اجباری  string Dbname 
+ 
+
+===== PAGE 2 =====
+نمونه مثال: 
+Content-Type 
+application/json 
+Body 
+{"userinfo":{"username":" admin","userpass":"Base64Encode","dbname":"Holo
+o1"}} 
+ 
+ 
+Response 
+{ 
+"Login":{ 
+"State":"True",
+"Token"": "Bearer ", 
+"ErrorCode" : 0 , 
+"Error":""} 
+} 
+ 
+توضیحات پارامتر خروجی 
+• State  :می تواند مقادیرTrue یاFalse  باشد 
+درصورتیکه مقدارTrue باشد 
+    لاگین با موفقیت انجام شد ه و فیلد Token  مقدار دهی می شود 
+در صورتیکه False باشد 
+     کد خطاها در فیلد ErrorCode  و شرح خطاError دیده می شود 
+    برای مشاهده کدهای خطا، به جدول آن مراجعه نمایید.  
+ 
+ 
+پارامتر های Header 
+• Authorization  : مقدار آن باToken  دریافتی در لاگین پر می شود 
+• Content-Type   :application/json 
+  
+ 
+ 
+ 
+
+===== PAGE 3 =====
+سطح1 
+ 
+1- لیست اشخاصCustomer: ) دریافت لیست اشخاص متدCustomer می باشد. پارامترهای
+ورودی و خروجی آن به شرح زیر می باشد.   
+{Address}/Customer URL 
+Get Http Method 
+Comment Type Parameter 
+کد طرف حساب اختیاری  string code 
+کد طرف حساب از اختیاری  string code.from 
+کد طرف حساب تا اختیاری  string code.to 
+خریدار اختیاری  boolean purchaser 
+فروشنده اختیاری  boolean seller 
+واسطه اختیاری  boolean vaseteh 
+تاریخ تغییر اشخاص از اختیاری  date date.from 
+تاریخ تغییر اشخاص تا اختیاری  date date.to 
+کدملی شخص اختیاری  string nationalid 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثال:  
+دریافت لیست اشخاص از کد طرف حساب 00001 تا کد00008   : 
+Query Parameters 
+{Address}/Customer?code.from=00001&code.to=00008 
+ 
+ 
+Response 
+{ 
+"customer":[{ 
+"Code":"00001", 
+"Name":"
+ ", 
+"NationalId":"1000000",  
+"EconomicId":"1234569999",  
+"BedSarfasl":"1030212",  
+"BesSarfasl":"4010046",  
+
+===== PAGE 4 =====
+"IsPurchaser":"true",  
+"IsSeller":"true", 
+"IsBlackList":"true", 
+"Mandeh":"50000.0", 
+"Credit":"30000.0", 
+"CustType":"0", 
+"IsVaseteh":"true", 
+"VasetehPorsant":"5.0",  
+"Tel":"668781666", 
+"Mobile":"09111111",  
+"Fax":"02100000", 
+"City":"
+  ", 
+"Ostan":"
+  ", 
+"Mantagheh":"3", 
+"ZipCode":"2323232323", 
+"Address":"
+  ", 
+"Job":"
+ ", 
+"Email":"test@yahoo.com",  
+"ErpCode":"bBAPOg5mVA0="  
+},{…}]} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد طرف حساب 
+• Name : نام طرف حساب 
+• BedSarfasl : سرفصل بدهکاری 
+• BesSarfasl : سرفصل بستانکاری 
+• IsPurchaser : خریدار 
+✓ می تواند مقادیرtrue  یاfalse  بگیرد 
+• IsSeller : فروشنده 
+✓ می تواند مقادیرtrue  یاfalse  بگیرد 
+• IsBlackList : لیست سیاه 
+✓ می تواند مقادیرtrue  یاfalse  بگیرد 
+• Mandeh : مانده طرف حساب 
+• Credit : حد اعتبار 
+• CustType : نوع بدهکاری/ بستانکاری 
+
+===== PAGE 5 =====
+✓ می تواند مقادیر0 یا1 بگیرد 
+• IsVaseteh : واسطه 
+✓ می تواند مقادیرtrue  یاfalse  بگیرد 
+• VasetehPorsant : پورسانت واسطه 
+• Tel : تلفن 
+• Mobile : موبایل 
+• Fax : فکس 
+• City : شهر 
+• Ostan : استان  
+• Mantagheh : منطقه 
+• ZipCode : کدپستی 
+• Address : آدرس 
+• Job : شغل 
+• Email : ایمیل 
+• ErpCode : شناسه طرف حساب درج شده در هلو 
+• Type: ماهیت حقوقی شخص (حقیقی1 و حقوقی2 و حقوقی(دولتی3  
+ 
+به کمک{address}/Customer/2/10 به عنوان مثال، می توانید به وب سرویس درخواست دهید که
+طرف حساب ها را به صورت ده تایی صفحه بندی کند و صفحه دوم از همه طرف حساب ها را نمایش دهد.  
+ 
+ 
+ 
+ 
+2- لیست گروه های اصلی( MainGroup   : ) 
+{Address}/MainGroup URL 
+Get Http Method 
+ 
+ 
+نمونه مثال دریافت  لیست گروه های اصلی :  
+{Address}/MainGroup 
+ 
+
+===== PAGE 6 =====
+ 
+ 
+Response 
+{ 
+"mainGroup":[{ 
+"Name":"test", 
+"ErpCode":"bBAHfg==", 
+"]} 
+ 
+توضیحات پارامترهای خروجی 
+• Name : نام گروه اصلی 
+• ErpCode  :شناسه گروه اصلیدرج شده در هلو  
+ 
+ 
+3- لیست گروه های فرعیSideGroup  : ) 
+{Address}/ SideGroup URL 
+Get Http Method  
+ 
+ 
+نمونه مثال لیست گروه های فرعی 
+{Address}/ SideGroup 
+ 
+ 
+Response 
+{ 
+"sideGroup":[{ 
+"Name":"test", 
+"ErpCode":"bBAHNA1jDg0=", 
+"MainGroupName":"test", 
+"MainErpCode":"bBAHfg==" 
+} 
+]} 
+ 
+
+===== PAGE 7 =====
+توضیحات پارامترهای خروجی 
+• Name : نام گروه فرعی 
+• ErpCode  :شناسه گروه فرعی درج شده در هلو  
+• MainGroupName : نام گروه اصلی 
+• MainErpCode  :شناسه گروه اصلیدرج شده در هلو  
+ 
+ 
+4- لیست واحدها  (Unit  : ) 
+{Address}/ Unit URL 
+Get Http Method  
+ 
+نمونه مثال لیست واحدها 
+{Address}/ Unit 
+ 
+ 
+Response 
+{ 
+"unit":{ 
+"Name":"
+ ", 
+"ErpCode":"bAVzfg==" 
+}} 
+ 
+ 
+توضیحات پارامترهای خروجی 
+• Name : نام واحد کا 
+• ErpCode : شناسه واحد درج شده در هلو  
+ 
+ 
+5- لیست کالاهاProduct  : ) 
+{Address}/ Product URL 
+Get Http Method  
+Comment Type Parameter 
+
+===== PAGE 8 =====
+کد کا اختیاری  string code 
+تاریخ تغییر کالاها از اختیاری  date date.from 
+تاریخ تغییر کالاها تا اختیاری  date date.from 
+کد گروه اصلیErpCode) اختیاری string maingrouperpcode 
+کد گروه فرعیErpCode) اختیاری string sidegrouperpcode 
+عکس کا اختیاری  Boolean getimage 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثال لیست کالاها :  
+دریافت کالا با کد 00215002 وerpcode گروه اصلی و فرعی آن به ترتیب  برابر bBAHfg== و
+bBAHOw5jDg0=   : 
+Query Parameters 
+{Address}/Product?code=00215002&maingrouperpcode=bBAHfg==&sidegroup
+erpcode=bBAHOw5jDg0=  
+ 
+ 
+Response 
+{"product":[{ 
+"Code":"00215003", 
+"Name":"test", 
+"Few":"0.0", 
+"fewkarton":"0", 
+"BuyPrice":"0.0", 
+"SellPrice":"1680.0", 
+"LastBuyPrice":"2000.0", 
+"SellPrice2":"1750.0", 
+"SellPrice3":"0.0", 
+"SellPrice4":"0.0", 
+"SellPrice5":"1500.0", 
+"SellPrice6":"0.0", 
+"SellPrice7":"0.0", 
+"SellPrice8":"0.0", 
+"SellPrice9":"0.0", 
+"SellPrice10":"0.0", 
+"selpricekarton":"0", 
+"CountInKarton":"0.0",  
+
+===== PAGE 9 =====
+"CountInBasteh":"0.0", 
+"MainGroupName":"test", 
+"MainGroupErpCode":"bBAHfg==",  
+"SideGroupName":"test", 
+"SideGroupErpCode":"bBAHNA1jDg0=",  
+"ErpCode":"bBAHNA1mckd4QB4O" , 
+"image":"base 64 encrypt" , 
+"serials": [ 
+  "111", 
+   "123" 
+] 
+}]} 
+ 
+توضیحاتپارامترهای خروجی :  
+• Code :کد کا 
+• Name : نام کا 
+• Few : مقدار 
+• Fewkarton : موجودی کارتن 
+• BuyPrice  :قیمت خرید 
+• SellPrice  :قیمت فروش 
+• SellPrice2 :قیمت فروش 2 
+• SellPrice3  :قیمت فروش 3 
+• SellPrice4  :قیمت فروش 4 
+• SellPrice5  :قیمت فروش5 
+• SellPrice6  :قیمت فروش6 
+• SellPrice7  :قیمت فروش7 
+• SellPrice8  :قیمت فروش8 
+• SellPrice9  :قیمت فروش9 
+• SellPrice10  :قیمت فروش 10 
+• Selpricekarton : قیمت فروش کارتن 
+• MainGroupName  :نام گروه اصلی 
+• MainGroupErpCode  :شناسه گروه اصلیدرج شده در هلو  
+• SideGroupName  :نام گروه فرعی 
+
+===== PAGE 10 =====
+• SideGroupErpCode  :شناسه گروه فرعیدرج شده در هلو  
+• ErpCode  :شناسهکالا درج شده در هلو  
+• ErpImage: شناسه عکس با فرمت64 encrypt 
+• Serials: سریال های موجود برای کا 
+• Morecodes: کدهای بیشتر کا 
+ 
+به کمک {address}/Product/2/10 به عنوان مثال، می توانید به وب سرویس درخواست دهید که 
+کالاها را به صورت ده تایی صفحه بندی کند و صفحه دوم از همه کالاها را نمایش دهد. 
+ 
+جستجو ی نام کالا  
+به صورت تک کلمه ای:  
+مثال 1: (جستجوی کلمه به کلمه 
+name=چیپ مز  
+در این حالت تمام کالاهایی که  نام آنها  شامل چیپ  و کلمهها ی  بعدی آن شامل مز  باشد دریافت خواهند 
+شد. مثلا (چیپس مزمز ساده)، (چیپس فلفلی مزمز) و (مزه چیپس تنوری مزمز) دریافت میشود.  
+مثال 2 : 
+?name="چیپس" 
+در این حالت فقط کالاهایی که دقیقا نام آن ها چیپس هست نمایش داده میشود. بنابراین در این مورد مثلا  
+چیپس مزمز نمایش داده نخواهد شد . برای نمایش  همه  کالاهای شامل کلمه چیپس،  کافیست  "  را از اول و  
+آخر کلمه حذف کنید.  
+به صورت کلمات جداگانه:   
+مثلا 
+name="کا1 ",کا2  
+در این حالت کالاهایی که نامشاندقیقا  کالا1  هست و همچنین کالاهایی که در نامشان کا2  وجود دارد
+دریافت خواهند شد.  
+در این حالت هم امکان جستجوی کلمه به کلمه برای هریک از کلمات، مثل حالت تک کلمهای وجود دارد.  
+ 
+سطح 2   
+
+===== PAGE 11 =====
+ 
+ثبت اطلاعات 
+در وب سرویس هلو امکان ثبت اطلاعات از جمله : ثبت کالا و اصلاح آن، ثبت طرف حساب و اصلاح آن ، 
+امکان ثبت پیش فاکتور و سفارش، امکان ثبت فاکتور، امکان ثبت سند حسابداری میباشد  .در ادامه به  
+معرفی پارامترهای ثبت اطلاعات می پردازیم . 
+ 
+1-ثبت کا  (Product  :) 
+1-1-درج کا 
+ 
+{Address}/api/Product  URL 
+Post Http Method  
+Comment Type Parameter 
+شناسه سمت   اختیاری  int id 
+شناسه گروه فرعی  اجباری  string sidegroupErpcode 
+کد کا اختیاری  string code 
+نام کالای جدید اجباری  string name 
+مقدار اول دوره  اختیاری  string few 
+فی اول دوره اختیاری  float buyprice 
+قیمت فروش1 اختیاری  float sellprice 
+قیمت فروش2 اختیاری float sellprice2 
+قیمت فروش3 اختیاری float Sellprice3 
+قیمت فروش4 اختیاری float Sellprice4 
+قیمت فروش5 اختیاری float Sellprice5 
+قیمت فروش6 اختیاری float Sellprice6 
+قیمت فروش7 اختیاری float Sellprice7 
+قیمت فروش8 اختیاری float Sellprice8 
+قیمت فروش9 اختیاری float Sellprice9 
+قیمت فروش10 اختیاری float Sellprice10 
+تعداد در کارتن اختیاری  string countinkarton 
+تعداد در بسته  اختیاری  string countinbasteh 
+کد واحد کا اختیاری  string uniterpcode 
+ 
+
+===== PAGE 12 =====
+نمونه مثال ثبت کالا:  
+برای مثال ثبت کالا با نام تست 2 و کد125، مقدار10 ، قیمت فروش1000 و :   
+ 
+Body 
+{"productinfo":[{ 
+"id":"11", 
+"sidegrouperpcode":"bBALNA1jDg0=",  
+"code":"125", 
+"name":"تست 2 ", 
+"few":10, 
+"buyprice":1000, 
+"sellprice":1500, 
+"sellprice2":2000, 
+"sellprice3":2500, 
+"sellprice4":3000, 
+"sellprice5":3500, 
+"sellprice6":4000, 
+"sellprice7":45000, 
+"sellprice8":5000, 
+"sellprice9":5500, 
+"sellprice10":6000, 
+"countinkarton":1, 
+"countinbasteh":1, 
+"uniterpcode":"bAVzfg=="}]}  
+ 
+Response 
+{"Header": 
+"Product","Success":{ 
+"Id":"11", 
+"ErpCode":"bBALNA1mckd4dh4O"}}  
+ 
+توضیحات پارامترهای خروجی 
+• Id
+ 
+• ErpCode: شناسه کای درج شده  
+ 
+1-2-اصلاح کا:  
+
+===== PAGE 13 =====
+ 
+{Address}/api/Product  URL 
+Put Http Method  
+Comment Type Parameter 
+شناسه سمت کلاینت  اختیاری  int id 
+شناسه کالا  اجباری  int erpcode 
+کد کا اختیاری  string code 
+نام کا اختیاری  string name 
+قیمت فروش1 اختیاری Float sellprice 
+قیمت فروش2 اختیاری Float sellprice2 
+قیمت فروش3 اختیاری Float Sellprice3 
+قیمت فروش4 اختیاری Float Sellprice4 
+قیمت فروش5 اختیاری Float Sellprice5 
+قیمت فروش6 اختیاری Float Sellprice6 
+قیمت فروش7 اختیاری Float Sellprice7 
+قیمت فروش8 اختیاری Float Sellprice8 
+قیمت فروش9 اختیاری Float Sellprice9 
+قیمت فروش10 اختیاری Float Sellprice10 
+تعداد درکارتن  اختیاری   Float countinkarton 
+تعداد در بسته  اختیاری  Float countinbasteh 
+کد واحد کا اختیاری  string uniterpcode 
+ 
+ 
+ 
+نمونه مثال اصلاحکالا:  
+اصلاح کالای با شناسه کالا bBALNA1mckd4dh4O : 
+Body 
+{"productinfo":[{ 
+"id":"11", 
+"erpcode":"bBALNA1mckd4dh4O",  
+"code":"125", 
+"name":"کالایتست ," 
+
+===== PAGE 14 =====
+"buyprice":1000, 
+"sellprice":1500, 
+"sellprice2":2000, 
+"sellprice3":2500, 
+"sellprice4":3000, 
+"sellprice5":3500, 
+"sellprice6":4000, 
+"sellprice7":45000, 
+"sellprice8":5000, 
+"sellprice9":5500, 
+"sellprice10":6000, 
+"countinkarton":1, 
+"countinbasteh":1, 
+"uniterpcode":"bAVzfg=="}]}  
+ 
+ 
+Response 
+{"Header": 
+"Product","Success":{ 
+"Id":"11", 
+"ErpCode":"bBALNA1mckd4dh4O"}}  
+ 
+توضیحات پارامترهای خروجی 
+• Id
+ 
+• Erpcode : شناسه کای اصلاح شده   
+ 
+ 
+2- ثبت اشخاص (Customer   : ) 
+2-1-درج اشخاص 
+ 
+{Address}/ Customer URL 
+Post Http Method 
+Comment Type Parameter 
+شناسهسمت کلاینت  اختیاری  string id 
+
+===== PAGE 15 =====
+کد طرف حساب اختیاری  string code 
+نام طرف حساب اجباری  string name 
+خریدار اجباری  boolean ispurchaser 
+فروشنده اجباری  boolean isseller 
+لیست سیاه اختیاری  boolean isblacklist 
+نوع بدهکاری/ بستانکاری اجباری  integer custtype 
+سرفصل بدهکاری اختیاری  string bedsarfasl 
+کد ملی اختیاری  string nationalid 
+کد اقتصادی اختیاری  string economicid 
+حد اعتبار اختیاری  string Credit 
+تلفن اختیاری  string tel 
+موبایل اختیاری  string mobile 
+فکس اختیاری  string fax 
+شهر اختیاری  string city 
+استان اختیاری  string ostan 
+منطقه اختیاری  string mantagheh 
+ایمیل اختیاری  string email 
+کدپستی اختیاری  string zipcode 
+آدرس اختیاری  string address 
+ماهیت حقوقی(حقیقی: 1– حقوقی2-دولتی3 ) اختیاری integer type 
+ 
+نمونه مثال درجاشخاص :  
+درج شخص با کد  1244، نام : تست هلو ، خریدار و فروشنده و ... :  
+Body 
+{"custinfo":[{ 
+"id":"11", 
+"code":"1244", 
+"name":"تست هلو,"  
+ispurchaser":true, 
+"isseller":true, 
+"isvaseteh":true, 
+"isblacklist":true, 
+"Credit":96000, 
+"custtype":0, 
+
+===== PAGE 16 =====
+"bedsarfasl":"00059",  
+"nationalid":"1222200000",  
+"economicid":"3333333333",  
+"tel":"021", 
+"mobile":"0912", 
+"fax":"021", 
+"city":"تهران ," 
+ostan":"تهران ," 
+mantagheh":"3", 
+"email":"test@test", 
+"zipcode":"222222222",  
+"address":"تهران ", 
+type": 2}]} 
+ 
+Response 
+{"Header":"Customer","Success":{ 
+"Id":"11", 
+"ErpCode":"bBAPOg5meg0=", 
+"ReturnParam1":"1236", 
+"ReturnParam2":"1030206", 
+"ReturnParam3":"4010045"}} 
+ 
+توضیحاتپارامترهای خروجی  :   
+• Id : شناسهسمت کلاینت  
+• Erpcode : شناسه طرف حساب درج شده در هلو 
+• ReturnParam1 : کد مشتری ثبت شدهدر هلو 
+• Param2Return : کد سرفصل حسابداری بدهکار ثبت شده در هلو 
+• ReturnParam3 : کد سرفصل حسابداری بستانکار ثبت شده در هلو 
+ 
+ 
+ 
+ 
+
+===== PAGE 17 =====
+2-2- اصلاح اشخاص:   
+ 
+{Address}/ Customer URL 
+Put Http Method 
+Comment Type Parameter 
+ErpCodeشناسه طرف حساب درج شده در هلو اجباری  string code 
+خریدار اختیاری  boolean ispurchaser 
+فروشنده اختیاری  boolean isseller 
+لیست سیاه اختیاری  boolean isblacklist 
+نوع بدهکاری/ بستانکاری اختیاری  integer custtype 
+سرفصلبدهکاری  اختیاری  string bedsarfasl 
+کد ملی اختیاری  string nationalid 
+کد اقتصادی اختیاری  string economicid 
+حد اعتبار اختیاری  string Credit 
+تلفن اختیاری  string tel 
+موبایل اختیاری  string mobile 
+فکس اختیاری  string fax 
+شهر اختیاری  string city 
+استان اختیاری  string ostan 
+منطقه اختیاری  string mantagheh 
+ایمیل اختیاری  string email 
+کدپستی اختیاری  string zipcode 
+آدرس اختیاری  string address 
+ 
+نمونه مثال اصلاح اشخاص 
+اصلاح شخص با  erpcode":"bBAPNA12dg0= ، فعال کردن فیلد لیست سیاه، تغییر کد ملی و کد
+اقتصادی :  
+Body 
+{"custinfo":[{ 
+"erpcode":"bBAPNA12dg0=", 
+"isblacklist":true, 
+"nationalid":"49300223323",  
+"economicid":"56565"}]}  
+
+===== PAGE 18 =====
+ 
+ 
+Response 
+{"Header":"Customer","Success":{ 
+"ErpCode":"FmNleiIZGB9AZh4O"} 
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Erpcode : شناسه طرف حساب درج شده در هلو 
+ 
+3- درج فاکتور : این بخش شامل ثبت پیش فاکتور، سفارش، فاکتور خرید، فروش و ... می باشد .  
+ همچنین هر کدام از این متدها نیز شامل اطلاعات فاکتور و اقلام فاکتور می باشد.  
+ 
+3-1-  درج پیش فاکتورPreInvoice   : ) 
+ 
+{Address}/ Invoice/PreInvoice URL 
+Post Http Method 
+پارامترهای تیتر پیش فاکتور ( invoiceinfo  ) 
+Comment Type Parameter 
+شناسهسمت کلاینت  اجباری  string id 
+شناسه طرف حساب درج شده در هلو اجباری  string customererpcode 
+تاریخ فاکتور اجباری  date date 
+ساعت فاکتور اجباری  time time 
+تخفیف کلی پیش فاکتور اختیاری  float discount 
+پارامترهایاقلام پیش  فاکتور (detailinfo  ) 
+Comment Type Parameter 
+شناسه سمت کلاینت اجباری  string id 
+شناسه کالا درج شده در هلو اجباری  string ProductErpCode 
+تعداد اجباری  Float few 
+کارتن اختیاری  Float karton 
+قیمت اجباری  Float price 
+مبلغ تخفیف سطری اختیاری  float discountprice 
+
+===== PAGE 19 =====
+درصد تخفیف سطری اختیاری  Float discountpercent 
+مالیات اختیاری  Float levy 
+عوارض اختیاری  Float scot 
+شناسه واحد درج شده در هلو اختیاری  string uniterpcode 
+توضیحات اختیاری  string Comment 
+ 
+نمونه مثال درج فاکتور(پیش فاکتور 
+ 
+درج پیش فاکتور با مشخصات تیتر فاکتور:  customererpcode":"bBAPNA12cg0= و تاریخ
+2019-10-156" و ساعت فاکتور11:35 و مشخصات ریز فاکتور (اقلام
+ProductErpCode":"bBALNA1mckd7Zh4O و مقدار ، قیمت2000 و مالیات3 ، عوارض6 
+Body 
+{"invoiceinfo":[{"id":"22",  
+customererpcode":"bBAPNA12cg0=","  
+date":"2019-10-15", 
+"time":"11:35", 
+"comment":"2222", 
+"levy":3, 
+"scot":6, 
+"detailinfo":{"id":"2222",  
+"ProductErpCode":"bBALNA1mckd7Zh4O",  
+"few":1, 
+"price":2000, 
+"levy":0, 
+"scot":0}}]} 
+ 
+Response 
+{ 
+"Header":"Invoice","Success":{  
+"Id":"22", 
+"ErpCode":"bDNzfg==",  
+"ReturnParam1":"2"} 
+} 
+ 
+ 
+
+===== PAGE 20 =====
+توضیحات پارامترهای خروجی 
+• Id : شناسه 
+• ErpCode : همان شناسه پیش فاکتور درج شده در هلو میباشد .  
+• ReturnParam1 : شماره فاکتور (پیش فاکتور( 
+ 
+3-2- درج سفارشOrder  : ) 
+ 
+{Address}/ Invoice/Order URL 
+Post Http Method 
+پارامترهای تیتر  سفارش( invoiceinfo ) 
+Comment Type Parameter 
+شناسهسمت کلاینت   اجباری  string id 
+نوع سفارش1=فروش،3= خرید اجباری  integer type 
+شناسه طرف حساب درج شده در هلو اختیاری  string customererpcode 
+تاریخ فاکتور اختیاری  date date 
+ساعت فاکتور ختیاری  date time 
+پارامترهایاقلام سفارش  (detailinfo  ) 
+Comment Type Parameter 
+شناسهسمت کلاینت  اجباری  string id 
+شناسه کالا درج شده در هلو اجباری  string ProductErpCode 
+تعداد اجباری  Float few 
+کارتن اختیاری  Float karton 
+قیمت اجباری  Float price 
+مالیات اختیاری  Float levy 
+عوارض اختیاری  Float scot 
+شناسه واحد درج شده در هلو اجباری  string uniterpcode 
+توضیحات اختیاری  string comment 
+ 
+نمونه مثال درج فاکتور(سفارش) :  
+
+===== PAGE 21 =====
+ 
+درج فاکتور با مشخصات تیتر فاکتورcustomererpcode":"bBAPNA12dg0= و تاریخ2019-
+05-06" و ساعت فاکتور10:12 و مشخصات ریز فاکتور (اقلام
+ProductErpCode":"bBAHOw5mckd7QB4O و مقدار1 ، کارتن1 ، قیمت5000 و مالیات6 ،
+عوارض 3   
+Body 
+{"invoiceinfo":[{ 
+"id":1, 
+"type": 1, 
+"customererpcode":"bBAPNA12dg0=",  
+"date":"2019-05-06", 
+"time":"10:12", 
+"detailinfo":{ 
+"id": 1, 
+"ProductErpCode":"bBAHOw5mckd7QB4O",  
+"few":1,"karton":1, 
+"price":5000, 
+"levy":6,"scot":3} 
+}]} 
+ 
+ 
+Response 
+{ 
+"Header":"Invoice", 
+"Success":{ 
+"Id":"11", 
+"ErpCode":"bDNzfg==",  
+"ReturnParam1":"2"}
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Id  :شناسه 
+• ErpCode : همان شناسه سفارش درج شده در هلو میباشد .   
+• ReturnParam1  :شماره فاکتور (سفارش 
+ 
+ 
+ 
+
+===== PAGE 22 =====
+4- درج فاکتور(Invoice  :) 
+ این بخش شامل ثبت فاکتور فروش، برگشت از فروش، خرید، برگشت از خرید می باشد 
+ هر کدام از این متدها نیز شامل اطلاعات فاکتور و اقلام فاکتور می باشد.  
+ 
+{Address}/ Invoice/Invoice URL 
+Post Http Method 
+پارامترهای تیترفاکتور( invoiceinfo  ) 
+Comment Type Parameter 
+شناسه سمت کلاینت اختیاری  string id 
+نوع فاکتور (فروش1،  برگشت از فروش2                                 
+خرید3 ،  برگشت از خرید4) 
+اجباری integer type 
+شناسه طرف حساب هلو اجباری  string customererpcode 
+تاریخ فاکتور اجباری  date date 
+ساعت فاکتور اجباری  time time 
+مبلغ نقد اختیاری  Float Cash 
+سرفصل نقد(صندوق  string CashSarfasl 
+مبلغ کارت خوان  Float Bank 
+سرفصل کارت خوان (بانک  string BankSarfasl 
+مبلغ نسیه  Float Nesiyeh 
+مبلغ تخفیف  Float Discount 
+مالیات (به درصد اختیاری  Float Levy 
+عوارض (به درصد اختیاری  Float Scot 
+نوع فاکتور (بیدک،عمدکس اختیاری  
+بیدک = 1 
+عمدکس
+=2 
+integer kind 
+پارامترهایاقلام فاکتور ( detailinfo  ) 
+Comment Type Parameter 
+شناسه سمت کلاینت اختیاری  string Id 
+شناسه کالای درج شده در هلو اجباری  string ProductErpCode 
+تعداد اجباری  Float Few 
+قیمت اجباری  Float Price 
+
+===== PAGE 23 =====
+مالیات (به درصد اختیاری  Float Levy 
+عوارض (به درصد اختیاری  Float Scot 
+توضیحات کا اختیاری  string Comment 
+سریالهای کالا  List serials 
+ 
+Response 
+ 
+{ 
+"Header":"Invoice", 
+"Success":{ 
+"Id":"1", 
+"ErpCode":"bDNzfg==",  
+"ReturnParam1":"2" 
+"ReturnParam2":"100"}
+}
+نمونه مثال درج فاکتور 
+ثبت فاکتور فروش با شناسه طرف حساب bBAPNA12dg0= و تاریخ2019-05-06 و 
+Body 
+{"invoiceinfo":[{ 
+"id":"1", 
+"Type":"1", 
+"customererpcode":"bBAPNA12dg0=",  
+"date":"2019-05-06", 
+"time":"10:12", 
+"Cash":100, 
+"CashSarfasl":"10100010001", 
+"Bank":200, 
+"BankSarfasl":"10200010001", 
+"Nesiyeh":780, 
+"Discount":10, 
+"detailinfo":{ 
+"id":"1", 
+"serials" : [ 
+   "1", 
+   "126" 
+], 
+"ProductErpCode":"bBAHOw5mckd7QB4O",  
+"few":1,"price":1000,"levy":6,"scot":3}}]}  
+
+===== PAGE 24 =====
+ 
+توضیحات پارامترهای خروجی 
+• Id: شناسه 
+• ErpCode: همان شناسه فاکتور درج شده در هلو میباشد.  
+• ReturnParam1: شماره فاکتور ثبت شده در هلو 
+• ReturnParam2: شماره ثابت سند مربوط به فاکتور 
+توضیحات پارامترهای ورودی:  
+• Levy  وscot: هم در تیتر هم در ریز فاکتور امکان درج مالیات و عوارض وجود دارد اما با توجه
+به تنظیمات هلو باید این مقادیر داده شوند.  بدین منظور وارد  هلو  شده  و در قسمت تنظیمات  
+نرمافزار در بخش فاکتور  –  مالی، در قسمت محاسبه عوارض و مالیات و  بخش  نحوه محاسبه  
+مالیات و عوارض در فاکتور اگر  "محاسبه به صورت کلی"  انتخاب شده باشد باید مقادیر مالیات و  
+عوارض به صورت درصدی در تیتر فاکتور ارسال شوند و اگر محاسبه به صورت جداگانه برای 
+هرکالا انتخاب شده باشد باید در جیسان مالیات و عوارض هر کالا جداگانه (به درصد) داده شود. 
+• Serials: میتوانید به ازای هرکالا در فاکتور فروش، برگشت از خرید، خرید و برگشت از فروش  
+با سریال، فاکتور ثبت کنید. اگر در تعریف کالا تیک اجباری بودن استفاده از  سریال خورده باشد 
+در وب سرویس اگر بدون وارد نمودن این مقدار برای کالا فاکتور بزنید خطا دریافت خواهید کرد.  
+ 
+1-4- درج هزینه در فاکتور 
+میتوان با داشتن  ErpCode  طرف حساب و همچنین کد سرفصل هزینه های موردنظر، هنگام درج  
+فاکتور فروش یا خرید، اقدام به ثبت هزینه  کرد. برای اینکار میتوان کلید  "hazineinfo"  را درjson 
+ثبت فاکتور با پارامترهای زیر اضافه کرد 
+ 
+ 
+Comment Type Parameter 
+ErpCode طرف حساب اجباری  string customererpcode 
+کد سرفصل هزینه اجباری  string hazinehsarfaslcode 
+قیمت هزینه اجباری  Float hazinehamount 
+ 
+ 
+ 
+نمونه مثال درج هزینه در فاکتور 
+ثبت هزینه در فاکتور به حساب طرف حساب bBAPNA12eg0=   : 
+
+===== PAGE 25 =====
+ 
+4-2- ثبت درآمد در فاکتور 
+همانند ثبت هزینه با تفاوت در کلیدهای ارسالی به صورت زیر:  
+Comment Type Parameter 
+ErpCode طرف حساب اجباری  string customererpcode 
+کد سرفصل درآمد اجباری  string sarfaslcode 
+قیمت درآمد اجباری  Float amount 
+ 
+Body 
+{"invoiceinfo":[{ 
+   …, 
+   "hazineinfo" : [ 
+   { 
+       "customererpcode": "bBAPNA12eg0=",  
+       "hazinehsarfaslcode": "6010059",  
+       "hazinehamount": 200 
+   } 
+  ], 
+"detailinfo":{ 
+… 
+}}]} 
+ 
+نمونه مثال درج درآمد در فاکتور 
+ثبت درآمد در فاکتور به حساب طرف حساب bBAPNA12eg0=   : 
+Body 
+{"invoiceinfo":[{ 
+   …, 
+   "incomeinfo" : [ 
+   { 
+       "customererpcode": "bBAPNA12eg0=",  
+       "sarfaslcode": "7020001", 
+       "amount": 200 
+   } 
+  ], 
+"detailinfo":{ 
+… 
+}}]} 
+
+===== PAGE 26 =====
+5-  شماره فاکتورPreInvoiceConvert:) با داشتنErpcode های تولید شده در قسمتدرج  
+سفارش و پیش فاکتور می توانیم از تبدیل پیش فاکتور و یا سفارش خود به فاکتور مطلع شویم.  
+{Address}/ Invoice/PreInvoiceConvert URL 
+Get Http Method 
+Comment Type Parameter 
+شناسه اجباری  string erpcode 
+ 
+نمونه  مثال  شماره فاکتور :  
+دریافت شماره فاکتور پیش فاکتور با کد  erpcode":"bD4Xfg==  : 
+Query Parameters 
+{Address}/Invoice/PreInvoiceInfo?invoiceinfo=[{"erpcode":"bD4Xfg=="}]  
+ 
+دریافت شماره فاکتور سفارش با کد  erpcode":"bD4Xfg==   : 
+Query Parameters 
+{Address}/Invoice/OrderInfo?invoiceinfo=[{"erpcode":"bD4Xfg=="}]  
+ 
+ 
+ 
+Response 
+{ 
+"Header":"InvoiceInfo","Success":{  
+"ErpCode":"bDNzfg==",  
+"ReturnParam1":"21970",  
+"ReturnParam2":"1551"}
+} 
+ 
+توضیحات پارامترهای خروجی 
+• ErpCode : شناسه فاکتور 
+• ReturnParam1 : شماره فاکتور 
+• ReturnParam1 : شماره سند 
+ 
+ 
+
+===== PAGE 27 =====
+6- لیست فاکتورهاInvoice : )گزارش فاکتورهای ثبت شده با انتخاب نوع فاکتورو پر کردن فیلد 
+شماره فاکتور یا طبق تاریخ نمایش داده می شود .  
+ 
+ 
+ 
+{Address}/Invoice URL 
+Get Http Method  
+Comment Type Parameter 
+شماره فاکتور اختیاری  string Code 
+شماره فاکتور از اختیاری  string code.from 
+شماره فاکتور تا اختیاری  string code.to 
+نوع فاکتور اختیاری  string Type 
+شماره سند اختیاری  string Sanadcode 
+تاریخ از اختیاری  date date.from 
+تاریخ تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثال لیست فاکتورها 
+ 
+دریافت لیست فاکتورهای از شماره 10 تا200 ازنوع خرید (1  : ) 
+ 
+Query Parameters 
+{Address}/Invoice?code.from=10&code.to=200&type=2  
+ 
+ 
+ 
+Response 
+{ 
+"invoice":[{ 
+"Code":"1", 
+"Type":"
+ ", 
+"SanadCode":"177", 
+"comment":"invoice comment"  
+"CustomerName":"test",  
+"CustomerErpCode":"bBAPOw5Ieg0=",  
+"Date":"2018/05/10", 
+
+===== PAGE 28 =====
+"Time":"12:45:41", 
+"SumNaghd":"0.0", 
+"SumNesiyeh":"1000", 
+"SumDiscount":"2500", 
+"SumCheck":"0.0","SumLevy":"0.0",  
+"SumScot":"0.0", 
+"SumPrice":"3.02352E8",  
+"ErpCode":"bBAPNA12ckg="  
+} 
+]} 
+ 
+توضیحات پارامترهای خروجی 
+• Code  : شماره فاکتور 
+• Type : نوع فاکتور 
+• SanadCode  :شماره سند 
+• Comment : توضیحات فاکتور 
+• CustomerName  :نام طرف حساب 
+• CustomerErpCode : شناسه طرف حسابدرج شده در هلو  
+• Date : تاریخ فاکتور 
+• Time : ساعت فاکتور 
+• SumNaghd : مبلغ نقد 
+• SumNesiyeh : مبلغ نسیه 
+• SumDiscount : مبلغ تخفیف 
+• SumCheck : مبلغ چک 
+• SumScot : مبلغ مالیات و عوارض 
+• SumPrice : مبلغ فاکتور 
+• ErpCode : شناسه فاکتوردرج شده در هلو  
+• Detail: جزییات فاکتور را نشان میدهد 
+• Serials :سریالهای استفاده شده در فاکتور را نشان میدهد 
+ 
+*: به کمک کلید واژه  customererpcode  در پارامترهای url  میتوانید فاکتورهای مربوط به یک 
+مشتری را ببینید.  
+7- ثبت سند حسابداری 
+
+===== PAGE 29 =====
+7-1-سند  حواله طرفحساب  
+ 
+{Address}/api/Payment/Havaleh URL 
+Post Http Method  
+Comment Type Parameter 
+شناسه اختیاری  int Id 
+تاریخ اجباری  date Date 
+ساعت اجباری  date Time 
+سرفصل طرفحساب  اجباری  string Customersarfasl 
+سرفصل بانک  اجباری  string Banksarfasl 
+مبلغ حواله اجباری  float Bank 
+مبلغ تخفیف  اختیاری   float discount" 
+توضیحات اختیاری  string Comment 
+ 
+نمونه مثال سند حواله طرف حساب 
+ثبت حواله با سرفصل طرف حساب 1030001، سرفصل بانک10200010001،مبلغ حواله 100 و 
+Body 
+{"payinfo":[{"id":"1","date":"2019 -09-
+08","time":"09:21","customersarfasl":"1030001","banksarfasl":"10200010001"
+,"bank":100,"discount":200,"comment":تست}]} 
+ 
+Response 
+ 
+{"Header": 
+"Payment","Success":{ 
+"Id":"1", 
+"ErpCode":"bwVzfg==",  
+"ReturnParam1":"5", 
+"ReturnParam2":"5"}}  
+ 
+توضیحات پارامترهای خروجی 
+• id : شناسه 
+• ErpCode : شناسه سند ثبت شده 
+• ReturnParam1: شماره سند 
+
+===== PAGE 30 =====
+• ReturnParam2: شماره ثابت سند 
+ 
+ 
+7-2-سند دریافت  از طرفحساب  
+ 
+{Address}/api/Payment/ReciveFromCus
+tomer   
+URL 
+Post Http Method  
+Comment Type Parameter 
+شناسه اختیاری  int Id 
+تاریخ اجباری  date Date 
+ساعت اجباری  date Time 
+سرفصل طرفحساب  اجباری  string Customersarfasl 
+سرفصل بانک  اجباری  string Banksarfasl 
+مبلغ بانک  اجباری  string Bank 
+سرفصل صندوق اجباری   string Cashsarfasl 
+مبلغ صندوق  اجباری  string Cash 
+مبلغ تخفیف  اختیاری  string Discount 
+توضیحات اختیاری  string Comment 
+ 
+نمونه مثال دریافت از طرف حساب 
+دریافت از طرف حساب در تاریخ 2019-09-08،  با سرفصل طرف حساب1030007، سرفصل بانک
+10200010001 و 
+Body 
+{"payinfo":[{"id":"1","date":"2019 -09-
+08","time":"09:21","customersarfasl":"1030007","banksarfasl":"10200010001"
+,"bank":300,"cashsarfasl":"10100010001" ,"cash":200,"discount":400,"commen
+t":تست}]} 
+ 
+ 
+Response 
+ 
+{"Header": 
+
+===== PAGE 31 =====
+"Payment","Success":{ 
+"Id":"1", 
+"ErpCode":"bhVzfg==",  
+"ReturnParam1":"8", 
+"ReturnParam2":"8"}}  
+ 
+توضیحات پارامترهای خروجی 
+• id : شناسه 
+• ErpCode : شناسه سند ثبت شده 
+• ReturnParam1: شماره سند 
+• ReturnParam2: شماره ثابت سند 
+ 
+سطح تنظیمات 
+تنظیمات واحد پول (Settings:) 
+در حال حاضر این سطح، امکان گرفتن تنظیم واحد پول در هلو را میدهد. کافی است آدرس زیر را اجرا  
+نمایید:  
+{Address}/Settings
+نمونه مثال: 
+Query Parameters 
+{Address}/Settings 
+ 
+ 
+Response 
+{
+     "CurrencyUnit": [ 
+     {
+          "name": "RepVahedPooli",  
+          "string": "
+ "
+      } 
+   ]
+ 
+
+===== PAGE 32 =====
+سطح گزارشگیری  
+ 
+گزارشات مدیریتی  (Report)  : 
+این امکان شامل گزارشات مدیریتی است. در ادامه به معرفی این بخش می پردازیم.  
+ 
+1- مانده سرفصلGetSarfasl ) 
+{Address}/Report/GetSarfasl URL 
+Get Http Method  
+Comment Type Parameter 
+کد سرفصل ختیاری  string Code 
+تاریخ از اختیاری  date date.from 
+تاریخ  تا اختیاری  date date.to 
+فارسی سازیجیسان خروجی  اختیاری  boolean fa 
+ 
+نمونه مثال مانده سرفصل 
+دریافت سرفصل های با کد 103   : 
+Query Parameters 
+{Address}/Report/GetSarfasl?code=103  
+ 
+ 
+Response 
+{ 
+"report":[{ 
+"Code":"0010001", 
+"Name":" 
+  ", 
+"Price":"-100.0" 
+]} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل 
+• Name : نام سرفصل 
+• Price : مانده 
+
+===== PAGE 33 =====
+ 
+2-  موجودی صندوقGetCash  ) 
+{Address}/Report/GetCash URL 
+Get Http Method 
+Comment Type Parameter 
+تاریخ از اختیاری  date date.from 
+تاریخ  تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+ 
+نمونه مثال موجودی صندوق 
+دریافت موجودی صندوق از تاریخ 2019-05-05' تا تاریخ2019-05-06'  : 
+ 
+Query Parameters 
+{Address}/Report/GetCash?date.from='2019 -05-05'&date.to='2019 -05-06' 
+ 
+ 
+ 
+Response 
+{ 
+"report":{ 
+"Code":"10100010001",  
+"Name":"
+ ", 
+"Price":"3.25787252E8"}  
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل صندوق 
+• Name : نام صندوق 
+• Price : موجودی صندوق 
+ 
+ 
+ 
+
+===== PAGE 34 =====
+ 
+3-  موجودی بانکGetAccound  ) 
+{Address}/Report/GetAccound URL 
+Get Http Method 
+Comment Type Parameter 
+تاریخ از اختیاری  date date.from 
+تاریخ  تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالموجودی بانک :  
+دریافت موجودی بانک از تاریخ 2019-05-05' تا تاریخ2019-05-07'  : 
+Query Parameters 
+{Address}/Report/GetAccound?date.from='2019 -05-05'&date.to='2019 -05-07' 
+ 
+ 
+Response 
+{ 
+"report":[{ 
+"Code":"10200010001",  
+"Name":"
+ ", 
+"Price":"2.8849594E8"}  
+}] 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل بانک 
+• Name : نام بانک 
+• Price : مانده 
+ 
+4-1-  طرف حسابهای بستانکار به ترتیب بیشترینGetMaxBesCustomer   ) 
+{Address}/Report/GetMaxBesCustomer URL 
+Get Http Method 
+Comment Type Parameter 
+
+===== PAGE 35 =====
+تعداد سطر اختیاری  Integer Count 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالطرف حسابهای بستانکار به ترتیب بیشترین:  
+دریافت 2 طرف حساباول با بیشترین بستانکاری :  
+ 
+Query Parameters 
+{Address}/Report/GetMaxBesCustomer?count=2  
+ 
+ 
+Response 
+{ 
+"report":[ 
+{"Code":"1030194", 
+"Name":"
+ " 
+"Price":"7000" 
+{"Code":"4010038","Name":"
+ " 
+"Price":"6000 
+]} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل طرف حساب 
+• Name : نام طرف حساب 
+• Price : مانده 
+ 
+ 
+ 
+4-2- طرف حسابهای بدهکار به ترتیب بیشترینGetMaxBedCustomer   ) 
+{Address}/Report/GetMaxBedCustomer URL 
+Get Http Method 
+
+===== PAGE 36 =====
+Comment Type Parameter 
+تعداد سطر اختیاری  Integer count 
+فارسیسازی جیسان خروجی  اختیاری  boolean fa 
+ 
+ 
+نمونه مثالطرفحسابهای بدهکار به ترتیب بیشترین :  
+دریافت 2 طرف حساباول با بیشترین بدهکاری :  
+ 
+Query Parameters 
+Address}/Report/GetMaxBedCustomer?count=2  
+ 
+ 
+ 
+Response 
+{ 
+"report":[ 
+{"Code":"1030194", 
+"Name":"
+ " 
+"Price":"7000" 
+{"Code":"4010038","Name":"
+ " 
+"Price":"6000 
+]} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل طرف حساب 
+• Name : نام طرف حساب 
+• Price : مانده 
+ 
+ 
+5-1-  موجودی کالا به ترتیب بیشترین(GetMaxFewProduct   ) 
+{Address}/Report/GetMaxFewProduct URL 
+
+===== PAGE 37 =====
+Get Http Method 
+Comment Type Parameter 
+تعداد سطر اختیاری  Integer count 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالموجودی کالا به ترتیب بیشترین :  
+دریافت 2 کالای اول با بیشترین موجودی 
+ 
+Query Parameters 
+{Address}/Report/GetMaxFewProduct?count=2  
+ 
+ 
+Response 
+{ 
+"report":[{ 
+"Code":"00403004", 
+"Name":"
+ ", 
+"Few":"4254.0", 
+"Price":"9000.0"}, 
+{"Code":"00401110",  
+"Name":"
+ ", 
+"Few":"560.0", 
+"Price":"30000.0"}, 
+}] 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل کا 
+• Name : نام طرف کا 
+• Few : مقدار 
+• Price : مبلغ 
+ 
+5-2-  موجودی کالا به ترتیب کمترینGetMinFewProduct   ) 
+{Address}/Report/GetMinFewProduct URL 
+
+===== PAGE 38 =====
+Get Http Method 
+Comment Type Parameter 
+تعداد سطر اختیاری  Integer count 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالموجودی کالا به ترتیب کمترین:  
+دریافت 2 کالای اول با کمترین موجودی 
+ 
+Query Parameters 
+{Address}/Report/GetMinFewProduct?count=2  
+ 
+ 
+Response 
+{ 
+"report":[{ 
+"Code":"00101004", 
+"Name":"
+ ", 
+"Few":"0.0", 
+"Price":"228000.0"}, 
+{"Code":"00101006",  
+"Name":"test", 
+"Few":"0.0", 
+"Price":"0.0"} 
+]} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد سرفصل کا 
+• Name  :نام کالا 
+• Few : مقدار 
+• Price : مبلغ 
+ 
+ 
+6-1- کالای فروش رفته به ترتیب بیشترین موجودیGetMaxSelFewProduct   ) 
+
+===== PAGE 39 =====
+URL {Address}/Report/GetMaxSelFewProduc t 
+Http Method Get 
+Comment Type Parameter 
+تعداد سطر اختیاری  Integer count 
+تاریخ از اختیاری  date date.from 
+تاریخ تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+ 
+ 
+نمونه مثالکالای فروش رفته به ترتیب بیشترین موجودی:  
+دریافت کالای فروش رفته به ترتیب بیشترین موجودی با تعداد 2 سطر و از تاریخ2018-05-05' تا
+تاریخ 2018-05-06' : 
+ 
+Query Parameters 
+http://{Address}/Report/ GetMaxSelFewProduct?count=2&date.from='2018 -
+05-05'&date.to='2018-05-06' 
+ 
+ 
+ 
+Response 
+{ 
+"report":{ 
+"Name":"
+ ", 
+"Few":"2520.0", 
+"Price":"5.74815E7"} 
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Name  :نامکالا 
+• Few : مقدار 
+• Price : مبلغ 
+ 
+ 
+
+===== PAGE 40 =====
+6-2- کالای فروش رفته به ترتیب کمترین موجودیGetMinSelFewProduct   ) 
+{Address}/Report/GetMinSelFewProduct URL 
+Get Http Method 
+Comment Type Parameter 
+تعداد سطر اختیاری   count 
+تاریخ از اختیاری  date date.from 
+تاریخ تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+ 
+نمونه مثالکالای فروش رفته به ترتیب کمترین  موجودی:  
+دریافت کالای فروش رفته به ترتیب کمترین موجودی با تعداد 2 سطر و از تاریخ2018-05-05' تا تاریخ
+2018-05-06'    : 
+ 
+Query Parameters 
+{Address}/Report/GetMinSelFewProduct?count=2&date.from='2019 -05-
+05'&date.to='2019-05-06' 
+ 
+  
+Response 
+{ 
+"report":{ 
+"Name":"
+ ", 
+"Few":"1.0", 
+"Price":"180000.0"} 
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Name : نام کا 
+• Few : مقدار 
+• Price : مبلغ 
+ 
+
+===== PAGE 41 =====
+ 
+7-1- کالای فروش رفته به ترتیب بیشترین فروشGetMaxSelPriceProduct   ) 
+{Address}/Report/GetMaxSelPriceProduct URL 
+Get Http Method 
+Comment Type Parameter 
+تعداد سطر اختیاری   count 
+تاریخ از اختیاری  date date.from 
+تاریخ تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالکالای فروش رفته به ترتیب بیشترین فروش :  
+دریافت کالای فروش رفته به ترتیب بیشترین فروش با تعداد 2 سطر و از تاریخ 2019-03-04'تا
+تاریخ2019-05-06'    : 
+ 
+Query Parameters 
+{Address}/Report/GetMaxSelPriceProduct?count=2&date.from='2019 -03-
+04'&date.to='2019-05-06' 
+ 
+ 
+Response 
+{ 
+"report":{ 
+"Name":"
+ ", 
+"Few":"1.0", 
+"Price":"180000.0"} 
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Name : نام کا 
+• Few : مقدار 
+• Price : مبلغ 
+ 
+
+===== PAGE 42 =====
+ 
+ 
+7-2- کالای فروش رفته بهترتیب کمترین فروش (GetMinSelPriceProduc t   ) 
+{Address}/Report/GetMinSelPriceProduct URL 
+Get Http Method 
+Comment Type Parameter 
+تعداد سطر اختیاری  Integer count 
+تاریخ از اختیاری  date date.from 
+تاریخ تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالکالای فروش رفته به ترتیب کمترین فروش :  
+دریافت کالای فروش رفته به ترتیب کمترین فروش با تعداد 2 سطر و از تاریخ 2019-03-04'تا
+تاریخ2019-05-06'    : 
+Query Parameters 
+{Address}/Report/GetMinSelPriceProduct?count=2&date.from='2019 -03-
+04'&date.to='2019-05-06' 
+ 
+ 
+Response 
+{ 
+"report":{ 
+"Name":"
+ ", 
+"Few":"1.0", 
+"Price":"29000.0"} 
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Name : نام کا 
+• Few : مقدار 
+• Price : مبلغ 
+
+===== PAGE 43 =====
+ 
+ 
+8- کاردکس سرفصلGetKardexSarfasl   ) 
+{Address}/Report/GetKardexSarfasl URL 
+Get Http Method 
+Comment Type Parameter 
+کد سرفصل   code 
+تعداد سطر اختیاری   count 
+تاریخ از اختیاری  date date.from 
+تاریخ تا اختیاری  date date.to 
+فارسی سازی جیسان خروجی اختیاری  boolean fa 
+ 
+نمونه مثالکاردکس سرفصل :  
+دریافت کاردکس سرفصل های با کد 103 و تعداد سطر2، از تاریخ2019-03-04' تا تاریخ2019-05-
+06'   : 
+ 
+Query Parameters 
+{Address}/Report/GetKardexSarfasl?code=103&count=2&date.from='2019 -03-
+04'&date.to='2019-05-06' 
+ 
+ 
+Response 
+{ 
+"report":{ 
+"Code":"1545", 
+"Date":"2019/02/05", 
+"Bed":"1365000.0", 
+"Bes":"0.0", 
+"Comment":" 
+ "} 
+} 
+ 
+توضیحات پارامترهای خروجی 
+
+===== PAGE 44 =====
+• Code  :کد 
+• Date : تاریخ 
+• Bed : مبلغ بدهکاری   
+• Bes  :مبلغ بستانکاری 
+• Comment : توضیحات 
+ 
+9- آخرین پرداختی طرف حسابهاGetCustPay   ) 
+{Address}/Report/GetCustPay URL 
+Get Http Method 
+Comment Type Parameter 
+کد سرفصل اختیاری  String code 
+فارسیسازی جیسان خروجی  اختیاری  boolean fa 
+ 
+نمونه مثالآخرین پرداختی طرف حسابها :  
+دریافت آخرین پرداختی طرف حساب با کد سرفصل 1030003   : 
+ 
+Query Parameters 
+{Address}/Report/GetCustPay?code=103 0003 
+ 
+ 
+Response 
+ 
+{ 
+ 
+"report":[{ 
+"Code":"00002", 
+"Name":"
+ ", 
+"Price":"1530000.0", 
+"Date":"2018/04/08", 
+"Mandeh":"0.0"} 
+} 
+ 
+
+===== PAGE 45 =====
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد طرف حساب 
+• Name : نام طرف حساب 
+• Price : مبلغ پرداختی 
+• Date : تاریخ 
+• Mandeh : مانده طرف حساب 
+ 
+9- آخرین دریافتی طرفحسابها (GetCustReceive   ) 
+{Address}/Report/GetCustReceive URL 
+Get Http Method 
+Comment Type Parameter 
+کد سرفصل اختیاری  String code 
+فارسیسازی جیسان خروجی  اختیاری  boolean fa 
+ 
+نمونه مثالآخرین  دریافتی  طرفحسابها :  
+دریافت آخرین دریافتی طرف حساب با کد سرفصل 1030003  : 
+ 
+Query Parameters 
+{Address}/Report/GetCust Receive?code=1030003 
+ 
+ 
+Response 
+ 
+{ 
+ 
+"report":[{ 
+"Code":"00002", 
+"Name":"
+ ", 
+"Price":"1530000.0", 
+"Date":"2018/04/08", 
+"Mandeh":"0.0"} 
+
+===== PAGE 46 =====
+} 
+ 
+توضیحات پارامترهای خروجی 
+• Code : کد طرف حساب 
+• Name : نام طرف حساب 
+• Price : مبلغ پرداختی 
+• Date : تاریخ 
+• Mandeh : مانده طرف حساب 
+ 
+وب هوک 
+برای استفاده از این قابلیت نیاز هست که  SQL Server  ورژن2008  و یا نسخههای جدیدتر روی سیستم  
+نصب باشد.  
+برای راهاندازی وب هوک انجام مراحل زیر به ترتیب لازم است:   
+- ابتدا  SQL Server Configuration Manager  رابه صورت  Run as Administrator  باز
+کنید و در پنل سمت چپ  SQL Server Network Configuration  را باز کنید و سپس 
+protocols for…  را انتخاب کنید (به جای ... باید نسخه دیتابیسی که از آن استفاده میکنید  
+باشد).  
+حالا در پنل سمت راست روی  TCP/IP  کلیک راست کرده وproperties  را انتخاب کنید. در
+صفحه باز شده و در تب IP Addresses کاملا پایین رفته و در بخشIPAll قسمت اول کهTCP 
+Dynamic Ports  میباشد را خالی نمایید (توجه کنید باید کاملا خا لی باشد و حتی صفر هم 
+داخل آن نوشته نشده باشد)؛ سپس در قسمت دوم یعنی  TCP Port  عدد1433  را وارد 
+کنید(توجه کنید امکان وارد کردن عدد پورت دیگری در اینجا وجود دارد اما در صورت وارد کردن  
+عدد دیگری غیر از  1433  باید به فایلapplication.properties  در فولدر وب سرویس  خود  
+رفته و عددی که در اینجا وارد کردید را در آن فایل به جای مقدار  db.port  قرار دهید؛ فقط در
+نظر داشته باشید که پورتی که اینجا وارد میکنید باید باز باشد و توسط برنامه دیگری اشغال نشده  
+باشد). در آخر به تب  Protocol  رفته و مقادیرEnabled  وListen All  را بهyes  تغییر داده و
+ok را بزنید 
+
+===== PAGE 47 =====
+در اینجا دوباره باید به برنامهSQL Server Configuration Manager  رفته و در پنل سمت
+چپ  SQL Server Services  را انتخاب کرده و سپس در پنل سمت راست، رویSQL Server  
+وSQL Server Agent  و SQL Server BrowserوSQL Server Integration 
+Services به ترتیب کلیک راست کرده وrestart را انتخاب کنید 
+- حالا وبسرویس را راهاندازی کرده و با کمک /webhook/subscribe و با فرستادن یکbody 
+به شکل زیر برای وبسرویس با متد post میتوانید یک URL  برای یک جدول اصطلاحا نامنویسی  
+کنید:  
+ 
+{ 
+"subscriptions" : [ { 
+"url" : "http://... ", 
+"tablename" : "product", 
+"apikey" : "…" 
+} ] 
+{ 
+• در حال حاضر فقطcustomer  و   product وmainGroup وsideGroup  وresInvoice 
+به عنوانtablename قابل قبول هستند 
+گروه اصلی = mainGroup 
+گروه فرعیsideGroup 
+فاکتور تکفروشی (فاکتور رستوران) = resInvoice 
+• Apikey  باید یک کلید ثابت برای URL  باشد که قابل انقضا نباشد   و به کمک آن می توانید  
+تشخیص دهید اعلان فرستاده شده،  از سمت وب سرویس هلو هست. این فیلد میتواند خالی باشد  
+اما به لحاظ امنیتی بهتر است مقدار داده شود.  
+
+===== PAGE 48 =====
+- اگر بدون مشکل این روند انجام شود پس از ارسالjson  فوق، سرویس وب هوک، خودکار، برای
+جداولی که ارسال کردهاید فعال خواهد شد و در صورت تغییر در آن جداول چه از طریق وب-
+سرویس و چه از طریق هلو به  URL  ای که تعریف کرده اید یک درخواستpost   زده خواهد شد و
+تغییر را به شکل زیر اعلان خواهد کرد: 
+{  
+  "Dbname" : "Holoo1", 
+  "Table" : "product", 
+  "operation" : "UPDATE", 
+  "changedfields": "[{…}]" 
+} 
+عملیاتupdate،create  وdelete  به شما اطلاع داده خواهد شد و در   قسمت 
+changedfields  همسطرهای جدول ذکر شده  که روی آن ها  عملیات رخ داده است  لیست می -
+شود. 
+فعال و غیرفعال کردن وب هوک 
+در صورتی که به هر دلیلی به غیرفعال کردن سرویس نیاز باشد دو راه وجود دارد: 
+1- پاک کردن جدول از لیستsubscribe هاکه میتوانید به کمک پارامتر  table  و دادن نام
+جدول مورد نظر یک جدول خاص را پاک کنید یا میتوانید بدون دادن پارامتر، تمامی جدول  -
+های نام نویسی شده برای وب هوک را پاک کنید.  این عمل از طریق متد  delete  و لینک
+/webhook/subscribe انجام میشود.  
+مثال پارامتر:  
+webhook/subscribe?table=product 
+نکته: در صورت غیر فعال کردن وب هوک به این صورت، جداولی که پاک می شوند در آینده
+تغییراتشان گزارش نخواهد شد و نیاز هست تا دوباره subscribe شوند 
+
+===== PAGE 49 =====
+2- غیرفعال کردن موقت وب هوک که به کمک متد Get  و لینک /webhook/stop  انجام
+میشود.  
+نکته: در صورت متوقف کردن وب هوک به این صورت، تا وقتی به صورت زیر استارت انجام 
+نشود وب هوک کار نخواهد کرد (مگر اینکه جدول جدیدی subscribe کنید 
+برای فعال کردن مجدد وب هوک از متد get  وAPI  :/webhook/start استفاده نمایید 
+همچنین با متد  get  وAPI   :/webhook/subscribe  میتوانید جداولی که به آن ها  subscribe 
+کردهاید را دریافت نمایید.  
+توجه: در صورت  غیرفعال کردن  وبسرویس،  وبهوک هم تغییرات را ارسال نخواهد کرد و بعد از راهاندازی  
+مجدد وب سرویس،  اگر  stop  وبهوک را از قبل فراخوانی نکرده باشید   و مجدد  login  نمایید وب هوک  
+فعال میشود در غیر اینصورت باید حتما خودتان یکبار API استارت را فراخوانی نمایید 
+توضیح خطا های برگشتی  
+ 
+لاگین  
+کد خطا توضیحات  
+1 عدم برقراری ارتباط با بانک اطلاعاتی، ممکن استنام کاربری یا کلمه عبور نادرست باشد .  
+3 فایلConfig را در مسیرمورد نظرکپی نکرده اید . برای تنظیمات  Config  به
+ملزومات نصب   مراجعه نمایید.  
+4 لطفا ابتدا نسخه هلو را اجرا نمایید .  
+5 ارتباط با اینترنت برقرار نمی باشد  لطفا اتصال به اینترنت را چک نمایید .   
+6 کاربرگرامی شما دسترسی استفاده از وبسرویس را ندارید.  
+27 کاربرگرامی شما دسترسی استفاده از وبسرویس را ن دارید.  
+ 
+ درج اشخاص   
+کد خطا توضیحات  
+7 نام طرفحساب خالی می باشد .  
+8 نام طرفحساب تکراری می باشد .  
+9 کد طرفحساب تکراری می باشد .  
+
+===== PAGE 50 =====
+10 شماره موبایل تکراری میباشد.  
+11 پکیج ارسالی اشتباه میباشد.  
+12 کد حساب تکراری میباشد .  
+13 کد حساب معتبر نمیباشد.  
+14 کد طرفحساب معتبر نمی باشد .  
+21 نوع  (بدهکار / بستانکار) به درستی مشخص نشده است.  
+22 کد واسطه (ٍErpcode) معتبرنمیباشد.  
+23 کد ملی تکراری می باشد .  
+24 کد اقتصادی تکراری می باشد .  
+25 کدپستی معتبر نمیباشد .  
+45 سرفصل طرف حساب معتبر نمیباشد.  
+ 
+ 
+درج کالا  
+کد خطا توضیحات  
+37 کد کالا تکراری میباشد.  
+38 نام کالا تکراری میباشد.  
+39 نامکالا خالی میباشد.  
+40 Erpcode کالا معتبر نمیباشد .  
+41 ظرفیت این طبقه جهت اضافه نمودن کالا تکمیل شده است.   
+42 Erpcode گروه اصلی معتبر نمیباشد.  
+43 Erpcodeگروه فرعی معتبر نمیباشد.  
+44 شناسه معتبر نمیباشد.  
+46 مبلغ مشخص نشده است.  
+ 
+درج فاکتور  
+کد خطا توضیحات  
+15 کد کالا معتبر نمیباشد.  
+16 کد واحد  معتبر Erpcode) نمیباشد .  
+17 تاریخ معتبر نمیباشد.  
+
+===== PAGE 51 =====
+18 ساعت معتبر نمیباشد.  
+19 تعداد کالا معتبر نمی باشد .  
+20 قیمت کالا معتبر نمی باشد .  
+26 مالیات وعوارض معتبر نمیباشد .  
+28 کالاهای  زیر فاقد  موجودی میباشد .  
+29 سرفصل صندوق معتبر نمیباشد .  
+30 مبلغ صندوق معتبر نمی باشد.  
+31 نوع فاکتور معتبر نمی باشد.  
+32 سرفصل کارتخوان معتبر نمیباشد.  
+33 مبلغ کارتخوان معتبر نمی باشد .  
+34 مبلغ نسیه معتبر نمیباشد .  
+35 مبلغ تخفیف معتبر نمیباشد.  
+36 مبلغ تسویهفاکتور با جمع فاکتور برابر نمیباشد.  
+ 

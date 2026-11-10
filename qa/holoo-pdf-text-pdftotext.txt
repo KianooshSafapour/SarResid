@@ -1,0 +1,1872 @@
+                                                                     
+
+       Config           
+            Sql Server     
+  ok           Test Connection 
+   Run As Administrator    Install       .
+           .  
+       Start    TncHolooWebService   
+jre-8u231-windows-x64.exe  Java JRE         
+                     
+            Install     
+
+                                                                           .  Start  
+
+                                                 
+
+http://{IPSystem}:8080/TncHoloo/api  : )Address(   
+
+                                                              : )Login( 
+                           .         
+
+URL                  Type    {Address} /Login
+Http Method                  Post
+Parameter                    Comment
+
+username     string                                   
+userpass     string                                   
+Dbname       string                              
+                                                                                        : 
+Content-Type
+application/json
+Body
+{"userinfo":{"username":"admin","userpass":"Base64Encode","dbname":"Holo
+o1"}}
+
+Response
+{
+"Login":{
+"State":"True",
+"Token"": "Bearer ",
+"ErrorCode" : 0 ,
+"Error":""}
+}
+
+                                                                       :   
+                                             .  False  True    : State ·
+
+                                                                 True 
+                                Token       
+
+                                                                   False  
+                       .    Error    ErrorCode    
+
+                                     .        
+
+                                                                           : Header  
+                       .      Token    : Authorization ·
+
+                                                   application/json : Content-Type ·
+                                                        1 
+
+       .  Customer     : )Customer(   -1
+
+                                    .        
+
+URL                         Type    {Address}/Customer
+Http Method                         Get
+Parameter                           Comment
+
+code         string                                       
+
+code.from    string                                        
+
+code.to      string                                        
+
+purchaser    boolean                                    
+
+seller       boolean                                    
+
+vaseteh      boolean                                    
+
+date.from    date                      
+
+date.to      date                      
+
+nationalid   string                                      
+
+fa           boolean                   
+
+                                                                                       : 
+
+                                     : 00008   00001       
+Query Parameters
+{Address}/Customer?code.from=00001&code.to=00008
+
+Response
+{
+"customer":[{
+"Code":"00001",
+"Name":" ",
+
+"NationalId":"1000000",
+"EconomicId":"1234569999",
+"BedSarfasl":"1030212",
+"BesSarfasl":"4010046",
+"IsPurchaser":"true",
+
+"IsSeller":"true",
+"IsBlackList":"true",
+"Mandeh":"50000.0",
+"Credit":"30000.0",
+"CustType":"0",
+
+"IsVaseteh":"true",
+"VasetehPorsant":"5.0",
+"Tel":"668781666",
+"Mobile":"09111111",
+"Fax":"02100000",
+
+"City":" ",
+
+"Ostan":" ",
+
+"Mantagheh":"3",
+"ZipCode":"2323232323",
+
+"Address":"                ",
+
+"Job":" ",
+
+"Email":"test@yahoo.com",
+"ErpCode":"bBAPOg5mVA0="
+},{...}]}
+
+                                                 :   
+                                                      : Code ·
+                                                     : Name ·
+                                             : BedSarfasl ·
+                                            : BesSarfasl ·
+                                                    : IsPurchaser ·
+                           .  false  true    
+
+                                                        : IsSeller ·
+                           .  false  true    
+
+                                                   : IsBlackList ·
+                           .  false  true    
+
+                                                : Mandeh ·
+                                                         : Credit ·
+
+                                       /  : CustType ·
+                                                   .  1  0    
+                                                                       : IsVaseteh ·
+
+                                          .  false  true    
+                                                        : VasetehPorsant ·
+                                                                                 : Tel ·
+                                                                          : Mobile ·
+                                                                               : Fax ·
+                                                                                : City ·
+                                                                            : Ostan ·
+                                                                     : Mantagheh ·
+                                                                       : ZipCode ·
+                                                                         : Address ·
+                                                                                : Job ·
+                                                                             : Email ·
+
+                                                  : ErpCode ·
+                 3 = )(  2 =   1 = (    :Type ·
+
+           {address}/Customer/2/10  
+.                     
+
+URL                               : ) MainGroup(     -2
+Http Method
+                     {Address}/MainGroup
+                     Get
+
+                     :       
+
+{Address}/MainGroup
+Response                                       :   
+{                                                   : Name ·
+"mainGroup":[{
+"Name":"test",                    : ErpCode ·
+"ErpCode":"bBAHfg==",
+"]}                                : )SideGroup(     -3
+                             {Address}/ SideGroup
+URL                          Get
+Http Method
+
+                           :      
+
+{Address}/ SideGroup
+
+Response
+{
+"sideGroup":[{
+"Name":"test",
+"ErpCode":"bBAHNA1jDg0=",
+"MainGroupName":"test",
+"MainErpCode":"bBAHfg=="
+}
+]}
+                                                :   
+                                                     : Name ·
+
+                                   : ErpCode ·
+                                       : MainGroupName ·
+
+                             : MainErpCode ·
+
+                                             : )Unit(   -4
+
+URL                         {Address}/ Unit
+Http Method                 Get
+
+{Address}/ Unit                              :    
+
+Response
+{
+"unit":{
+"Name":" ",
+
+"ErpCode":"bAVzfg=="
+}}
+
+                                           :   
+                                                 : Name ·
+
+                                  : ErpCode ·
+
+URL                   Type                : )Product(   -5
+Http Method
+Parameter                   {Address}/ Product
+                            Get
+                            Comment
+code              string                          
+date.from         date                  
+date.from         date                  
+maingrouperpcode  string      )ErpCode(   
+sidegrouperpcode  string     )ErpCode(   
+getimage          Boolean  
+fa                boolean                      
+                                
+
+                                                                         :    
+
+         ==bBAHfg         erpcode  00215002    
+
+                                                                              : =bBAHOw5jDg0
+Query Parameters
+{Address}/Product?code=00215002&maingrouperpcode=bBAHfg==&sidegroup
+erpcode=bBAHOw5jDg0=
+
+Response
+{"product":[{
+"Code":"00215003",
+"Name":"test",
+"Few":"0.0",
+"fewkarton":"0",
+"BuyPrice":"0.0",
+"SellPrice":"1680.0",
+"LastBuyPrice":"2000.0",
+"SellPrice2":"1750.0",
+"SellPrice3":"0.0",
+"SellPrice4":"0.0",
+"SellPrice5":"1500.0",
+"SellPrice6":"0.0",
+"SellPrice7":"0.0",
+"SellPrice8":"0.0",
+"SellPrice9":"0.0",
+"SellPrice10":"0.0",
+"selpricekarton":"0",
+"CountInKarton":"0.0",
+"CountInBasteh":"0.0",
+"MainGroupName":"test",
+"MainGroupErpCode":"bBAHfg==",
+"SideGroupName":"test",
+"SideGroupErpCode":"bBAHNA1jDg0=",
+"ErpCode":"bBAHNA1mckd4QB4O",
+"image":"base 64 encrypt",
+"serials": [
+ "111",
+
+  "123"
+]
+}]}
+
+                                                                  :   
+                                                                             : Code ·
+
+                                                                             : Name ·
+                                                                                : Few ·
+
+                                                               : Fewkarton ·
+                                                                     : BuyPrice ·
+                                                                    : SellPrice ·
+
+                                                               2   :SellPrice2 ·
+                                                               3   : SellPrice3 ·
+                                                               4   : SellPrice4 ·
+                                                               5  : SellPrice5 ·
+                                                               6  : SellPrice6 ·
+                                                               7  : SellPrice7 ·
+                                                               8  : SellPrice8 ·
+                                                               9  : SellPrice9 ·
+                                                            10   : SellPrice10 ·
+                                                        : Selpricekarton ·
+                                                         : MainGroupName ·
+                                      : MainGroupErpCode ·
+                                                          : SideGroupName ·
+                                       : SideGroupErpCode ·
+                                                          : ErpCode ·
+
+                                            encrypt 64     :ErpImage ·
+                                                            :Serials ·
+                                                              :Morecodes ·
+
+               {address}/Product/2/10  
+                   .                 
+
+                                                                                  
+                                                                             :    
+                                                                   )   ( :1 
+?name= 
+                  
+          .  )   (  )  ( )  (  .
+
+                                                                                            :2 
+?name=""
+     .              
+    "         .     
+
+                                                                              .   
+
+                                                                           :   
+
+                                                                                               
+
+?name="1",2
+
+  2        1       
+                                                                                .  
+
+ .                  
+
+                                                             2 
+                                                                                :  
+            :         
+
+     .             
+                                                     .      
+
+                               :)Product(  -1
+                                          : -1-1
+
+URL                      Type  {Address}/api/Product
+Http Method                    Post
+Parameter                      Comment
+id
+sidegroupErpcode  int                                      
+code                                                    
+name              string 
+few                                                             
+buyprice          string                                  
+sellprice                                                  
+sellprice2        string 
+Sellprice3                                                   
+Sellprice4        string                                 1 
+Sellprice5                                               2 
+Sellprice6        float                                  3 
+Sellprice7                                               4 
+Sellprice8        float                                  5 
+Sellprice9                                               6 
+Sellprice10       float                                  7 
+countinkarton                                            8 
+countinbasteh     float                                  9 
+uniterpcode                                             10 
+                  float                                   
+                                                           
+                  float                                     
+
+                  float  
+
+                  float  
+
+                  float  
+
+                  float  
+
+                  float  
+
+                  string 
+
+                  string 
+
+                  string 
+                                                                              :   
+                      : ....  1000    10  125   2       
+
+Body
+{"productinfo":[{
+"id":"11",
+"sidegrouperpcode":"bBALNA1jDg0=",
+"code":"125",
+"name":"2 ",
+"few":10,
+"buyprice":1000,
+"sellprice":1500,
+"sellprice2":2000,
+"sellprice3":2500,
+"sellprice4":3000,
+"sellprice5":3500,
+"sellprice6":4000,
+"sellprice7":45000,
+"sellprice8":5000,
+"sellprice9":5500,
+"sellprice10":6000,
+"countinkarton":1,
+"countinbasteh":1,
+"uniterpcode":"bAVzfg=="}]}
+
+Response
+{"Header":
+"Product","Success":{
+"Id":"11",
+"ErpCode":"bBALNA1mckd4dh4O"}}
+
+                                                                  :   
+                                                                                        Id ·
+
+                                                             :ErpCode ·
+
+                                                                                  : -1-2
+URL                    Type    {Address}/api/Product
+Http Method                    Put
+Parameter      int             Comment
+id
+erpcode        int                                           
+code                                                                 
+name           string                                                    
+sellprice                                                                
+sellprice2     string        
+Sellprice3                                                       1 
+Sellprice4     Float                                             2 
+Sellprice5                                                       3 
+Sellprice6     Float                                             4 
+Sellprice7                                                       5 
+Sellprice8     Float                                             6 
+Sellprice9                                                       7 
+Sellprice10    Float                                             8 
+countinkarton                                                    9 
+countinbasteh  Float                                            10 
+uniterpcode                                                       
+               Float                                                
+                                                                     
+               Float         
+
+               Float         
+
+               Float         
+
+               Float         
+
+               Float         
+
+               Float         
+
+               string        
+
+                                                            :   
+                               :bBALNA1mckd4dh4O     
+
+Body
+{"productinfo":[{
+"id":"11",
+"erpcode":"bBALNA1mckd4dh4O",
+"code":"125",
+"name":" ",
+"buyprice":1000,
+"sellprice":1500,
+"sellprice2":2000,
+"sellprice3":2500,
+"sellprice4":3000,
+"sellprice5":3500,
+"sellprice6":4000,
+"sellprice7":45000,
+"sellprice8":5000,
+"sellprice9":5500,
+"sellprice10":6000,
+"countinkarton":1,
+"countinbasteh":1,
+"uniterpcode":"bAVzfg=="}]}
+
+Response
+{"Header":
+"Product","Success":{
+"Id":"11",
+"ErpCode":"bBALNA1mckd4dh4O"}}
+
+                                           :   
+                                                                Id ·
+
+                                    : Erpcode ·
+
+                                : ) Customer(   -2
+                                              : -2-1
+
+URL                  Type       {Address}/ Customer
+Http Method                     Post
+Parameter    string             Comment
+
+id                                                           
+code                 string                                  
+name                 string                                   
+ispurchaser          boolean  
+isseller             boolean                                        
+isblacklist          boolean                                       
+custtype             integer                                     
+bedsarfasl           string                          / 
+nationalid           string                                
+economicid           string                                         
+Credit               string                                     
+tel                  string                                        
+mobile               string   
+fax                  string                                           
+city                 string                                          
+ostan                string                                          
+mantagheh            string   
+email                string                                           
+zipcode              string                                          
+address              string                                          
+type                 integer                                         
+                                                                  
+                                                                     
+                                )3:-2: -1:( 
+
+                                                                :    
+                              : ...        :  1244    
+
+Body
+{"custinfo":[{
+"id":"11",
+"code":"1244",
+"name":" ",
+
+"ispurchaser":true,
+"isseller":true,
+"isvaseteh":true,
+"isblacklist":true,
+"Credit":96000,
+"custtype":0,
+"bedsarfasl":"00059",
+"nationalid":"1222200000",
+"economicid":"3333333333",
+"tel":"021",
+"mobile":"0912",
+"fax":"021",
+"city":" ",
+"ostan":" ",
+"mantagheh":"3",
+"email":"test@test",
+"zipcode":"222222222",
+"address":" ",
+"type": 2}]}
+
+Response
+{"Header":"Customer","Success":{
+"Id":"11",
+"ErpCode":"bBAPOg5meg0=",
+"ReturnParam1":"1236",
+"ReturnParam2":"1030206",
+"ReturnParam3":"4010045"}}
+
+                                                                  :   
+                                                                      : Id ·
+                                                   : Erpcode ·
+                                                 : ReturnParam1 ·
+                                   : Param2Return ·
+                                  : ReturnParam3 ·
+                               :  -2-2
+
+URL                    Type    {Address}/ Customer
+Http Method  string            Put
+Parameter    boolean           Comment
+code         boolean         
+ispurchaser  boolean                  ErpCode
+isseller     integer                                                   
+isblacklist  string          
+custtype     string                                                  
+bedsarfasl   string                                                 
+nationalid   string                                    / 
+economicid   string                                           
+Credit       string          
+tel          string                                                    
+mobile       string                                                
+fax          string          
+city         string                                                  
+ostan        string                                                      
+mantagheh    string          
+email        string                                                    
+zipcode                                                                 
+address                                                                  
+                                                                        
+                                                                       
+                                                                        
+                                                                     
+                                                                       
+
+                                                                       :    
+
+              erpcode":"bBAPNA12dg0=   
+
+                                                                                         : 
+
+Body
+{"custinfo":[{
+"erpcode":"bBAPNA12dg0=",
+"isblacklist":true,
+"nationalid":"49300223323",
+"economicid":"56565"}]}
+Response
+{"Header":"Customer","Success":{
+"ErpCode":"FmNleiIZGB9AZh4O"}
+}
+
+                                                                  :   
+                                                   : Erpcode ·
+
+.   ...            :   -3
+               .              
+
+                                 : )PreInvoice (    -3-1
+
+URL                               {Address}/ Invoice/PreInvoice
+Http Method                       Post
+                                 ) invoiceinfo (    
+Parameter
+id                       Type    Comment
+customererpcode
+date             string                     
+time
+discount         string                
+
+Parameter        date                      
+id
+ProductErpCode   time                      
+few
+karton           float                       
+price
+discountprice                    ) detailinfo(    
+
+                         Type    Comment
+
+                 string                     
+
+                 string                        
+
+                 Float                    
+
+                 Float                    
+
+                 Float                    
+
+                 float                      
+discountpercent  Float              
+levy             Float                          
+scot             Float                         
+uniterpcode      string  
+Comment          string         
+                                             
+
+                                                            : ) (   
+
+        customererpcode":"bBAPNA12cg0= :      
+                          : )(     11:35    ":"2019-10-156"
+
+       6  3   2000    ProductErpCode":"bBALNA1mckd7Zh4O
+Body
+{"invoiceinfo":[{"id":"22",
+customererpcode":"bBAPNA12cg0=","
+date":"2019-10-15",
+"time":"11:35",
+"comment":"2222",
+"levy":3,
+"scot":6,
+"detailinfo":{"id":"2222",
+"ProductErpCode":"bBALNA1mckd7Zh4O",
+"few":1,
+"price":2000,
+"levy":0,
+"scot":0}}]}
+
+Response
+{
+"Header":"Invoice","Success":{
+"Id":"22",
+"ErpCode":"bDNzfg==",
+"ReturnParam1":"2"}
+}
+                                                     :   
+                                                                    : Id ·
+
+                 .          : ErpCode ·
+                                ( (   : ReturnParam1 ·
+
+                                 : )Order(   -3-2
+
+URL                      Type    {Address}/ Invoice/Order
+Http Method                      Post
+                 string        
+Parameter                          ) invoiceinfo (  
+id               integer         Comment
+type
+customererpcode  string                                     
+date                                           ) =3 =1(  
+time             date                            
+
+Parameter        date                                              
+id                                                                
+ProductErpCode           Type        ) detailinfo(   
+few                              Comment
+karton           string                                     
+price                                                   
+levy             string        
+scot                                                                     
+uniterpcode      Float                                                  
+comment                                                                 
+                 Float                                                  
+                                                                       
+                 Float                                 
+                                                                     
+                 Float         
+
+                 Float         
+
+                 string        
+
+                 string        
+
+                                 : )(   
+":"2019-   customererpcode":"bBAPNA12dg0= :     
+                                      : )(     10:12    05-06"
+
+  6   5000   1   1   ProductErpCode":"bBAHOw5mckd7QB4O
+                                                                                          3 
+
+Body
+{"invoiceinfo":[{
+"id":1,
+"type": 1,
+"customererpcode":"bBAPNA12dg0=",
+"date":"2019-05-06",
+"time":"10:12",
+"detailinfo":{
+"id": 1,
+"ProductErpCode":"bBAHOw5mckd7QB4O",
+"few":1,"karton":1,
+"price":5000,
+"levy":6,"scot":3}
+}]}
+
+Response
+{
+"Header":"Invoice",
+"Success":{
+"Id":"11",
+"ErpCode":"bDNzfg==",
+"ReturnParam1":"2"}
+}
+
+                                                                  :   
+                                                                                 : Id ·
+
+                                  .         : ErpCode ·
+                                                  )(   : ReturnParam1 ·
+                                                     :)Invoice(  -4
+              
+
+              .             
+
+URL                      Type        {Address}/ Invoice/Invoice
+Http Method                          Post
+                 string        
+Parameter                                 ) invoiceinfo (  
+id               integer             Comment
+type
+                 string                                          
+customererpcode  date                    2=    1= (  
+date             time       
+time             Float                              )4 =     3= 
+Cash             string                                        
+CashSarfasl      Float                                                  
+Bank             string                                                
+BankSarfasl      Float                                                     
+Nesiyeh          Float    1 =                                  )( 
+Discount         Float                                               
+Levy             Float
+Scot             integer        2 =                      )(   
+kind                                                                      
+                         Type
+Parameter                                                               
+Id               string                                           ) ( 
+ProductErpCode                                                    ) ( 
+Few              string                                  )(  
+Price
+                 Float                     ) detailinfo(   
+                                     Comment
+                 Float         
+                                                                 
+                                                           
+
+                                                                              
+                                                                             
+Levy      Float          ) ( 
+Scot      Float          ) ( 
+Comment   string       
+serials   List               
+                            
+
+                                                                        :    
+
+          : ...  2019-05-06   bBAPNA12dg0=       
+
+Body
+{"invoiceinfo":[{
+"id":"1",
+"Type":"1",
+"customererpcode":"bBAPNA12dg0=",
+"date":"2019-05-06",
+"time":"10:12",
+"Cash":100,
+"CashSarfasl":"10100010001",
+"Bank":200,
+"BankSarfasl":"10200010001",
+"Nesiyeh":780,
+"Discount":10,
+"detailinfo":{
+"id":"1",
+"serials" : [
+
+  "1",
+  "126"
+],
+"ProductErpCode":"bBAHOw5mckd7QB4O",
+"few":1,"price":1000,"levy":6,"scot":3}}]}
+
+Response
+
+{
+"Header":"Invoice",
+"Success":{
+"Id":"1",
+"ErpCode":"bDNzfg==",
+"ReturnParam1":"2"
+"ReturnParam2":"100"}
+}
+                                                                :   
+                                                                               :Id ·
+
+                                  .        :ErpCode ·
+                                               :ReturnParam1 ·
+
+                                            :ReturnParam2 ·
+                                                                  :  
+
+                 :scot  Levy ·
+         .       
+           -    
+       "   "      
+               
+ .  ) (             
+               :Serials ·
+            .    
+.                
+
+                                                                        -1-4
+          ErpCode   
+json   "hazineinfo"     .        
+
+                                                           :      
+
+Parameter                   Type    Comment
+customererpcode
+hazinehsarfaslcode  string                     ErpCode
+hazinehamount       string                           
+                    Float                                
+
+                                                        :      
+                            : bBAPNA12eg0=        
+Body
+{"invoiceinfo":[{
+
+  ...,
+  "hazineinfo" : [
+  {
+
+    "customererpcode": "bBAPNA12eg0=",
+    "hazinehsarfaslcode": "6010059",
+    "hazinehamount": 200
+  }
+ ],
+"detailinfo":{
+...
+}}]}
+
+                                              -4-2
+
+                               :          
+
+Parameter                Type    Comment
+customererpcode
+sarfaslcode      string                     ErpCode
+amount
+                 string                     
+
+                 Float                     
+
+                                                              :      
+
+                                 : bBAPNA12eg0=        
+
+Body
+{"invoiceinfo":[{
+
+  ...,
+  "incomeinfo" : [
+  {
+
+    "customererpcode": "bBAPNA12eg0=",
+    "sarfaslcode": "7020001",
+    "amount": 200
+  }
+ ],
+"detailinfo":{
+...
+}}]}
+      Erpcode   :)PreInvoiceConvert(   -5
+
+         .                 
+
+URL                  Type           {Address}/ Invoice/PreInvoiceConvert
+Http Method                         Get
+Parameter                           Comment
+
+erpcode      string                 
+
+                                                                        :    
+                                  :erpcode":"bD4Xfg==       
+Query Parameters
+{Address}/Invoice/PreInvoiceInfo?invoiceinfo=[{"erpcode":"bD4Xfg=="}]
+
+                                  : erpcode":"bD4Xfg==      
+Query Parameters
+{Address}/Invoice/OrderInfo?invoiceinfo=[{"erpcode":"bD4Xfg=="}]
+
+Response
+{
+"Header":"InvoiceInfo","Success":{
+"ErpCode":"bDNzfg==",
+"ReturnParam1":"21970",
+"ReturnParam2":"1551"}
+}
+
+                                           :   
+                                            : ErpCode ·
+                                      : ReturnParam1 ·
+                                       : ReturnParam1 ·
+            : )Invoice(   -6
+                                               .         
+
+URL                   Type         {Address}/Invoice
+Http Method  string                Get
+Parameter    string                Comment
+Code         string         
+code.from    string                                                      
+code.to      string                                                     
+Type         date                                                       
+Sanadcode    date           
+date.from    boolean                                                        
+date.to                                                                    
+fa
+                                                                              
+                                                                              
+                                                            
+
+                                                                      :    
+
+                                        : )1(   200  10     
+
+Query Parameters
+{Address}/Invoice?code.from=10&code.to=200&type=2
+
+Response
+{
+"invoice":[{
+"Code":"1",
+"Type":" ",
+
+"SanadCode":"177",
+"comment":"invoice comment"
+"CustomerName":"test",
+"CustomerErpCode":"bBAPOw5Ieg0=",
+"Date":"2018/05/10",
+"Time":"12:45:41",
+"SumNaghd":"0.0",
+"SumNesiyeh":"1000",
+"SumDiscount":"2500",
+"SumCheck":"0.0","SumLevy":"0.0",
+"SumScot":"0.0",
+"SumPrice":"3.02352E8",
+"ErpCode":"bBAPNA12ckg="
+}
+]}
+
+                                                                  :   
+                                                                        : Code ·
+                                                                           : Type ·
+
+                                                                   : SanadCode ·
+                                                               : Comment ·
+                                                          : CustomerName ·
+                                       : CustomerErpCode ·
+
+                                                                          : Date ·
+                                                                         : Time ·
+                                                                     : SumNaghd ·
+                                                                  : SumNesiyeh ·
+                                                               : SumDiscount ·
+                                                                     : SumCheck ·
+                                                              : SumScot ·
+                                                                     : SumPrice ·
+                                                        : ErpCode ·
+                                                          :Detail ·
+                                           :Serials ·
+
+     url   customererpcode     :*
+
+                                                                                   .  
+
+                                                                        :    -7
+                                   -7-1
+
+URL                      Type    {Address}/api/Payment/Havaleh
+Http Method                      Post
+Parameter        int             Comment
+                 date          
+Id               date                                                       
+Date             string                                                      
+Time             string                                                      
+Customersarfasl  float                                          
+Banksarfasl      float                                                 
+Bank             string                                                  
+discount"                                                               
+Comment                                                                  
+
+                                                              :     
+
+     : ..  100   10200010001   1030001      
+
+Body
+{"payinfo":[{"id":"1","date":"2019-09-
+08","time":"09:21","customersarfasl":"1030001","banksarfasl":"10200010001"
+,"bank":100,"discount":200,"comment":}]}
+
+Response
+
+{"Header":
+"Payment","Success":{
+"Id":"1",
+"ErpCode":"bwVzfg==",
+"ReturnParam1":"5",
+"ReturnParam2":"5"}}
+
+                                             :  
+                                                       : id ·
+
+                                     : ErpCode ·
+                                     :ReturnParam1 ·
+                                    :ReturnParam2 ·
+
+                                    -7-2
+
+URL                      Type    {Address}/api/Payment/ReciveFromCus
+                                 tomer
+Http Method      int             Post
+Parameter        date            Comment
+Id               date          
+Date             string                                                     
+Time             string                                                      
+Customersarfasl  string                                                      
+Banksarfasl      string                                         
+Bank             string                                                
+Cashsarfasl      string                                                   
+Cash             string                                             
+Discount                                                               
+Comment                                                                 
+                                                                         
+
+                                                               :     
+
+       1030007     2019-09-08      
+
+                                                                            : ...  10200010001
+
+Body
+{"payinfo":[{"id":"1","date":"2019-09-
+08","time":"09:21","customersarfasl":"1030007","banksarfasl":"10200010001"
+,"bank":300,"cashsarfasl":"10100010001","cash":200,"discount":400,"commen
+t":}]}
+
+Response
+{"Header":
+"Payment","Success":{
+"Id":"1",
+"ErpCode":"bhVzfg==",
+"ReturnParam1":"8",
+"ReturnParam2":"8"}}
+
+                                              :  
+                                                         : id ·
+
+                                      : ErpCode ·
+                                      :ReturnParam1 ·
+
+                                   :ReturnParam2 ·
+
+                                                   
+
+                                                             :)Settings(   
+      .             
+
+                                                                                        :
+                                                                       {Address}/Settings
+
+                                : 
+
+Query Parameters
+{Address}/Settings
+
+Response
+{
+
+   "CurrencyUnit": [
+   {
+
+      "name": "RepVahedPooli",
+      "string": " "
+
+    }
+  ]
+                                       
+
+                                                              : )Report(  
+                  .        .     
+
+URL                       Type                        )GetSarfasl(   -1
+Http Method                           {Address}/Report/GetSarfasl
+Parameter         string              Get
+                                      Comment
+Code              date          
+date.from                                                                    
+date.to           date                                                           
+fa                                                                              
+                  boolean 
+                                                              
+
+                                         :    
+                                      : 103     
+
+Query Parameters
+{Address}/Report/GetSarfasl?code=103
+
+Response
+
+{
+
+"report":[{
+
+"Code":"0010001",
+
+"Name":"                  ",
+
+"Price":"-100.0"
+
+]}
+
+                                      :   
+                                             : Code ·
+                                            : Name ·
+                                                  : Price ·
+URL                      Type                 )GetCash(   -2
+Http Method                      {Address}/Report/GetCash
+Parameter    date                Get
+                                 Comment
+date.from    date              
+date.to                                                                    
+fa           boolean                                                      
+                                                        
+
+                                                                  :    
+                        : '2019-05-06'   '2019-05-05'     
+
+Query Parameters
+{Address}/Report/GetCash?date.from='2019-05-05'&date.to='2019-05-06'
+
+Response
+{
+"report":{
+"Code":"10100010001",
+"Name":" ",
+
+"Price":"3.25787252E8"}
+}
+
+                                   :   
+                                    : Code ·
+
+                                          : Name ·
+                                     : Price ·
+URL                     Type                      )GetAccound(   -3
+Http Method                       {Address}/Report/GetAccound
+Parameter    date                 Get
+                                  Comment
+date.from    date             
+date.to                                                                          
+fa           boolean                                                            
+                                                              
+
+                                                                       :    
+
+                             : '2019-05-07'   '2019-05-05'     
+Query Parameters
+{Address}/Report/GetAccound?date.from='2019-05-05'&date.to='2019-05-07'
+
+Response
+
+{
+
+"report":[{
+
+"Code":"10200010001",
+
+"Name":"                      ",
+
+"Price":"2.8849594E8"}
+
+}]
+
+                                  :   
+                                     : Code ·
+
+                                           : Name ·
+                                              : Price ·
+
+             ) GetMaxBesCustomer(       -4-1
+
+URL                Type           {Address}/Report/GetMaxBesCustomer
+Http Method                       Get
+Parameter                         Comment
+Count        Integer                            
+fa           boolean             
+
+                                          :       
+                                                    :      2 
+
+Query Parameters
+{Address}/Report/GetMaxBesCustomer?count=2
+
+Response
+{
+"report":[
+{"Code":"1030194",
+"Name":" "
+
+"Price":"7000"
+{"Code":"4010038","Name":" "
+
+"Price":"6000
+]}
+
+                                    :   
+                                  : Code ·
+
+                                        : Name ·
+                                                 : Price ·
+
+             ) GetMaxBedCustomer(       -4-2
+
+URL                           {Address}/Report/GetMaxBedCustomer
+Http Method                   Get
+Parameter  Type               Comment
+count
+fa         Integer                                      
+                                         
+           boolean 
+
+                                          :       
+                                                     :       2 
+
+Query Parameters
+Address}/Report/GetMaxBedCustomer?count=2
+
+Response
+{
+"report":[
+{"Code":"1030194",
+"Name":" "
+
+"Price":"7000"
+{"Code":"4010038","Name":" "
+
+"Price":"6000
+]}
+
+                                             :   
+                                           : Code ·
+
+                                                 : Name ·
+                                                          : Price ·
+
+                    ) GetMaxFewProduct(     -5-1
+
+URL                           {Address}/Report/GetMaxFewProduct
+Http Method            Type  Get
+Parameter       Integer      Comment
+                boolean 
+count                                                   
+fa                                       
+
+                                                     :       
+                                                           :      2 
+
+Query Parameters
+{Address}/Report/GetMaxFewProduct?count=2
+
+Response
+
+{
+
+"report":[{
+
+"Code":"00403004",
+
+"Name":"            ",
+
+"Few":"4254.0",
+
+"Price":"9000.0"},
+
+{"Code":"00401110",
+
+"Name":"         ",
+
+"Few":"560.0",
+
+"Price":"30000.0"},
+
+}]
+
+                                      :   
+                                          : Code ·
+
+                                           : Name ·
+                                                   : Few ·
+                                                  : Price ·
+
+                        ) GetMinFewProduct(      -5-2
+
+URL                          {Address}/Report/GetMinFewProduct
+Http Method           Type    Get
+Parameter                     Comment
+
+count           Integer                                  
+fa                                        
+                boolean 
+
+                                                       :      
+                                                            :      2 
+
+Query Parameters
+{Address}/Report/GetMinFewProduct?count=2
+
+Response
+
+{
+
+"report":[{
+
+"Code":"00101004",
+
+"Name":"        ",
+
+"Few":"0.0",
+
+"Price":"228000.0"},
+
+{"Code":"00101006",
+
+"Name":"test",
+
+"Few":"0.0",
+
+"Price":"0.0"}
+
+]}
+
+                                       :   
+                                           : Code ·
+
+                                                 : Name ·
+                                                    : Few ·
+                                                   : Price ·
+
+          ) GetMaxSelFewProduct(        -6-1
+{Address}/Report/GetMaxSelFewProduct    URL
+                                        Http Method
+Get                                     Comment
+
+Parameter                      Type                         
+                                                               
+count                 Integer                                  
+                                      
+date.from             date                   
+                                      
+date.to               date
+
+fa                    boolean
+
+                                        :        
+       '2018-05-05'     2          
+
+                                                                             :'2018-05-06' 
+
+   Query Parameters
+   http://{Address}/Report/GetMaxSelFewProduct?count=2&date.from='2018-
+   05-05'&date.to='2018-05-06'
+
+Response
+
+{
+
+"report":{
+
+"Name":"         ",
+
+"Few":"2520.0",
+
+"Price":"5.74815E7"}
+
+}
+
+                                      :   
+                                                : Name ·
+                                                   : Few ·
+                                                  : Price ·
+            ) GetMinSelFewProduct(        -6-2
+
+URL                    Type  {Address}/Report/GetMinSelFewProduct
+Http Method                  Get
+Parameter                    Comment
+
+count                         
+
+date.from     date                                
+date.to       date                                
+fa            boolean           
+
+                                        :        
+   '2018-05-05'     2          
+
+                                                                                 : '2018-05-06'
+
+Query Parameters
+{Address}/Report/GetMinSelFewProduct?count=2&date.from='2019-05-
+05'&date.to='2019-05-06'
+
+Response
+
+{
+
+"report":{
+
+"Name":"      ",
+
+"Few":"1.0",
+
+"Price":"180000.0"}
+
+}
+
+                             :   
+                                       : Name ·
+                                          : Few ·
+                                         : Price ·
+            ) GetMaxSelPriceProduct(        -7-1
+
+URL                     Type  {Address}/Report/GetMaxSelPriceProduct
+Http Method                   Get
+Parameter                     Comment
+
+count                          
+
+date.from date                 
+
+date.to       date             
+
+fa            boolean            
+
+                                         :         
+         '2019-03-04'     2          
+
+                                                                           : '2019-05-06' 
+
+Query Parameters
+{Address}/Report/GetMaxSelPriceProduct?count=2&date.from='2019-03-
+04'&date.to='2019-05-06'
+
+Response
+
+{
+
+"report":{
+
+"Name":"            ",
+
+"Few":"1.0",
+
+"Price":"180000.0"}
+
+}
+
+                              :   
+                                        : Name ·
+                                           : Few ·
+                                          : Price ·
+              ) GetMinSelPriceProduct(        -7-2
+
+URL                 Type    {Address}/Report/GetMinSelPriceProduct
+Http Method                 Get
+Parameter                   Comment
+
+count         Integer        
+
+date.from date               
+
+date.to       date           
+
+fa            boolean          
+
+                                          :         
+
+          '2019-03-04'     2          
+
+                                                                           : '2019-05-06' 
+Query Parameters
+{Address}/Report/GetMinSelPriceProduct?count=2&date.from='2019-03-
+04'&date.to='2019-05-06'
+
+Response
+
+{
+
+"report":{
+
+"Name":"      ",
+
+"Few":"1.0",
+
+"Price":"29000.0"}
+
+}
+
+                            :   
+                                      : Name ·
+                                         : Few ·
+                                        : Price ·
+URL                      Type        ) GetKardexSarfasl(   -8
+Http Method                      {Address}/Report/GetKardexSarfasl
+Parameter     date               Get
+              date               Comment
+code          boolean
+count                                                                     
+date.from                                                                  
+date.to
+fa                                                                            
+                                                                              
+                                                           
+
+                                                                    :    
+ '2019-05-   '2019-03-04'   2    103      
+
+                                                                                             : 06'
+
+Query Parameters
+{Address}/Report/GetKardexSarfasl?code=103&count=2&date.from='2019-03-
+04'&date.to='2019-05-06'
+
+Response
+
+{
+
+"report":{
+
+"Code":"1545",
+
+"Date":"2019/02/05",
+
+"Bed":"1365000.0",
+
+"Bes":"0.0",
+
+"Comment":"           "}
+
+}
+
+                                 :   
+                                                 : Code ·
+                                                : Date ·
+                                          : Bed ·
+                                         : Bes ·
+                                      : Comment ·
+
+                            ) GetCustPay(     -9
+
+URL                         {Address}/Report/GetCustPay
+Http Method                 Get
+Parameter
+                      Type  Comment
+code
+             String                                       
+fa
+             boolean                   
+
+                                                       :      
+                                      : 1030003        
+
+Query Parameters
+{Address}/Report/GetCustPay?code=1030003
+
+Response
+
+{
+
+"report":[{
+"Code":"00002",
+"Name":" ",
+"Price":"1530000.0",
+"Date":"2018/04/08",
+"Mandeh":"0.0"}
+}
+                                :   
+                                    : Code ·
+                                    : Name ·
+
+                                      : Price ·
+                                             : Date ·
+
+                               : Mandeh ·
+
+                            ) GetCustReceive(    -9
+
+URL                         {Address}/Report/GetCustReceive
+Http Method                 Get
+Parameter
+                      Type  Comment
+code
+             String                   
+fa
+             boolean                   
+
+                                                       :     
+                                        :1030003        
+
+Query Parameters
+{Address}/Report/GetCustReceive?code=1030003
+
+Response
+
+{
+
+"report":[{
+"Code":"00002",
+"Name":" ",
+"Price":"1530000.0",
+"Date":"2018/04/08",
+"Mandeh":"0.0"}
+}
+
+                                                                  :   
+                                                                       : Code ·
+                                                                      : Name ·
+
+                                                                        : Price ·
+                                                                               : Date ·
+
+                                                                 : Mandeh ·
+
+                                                                   
+
+      2008  SQL Server        
+                                                                                        . 
+
+                                          :          
+
+ Run as Administrator    SQL Server Configuration Manager  -
+     SQL Server Network Configuration      
+        ...  (    protocols for...
+
+                                                                                     .)
+
+ .   properties     TCP/IP      
+TCP    IPAll       IP Addresses      
+         (     Dynamic Ports
+  1433  TCP Port      )    
+                (
+     application.properties    1433    
+    db.port               
+                 
+   yes   Listen All  Enabled    Protocol     .)
+
+                                                                                .  ok
+     SQL Server Configuration Manager      
+SQL Server           SQL Server Services 
+SQL Server Integration  SQL Server Browser  SQL Server Agent 
+
+                            .   restart       Services
+body     /webhook/subscribe         -
+     URL   post       
+
+                                                                                      :
+
+{
+       "subscriptions" : [ {
+               "url" : "http://... ",
+               "tablename" : "product",
+               "apikey" : "..."
+       } ]
+
+{
+resInvoice  sideGroup  mainGroup  product  customer     ·
+
+                                                   .   tablename  
+                                                                mainGroup =  
+                                                                 sideGroup =  
+
+                                          resInvoice = ) (  
+          URL      Apikey ·
+     .          
+
+                                                .        
+      json           -
+-                 
+    post        URL       
+
+                                                       :       
+
+        {
+         "Dbname" : "Holoo1",
+         "Table" : "product",
+         "operation" : "UPDATE",
+         "changedfields": "[{...}]"
+        }
+         delete  create update 
+-              changedfields
+
+                                                                                      .
+
+                                                   
+
+                 :               
+
+   table      subscribe      -1
+-                
+  delete      .        
+
+                                                .  /webhook/subscribe
+
+                                                                           : 
+
+                                          /webhook/subscribe?table=product
+                 :
+
+                    . subscribe         
+ /webhook/stop   Get          -2
+                                                                               .
+
+                :
+              ) subscribe    (      
+
+              .  /webhook/start :API  get        
+
+subscribe      /webhook/subscribe :API  get   
+                                                                           .   
+
+                :
+   login          stop   
+
+                  .    API         
+
+    
+
+                                                              
+ .                                                           
+ Config   .      Config 
+                                                              1
+                                                    .         3
+                                                   .      
+                  .                                           4
+                             .                                5
+                             .                                6
+                                                              27
+
+                              
+                                    
+
+    .    7
+  .    8
+  .    9
+                      .    10
+                       .    11
+                         .    12
+                         .    13
+
+                    .    14
+.    ) / (  21
+
+             . )Erpcode(   22
+                           .    23
+
+                       .    24
+                           .   25
+
+               .     45
+
+                                         
+                                .        
+                                .   
+                                  .       37
+                                          38
+                         .   Erpcode      39
+.                                         40
+                                          41
+                   .    Erpcode           42
+                   .   Erpcode            43
+                                          44
+                                 .        46
+                               .   
+
+                                      
+                                         
+
+               .    15
+  . (Erpcode)    16
+
+                 .   17
+                       .   18
+                    .    19
+                   .    20
+               .    26
+            .     28
+              .    29
+                .     30
+                   .     31
+           .    32
+              .    33
+                   .    34
+                 .    35
+.        36
+

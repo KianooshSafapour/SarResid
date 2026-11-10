@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 520" width="520" height="520">
+  <!-- شاخهٔ زیتون تزئینی — وکتور خالص برای هیرو/فوتر (رنگ از currentColor) -->
+  <g fill="none">
+    <path d="M40 470 C 150 400, 250 280, 300 90" stroke="currentColor" stroke-width="14" stroke-linecap="round" opacity=".9"/>
+  </g>
+  <g fill="currentColor" opacity=".85">
+    <ellipse cx="218" cy="382" rx="46" ry="19" transform="rotate(-32 218 382)"/>
+    <ellipse cx="262" cy="336" rx="46" ry="19" transform="rotate(-14 262 336)"/>
+    <ellipse cx="244" cy="302" rx="46" ry="19" transform="rotate(-58 244 302)"/>
+    <ellipse cx="292" cy="268" rx="44" ry="18" transform="rotate(-6 292 268)"/>
+    <ellipse cx="278" cy="232" rx="44" ry="18" transform="rotate(-48 278 232)"/>
+    <ellipse cx="322" cy="200" rx="44" ry="18" transform="rotate(-18 322 200)"/>
+    <ellipse cx="314" cy="162" rx="42" ry="17" transform="rotate(-52 314 162)"/>
+    <ellipse cx="352" cy="132" rx="40" ry="16" transform="rotate(-24 352 132)"/>
+  </g>
+  <g stroke="currentColor" stroke-width="3" opacity=".3">
+    <line x1="175" y1="402" x2="258" y2="363"/>
+    <line x1="219" y1="354" x2="302" y2="318"/>
+    <line x1="199" y1="312" x2="284" y2="290"/>
+    <line x1="250" y1="278" x2="332" y2="258"/>
+    <line x1="235" y1="239" x2="320" y2="224"/>
+    <line x1="282" y1="213" x2="362" y2="190"/>
+    <line x1="274" y1="173" x2="356" y2="153"/>
+  </g>
+  <g fill="currentColor">
+    <ellipse cx="118" cy="440" rx="27" ry="34" transform="rotate(24 118 440)" opacity=".95"/>
+    <ellipse cx="158" cy="410" rx="23" ry="29" transform="rotate(24 158 410)" opacity=".8"/>
+    <circle cx="40" cy="470" r="10" opacity=".95"/>
+  </g>
+</svg>

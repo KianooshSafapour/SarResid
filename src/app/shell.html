@@ -1,0 +1,539 @@
+<!DOCTYPE html><!--beAIsjrl1RIepLOuaIq_W--><html lang="fa" dir="rtl"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/><link rel="stylesheet" href="/_next/static/chunks/b8c5081c57c11dd3.css" data-precedence="next"/><style data-hz-ux="readability">/* ── بزرگ‌سازی نوار کناری برای خوانایی بهتر (کاربران غیر فنی) ── */
+.workspace-rail{width:88px;min-width:88px}
+.workspace-rail>button{width:76px;height:62px;gap:5px;flex-shrink:0}
+.workspace-rail>button>svg{width:30px;height:30px}
+.workspace-rail>button>span{font-size:12px;line-height:1.3;font-weight:600}
+.workspace-sidebar{width:272px;min-width:272px}
+.workspace-sidebar .p-4>h2{font-size:19px}
+.workspace-sidebar nav>button{font-size:15.5px;padding:13px 14px;min-height:52px}
+.workspace-sidebar nav>button>svg{width:22px;height:22px}
+/* ── R7: حالت جمع‌شدهٔ منو (دسکتاپ) — با دکمهٔ لبهٔ نوار، منو جمع می‌شود تا فضای کار باز شود ──
+   R8: فرزندان منو عرض ثابت دارند تا هنگام بازشدن، متن‌ها بازچین (reflow) نشوند —
+   فقط لبهٔ ظرف با clip نرم باز می‌شود (قبل از این، متن‌ها در حین انیمیشن می‌شکستند و زشت بود) */
+.workspace-sidebar{transition:width .26s cubic-bezier(.4,0,.2,1);overflow:hidden}
+.workspace-sidebar>*{width:272px;flex:none}
+.hz-nav-compact .workspace-sidebar{width:0;min-width:0;padding:0;border:0;pointer-events:none}
+.hz-nav-compact .workspace-rail{width:56px;min-width:56px}
+.hz-nav-compact .workspace-rail>button{width:44px;height:46px;gap:0;border-radius:12px}
+.hz-nav-compact .workspace-rail>button>svg{width:22px;height:22px}
+.hz-nav-compact .workspace-rail>button>span{display:none}
+#hz-nav-toggle{position:fixed;top:64px;right:calc(88px + 272px - 11px);z-index:45;width:22px;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border,#d6d3d1);border-radius:8px;background:var(--card,#fff);color:var(--muted-foreground,#78716c);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.10);transition:right .26s cubic-bezier(.4,0,.2,1),opacity .18s ease;padding:0}
+/* R8: دکمهٔ جمع‌کردن فقط وقتی نوار بخش‌ها هست (صفحهٔ ورود ندارد) — کلاس hz-toggle-hidden از اسکریپت nav-system ست می‌شود */
+#hz-nav-toggle.hz-toggle-hidden{display:none!important}
+#hz-nav-toggle:hover{color:var(--foreground,#292524);background:var(--accent,#f5f5f4)}
+#hz-nav-toggle svg{width:13px;height:13px}
+.hz-nav-compact #hz-nav-toggle{right:calc(56px - 11px)}
+/* ── R9: تعویض نرم زیرمنو — عنوان با محوشدگی، آیتم‌های منو با لغشت کوتاهِ پله‌ای ──
+   (پیش از این کل بلوک یک‌تکه می‌آمد — اثر «بد» گزارش‌شدهٔ مالک؛ حالا هر آیتم با ~۳۵ms تأخیر پله‌ای می‌آید) */
+@keyframes hz-submenu-fade{from{opacity:0}to{opacity:1}}
+@keyframes hz-submenu-in{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+.workspace-sidebar.hz-submenu-swap>div:first-child{animation:hz-submenu-fade .16s ease-out both}
+.workspace-sidebar.hz-submenu-swap>h2{animation:hz-submenu-fade .16s ease-out both}
+.workspace-sidebar.hz-submenu-swap>nav{animation:hz-submenu-fade .16s ease-out both}
+.workspace-sidebar.hz-submenu-swap>nav>*{animation:hz-submenu-in .22s cubic-bezier(.2,.8,.2,1) both}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(1){animation-delay:0ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(2){animation-delay:35ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(3){animation-delay:70ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(4){animation-delay:105ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(5){animation-delay:135ms}
+.workspace-sidebar.hz-submenu-swap>nav>*:nth-child(n+6){animation-delay:160ms}
+/* ── R8: دکمه‌های ساده (بدون کامپوننت دکمهٔ شادکن) هم نشانگر دست داشته باشند —
+   Tailwind 4 به‌طور پیش‌فرض cursor:pointer را از دکمه‌ها برداشته و «غیرفعال» به‌نظر می‌رسند ── */
+button:not(:disabled):not(.cursor-default),[role="button"]:not(:disabled){cursor:pointer}
+/* ── R8: کشوی زیرمنوی موبایل — سریع‌تر و نرم‌تر (500ms→260ms با easing استاندارد متریال) ── */
+.hz-drawer-fast{transition-duration:.26s!important;transition-timing-function:cubic-bezier(.32,.72,.24,1)!important}
+/* ── R7: موبایل — منوی اصلی به‌صورت تب‌بار پایین صفحه (الگوی استاندارد اپ‌های فارسی) و
+      زیرمنو با کشوی همبرگری + لمس بخشِ فعال، کشو را باز می‌کند ── */
+@media(max-width:767px){
+  #hz-nav-toggle{display:none}
+  .workspace-rail{position:fixed;bottom:0;right:0;left:0;top:auto;width:100%!important;height:auto;flex-direction:row;justify-content:space-around;align-items:stretch;padding:4px 4px calc(4px + env(safe-area-inset-bottom))!important;border-top:1px solid var(--border,#e7e5e4);border-inline-end:0!important;background:var(--sidebar,#fafaf9);z-index:40;overscroll-behavior:contain;box-shadow:0 -4px 14px rgba(0,0,0,.06)}
+  .workspace-rail>button{width:auto!important;height:52px;flex:1 1 0;min-width:0;gap:2px!important;border-radius:12px}
+  .workspace-rail>button>svg{width:21px!important;height:21px!important}
+  .workspace-rail>button>span{font-size:9.5px!important;line-height:1.2!important}
+  .workspace-rail>button>span.absolute{display:none}
+  main .view-enter{padding-bottom:calc(74px + env(safe-area-inset-bottom))}
+  footer{margin-bottom:calc(62px + env(safe-area-inset-bottom))}
+}</style><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/f6da3433981b0125.js"/><script src="/_next/static/chunks/2e9c5333df59f348.js" async=""></script><script src="/_next/static/chunks/a024e94bb56323e5.js" async=""></script><script src="/_next/static/chunks/turbopack-ea80b7f2a53da687.js" async=""></script><script src="/_next/static/chunks/452a3479b1b93bbe.js" async=""></script><script src="/_next/static/chunks/5105b1fa99b48db0.js" async=""></script><script src="/_next/static/chunks/2fb9e5ced3d1b0e6.js" async=""></script><script src="/_next/static/chunks/f58febe0f4682bee.js" async=""></script><script src="/_next/static/chunks/c68fd1f39a67d827.js" async=""></script><meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f4ea"/><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a2019"/><title>سر رسید | سامانه یکپارچه مدیریت هایپر زیتون</title><meta name="description" content="سامانه یکپارچه مدیریت هایپر زیتون — انبار و سفارش، مرجوعی، سودسنج، مالی و چک، چیدمان فروشگاه، کارکنان و چک‌لیست‌های استاندارد"/><meta name="application-name" content="سر رسید"/><link rel="manifest" href="/manifest.webmanifest"/><meta name="format-detection" content="telephone=no"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-title" content="سر رسید"/><meta name="apple-mobile-web-app-status-bar-style" content="default"/><link rel="icon" href="/brand/icon-192.png" type="image/png" sizes="192x192"/><link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" sizes="180x180"/><script>
+(function () {
+  try {
+    var t = localStorage.getItem('hz-theme');
+    if (!t) t = 'light';
+    if (t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) {}
+})();
+</script><script>
+/* ── Ctrl+K: جستجوی سامانه (نه جستجوی مرورگر) — فاز capture ── */
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K' || e.keyCode === 75)) {
+    e.preventDefault();
+    e.stopPropagation();
+    var kbds = document.querySelectorAll('header button kbd, button kbd');
+    for (var i = 0; i < kbds.length; i++) {
+      if ((kbds[i].textContent || '').trim().toLowerCase() === 'k') {
+        var btn = kbds[i].closest('button');
+        if (btn) { btn.click(); return; }
+      }
+    }
+  }
+}, true);
+</script><script>
+/* ── R12: بازهدایش مسیرهای قدیمی سودسنج — بخش «سودسنج» زیر «مالی» رفت ──
+   #/profit/builder → #/finance/builder · #/profit/history → #/finance/invoices
+   #/profit/stats   → #/finance/stats   (کوئری‌استرینگ حفظ می‌شود) */
+(function () {
+  var MAP = { builder: 'finance/builder', history: 'finance/invoices', stats: 'finance/stats' };
+  function fix() {
+    var m = (location.hash || '').match(/^#\/profit\/([a-z]+)(\?.*)?$/);
+    if (!m) return;
+    var to = MAP[m[1]];
+    if (!to) return;
+    var next = '#/' + to + (m[2] || '');
+    try { location.replace(next); } catch (e) { location.hash = next; }
+  }
+  window.addEventListener('hashchange', fix);
+  fix();
+})();
+</script><script>
+/* ── تاریخ‌گیر شمسی سراسری — همهٔ ورودی‌های تاریخ اپ (حتی صفحات قدیمی) ──
+   ورودی‌هایی که placeholder یا مقدارشان الگوی تاریخ شمسی دارد (۱۴۰۴/۱۰/۲۰ …)
+   با کلیک، تقویم شمسی برایشان باز می‌شود. مقدار با رویداد input واقعی ست می‌شود
+   تا React هم state را به‌روز کند. کامپوننت‌های جدید (hz-jalali-input) رد می‌شوند. */
+(function () {
+  'use strict';
+  var PANEL_ID = 'hz-global-jalali-picker';
+  var FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+  function toEn(s){ return String(s||'').replace(/[۰-۹]/g,function(d){return FA_DIGITS.indexOf(d)}); }
+  function toFa(s){ return String(s||'').replace(/\d/g,function(d){return FA_DIGITS[+d]}); }
+  function pad2(n){ return (n<10?'0':'')+n; }
+  var JM = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  var JW = ['ش','ی','د','س','چ','پ','ج'];
+  function j2g(jy,jm,jd){ jy+=1595; var days=-355668+(365*jy)+(~~(jy/33)*8)+~~(((jy%33)+3)/4)+jd+((jm<7)?(jm-1)*31:((jm-7)*30)+186); var gy=400*~~(days/146097); days%=146097; if(days>36524){gy+=100*~~(--days/36524);days%=36524;if(days>=365)days++;} gy+=4*~~(days/1461); days%=1461; if(days>365){gy+=~~((days-1)/365);days=(days-1)%365;} var gd=days+1; var sal_a=[0,31,((gy%4===0&&gy%100!==0)||(gy%400===0))?29:28,31,30,31,30,31,31,30,31,30,31]; var gm; for(gm=0;gm<13&&gd>sal_a[gm];gm++)gd-=sal_a[gm]; return [gy,gm,gd]; }
+  function g2j(gy,gm,gd){ var g_d_m=[0,31,59,90,120,151,181,212,243,273,304,334]; var jy=gy<=1600?0:979; var gy2=gy<=1600?gy-621:gy-1600; var gy3=gm>2?gy2+1:gy2; var days=365*gy2+Math.floor((gy3+3)/4)-Math.floor((gy3+99)/100)+Math.floor((gy3+399)/400)-80+gd+g_d_m[gm-1]; jy+=33*Math.floor(days/12053); days%=12053; jy+=4*Math.floor(days/1461); days%=1461; if(days>365){jy+=Math.floor((days-1)/365);days=(days-1)%365;} var jm=days<186?1+Math.floor(days/31):7+Math.floor((days-186)/30); var jd=1+(days<186?days%31:(days-186)%30); return [jy,jm,jd]; }
+  function jLen(jy,jm){ if(jm<=6)return 31; if(jm<=11)return 30; return ((((jy-474)%2820)+2820)%2820+474+38)*31%128<31?30:29; }
+  function todayJ(){ var d=new Date(); return g2j(d.getFullYear(),d.getMonth()+1,d.getDate()); }
+  function parseJ(s){ var m=toEn(s).match(/^(1[34]\d{2})[-\/](\d{1,2})[-\/](\d{1,2})$/); if(!m)return null; var jy=+m[1],jm=+m[2],jd=+m[3]; if(jm<1||jm>12||jd<1||jd>jLen(jy,jm))return null; return [jy,jm,jd]; }
+  function isDateInput(el){
+    if (!(el instanceof HTMLInputElement) || el.disabled || el.readOnly) return false;
+    if ((el.className||'').toString().indexOf('hz-jalali')>=0 || el.getAttribute('data-hz-date')!=null) return false;
+    if (el.getAttribute('type')==='date' || el.getAttribute('type')==='month') return false;
+    var ph = toEn(el.placeholder||''), val = toEn(el.value||'');
+    return /^1[34]\d[-\/]/.test(ph) || /^1[34]\d{2}[-\/]\d/.test(ph) || /^1[34]\d{2}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(val);
+  }
+  var panel=null, curInput=null, curView=null, curSel=null;
+  function ensurePanel(){
+    if (panel) return;
+    panel=document.createElement('div'); panel.id=PANEL_ID; panel.dir='rtl';
+    panel.style.cssText='position:fixed;z-index:99999;display:none;width:256px;padding:10px;border-radius:14px;border:1px solid var(--border,#d6d3d1);background:var(--background,#fff);box-shadow:0 12px 40px rgba(0,0,0,.18);font-family:Vazirmatn,Tahoma,sans-serif';
+    document.body.appendChild(panel);
+    document.addEventListener('mousedown', function(e){
+      if (panel.style.display!=='none' && !panel.contains(e.target) && e.target!==curInput) hide();
+    }, true);
+    window.addEventListener('scroll', function(){ if(panel.style.display!=='none'&&curInput) position(); }, true);
+  }
+  function hide(){ if(panel) panel.style.display='none'; curInput=null; }
+  function position(){
+    if(!curInput) return;
+    var r=curInput.getBoundingClientRect();
+    var top=r.bottom+6, left=r.left;
+    if (top+270>innerHeight) top=Math.max(8,r.top-274);
+    if (left+260>innerWidth-8) left=Math.max(8,innerWidth-268);
+    panel.style.top=top+'px'; panel.style.left=left+'px';
+  }
+  function render(){
+    var jy=curView[0], jm=curView[1];
+    var sel=curSel;
+    var t=todayJ();
+    var first=j2g(jy,jm,1); // js (gregorian) date of 1st
+    var fd=new Date(first[0],first[1]-1,first[2]);
+    var firstCol=(fd.getDay()+1)%7;
+    var len=jLen(jy,jm);
+    var h='';
+    h+='<style>#'+PANEL_ID+' *{box-sizing:border-box}#'+PANEL_ID+' button{font-family:inherit;cursor:pointer;border:0;background:none}</style>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+    /* SVG chevrons — نویسه‌های ‹ › در RTL آینه می‌شوند و جهت را وارونه نشان می‌دهند؛ SVG هرگز آینه نمی‌شود */
+    h+='<button data-nav="-1" title="ماه قبل" aria-label="ماه قبل" style="padding:4px 8px;border-radius:8px;color:var(--muted-foreground,#78716c);display:flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>';
+    h+='<div style="font-size:13px;font-weight:800;color:var(--foreground,#292524)">'+JM[jm-1]+' '+toFa(String(jy))+'</div>';
+    h+='<button data-nav="1" title="ماه بعد" aria-label="ماه بعد" style="padding:4px 8px;border-radius:8px;color:var(--muted-foreground,#78716c);display:flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button></div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px">';
+    for(var w=0;w<7;w++) h+='<div style="text-align:center;font-size:10px;font-weight:600;color:'+(w===6?'#e11d48':'var(--muted-foreground,#a8a29e)')+'">'+JW[w]+'</div>';
+    h+='</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
+    for(var i=0;i<firstCol;i++) h+='<div></div>';
+    for(var d=1;d<=len;d++){
+      var isT=(jy===t[0]&&jm===t[1]&&d===t[2]);
+      var isS=sel&&(jy===sel[0]&&jm===sel[1]&&d===sel[2]);
+      var col=((firstCol+d-1)%7===6);
+      var st='height:28px;border-radius:8px;font-size:11.5px;font-weight:600;';
+      if(isS) st+='background:#0e7a49;color:#fff;';
+      else if(isT) st+='border:1.5px solid #0e7a49;color:#0e7a49;';
+      else if(col) st+='color:#e11d48;';
+      else st+='color:var(--foreground,#44403c);';
+      h+='<button data-d="'+d+'" style="'+st+'">'+toFa(String(d))+'</button>';
+    }
+    h+='</div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#e7e5e4)">';
+    h+='<button data-today="1" style="padding:4px 10px;border-radius:8px;font-size:11px;font-weight:800;color:#0e7a49">امروز</button>';
+    h+='<span style="font-size:9.5px;color:var(--muted-foreground,#a8a29e)">'+toFa(t[0]+'/'+pad2(t[1])+'/'+pad2(t[2]))+'</span></div>';
+    panel.innerHTML=h;
+    panel.querySelectorAll('[data-nav]').forEach(function(b){
+      b.addEventListener('click',function(){ var n=+b.getAttribute('data-nav'); var jm2=curView[1]+n, jy2=curView[0];
+        if(jm2<1){jm2=12;jy2--;}else if(jm2>12){jm2=1;jy2++;} curView=[jy2,jm2]; render(); });
+    });
+    panel.querySelectorAll('[data-d]').forEach(function(b){
+      b.addEventListener('click',function(){ pick(+b.getAttribute('data-d')); });
+    });
+    var tb=panel.querySelector('[data-today]');
+    if(tb) tb.addEventListener('click',function(){ var t2=todayJ(); pick2(t2[0],t2[1],t2[2]); });
+  }
+  function pick(d){ pick2(curView[0],curView[1],d); }
+  function pick2(jy,jm,jd){
+    var val=jy+'-'+pad2(jm)+'-'+pad2(jd);
+    if(curInput){
+      var setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+      setter.call(curInput, toFa(val));
+      curInput.dispatchEvent(new Event('input',{bubbles:true}));
+      curInput.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    hide();
+  }
+  function openFor(el){
+    ensurePanel(); curInput=el;
+    var p=parseJ(el.value||''); var t=todayJ();
+    curSel=p; curView=p?[p[0],p[1]]:[t[0],t[1]];
+    render(); panel.style.display='block'; position();
+  }
+  function scan(root){
+    try{
+      var inputs=(root||document).querySelectorAll('input');
+      for(var i=0;i<inputs.length;i++){
+        var el=inputs[i];
+        if (el.getAttribute('data-hz-date')!=null) continue;
+        if (isDateInput(el)){
+          el.setAttribute('data-hz-date','1');
+          (function(elm){
+            elm.addEventListener('focus',function(){ openFor(elm); });
+            elm.addEventListener('click',function(e){ e.preventDefault(); openFor(elm); });
+          })(el);
+        }
+      }
+    }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',function(){ scan(document); });
+  var mo=new MutationObserver(function(muts){
+    for(var i=0;i<muts.length;i++){
+      var m=muts[i];
+      for(var j=0;j<m.addedNodes.length;j++){
+        var n=m.addedNodes[j];
+        if(n.nodeType===1){ if(n.tagName==='INPUT') scan(n.parentNode||document); else scan(n); }
+      }
+    }
+  });
+  mo.observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script><script data-hz-ux="user-menu">
+/* ── «پروفایل من» در منوی کاربر (بالا) → #/home/account ── */
+(function(){
+  function inject(menu){
+    try{
+      if(!menu || menu.getAttribute('data-hz-profile')!=null) return;
+      menu.setAttribute('data-hz-profile','1');
+      var items=menu.querySelectorAll('[role=menuitem]');
+      var anchor=null;
+      for(var i=0;i<items.length;i++){
+        var t=items[i].textContent||'';
+        if(t.indexOf('میزکار من')>-1||t.indexOf('حالت تاریک')>-1){ anchor=items[i]; break; }
+      }
+      if(!anchor) return;
+      var clone=anchor.cloneNode(true);
+      clone.setAttribute('data-hz-profile-item','1');
+      clone.removeAttribute('id');
+      for(var ci=clone.childNodes.length-1;ci>=0;ci--){
+        if(clone.childNodes[ci].nodeType===3) clone.removeChild(clone.childNodes[ci]);
+      }
+      var svg=clone.querySelector('svg');
+      if(svg){
+        svg.innerHTML='<circle cx="12" cy="8" r="4"></circle><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path>';
+      }
+      clone.appendChild(document.createTextNode('پروفایل من'));
+      clone.addEventListener('click',function(ev){
+        ev.preventDefault(); ev.stopPropagation();
+        try{ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); }catch(e){}
+        /* پیمایش فوری + بازتأیید در ۶۰/۳۰۰/۶۰۰/۹۰۰ms — اگر بستن منو یا پردازش
+           همراه، هش را برگرداند، دوباره ست می‌کنیم (سازگار با دستگاه‌های کند) */
+        var delays=[0,60,300,600,900];
+        for(var di=0;di<delays.length;di++){
+          (function(ms){
+            setTimeout(function(){
+              try{ if(location.hash!=='#/home/account') location.hash='#/home/account'; }catch(e){}
+            },ms);
+          })(delays[di]);
+        }
+      });
+      anchor.parentNode.insertBefore(clone,anchor);
+    }catch(e){}
+  }
+  function scan(root){
+    try{
+      var menus=(root||document).querySelectorAll('[role=menu]');
+      for(var i=0;i<menus.length;i++){
+        if(((menus[i].textContent||'').indexOf('خروج از حساب')>-1)) inject(menus[i]);
+      }
+    }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',function(){ scan(document); });
+  var mo=new MutationObserver(function(muts){
+    for(var i=0;i<muts.length;i++){
+      var m=muts[i];
+      for(var j=0;j<m.addedNodes.length;j++){
+        var n=m.addedNodes[j];
+        if(n.nodeType!==1) continue;
+        if(n.getAttribute&&n.getAttribute('role')==='menu'&&((n.textContent||'').indexOf('خروج از حساب')>-1)) inject(n);
+        else scan(n);
+      }
+    }
+  });
+  mo.observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script><script data-hz-ux="hide-account-nav">
+/* ── «حساب و شخصی‌سازی من» در زیرمنوی خانه پنهان است (R5-P5) ──
+   صفحهٔ home/account باید از مسیریابیHash قابل دسترس باشد (منوی کاربر ←
+   «پروفایل من»)؛ برای همین در فهرست pages خانه ثبت شده اما دکمهٔ آن در
+   نوار کناری نمایش داده نمی‌شود — دسترسی فقط از منوی کاربر و جستجوی سامانه. */
+(function(){
+  var TITLE='حساب و شخصی‌سازی من';
+  function hide(root){
+    try{
+      var scope=root&&root.querySelectorAll?root:document;
+      var btns=scope.querySelectorAll('.workspace-sidebar nav>button, aside nav>button, nav button');
+      for(var i=0;i<btns.length;i++){
+        var b=btns[i];
+        if(b.getAttribute('data-hz-hidden-nav'))continue;
+        if((b.textContent||'').replace(/\s+/g,' ').trim()===TITLE){
+          b.setAttribute('data-hz-hidden-nav','1');
+          b.style.display='none';
+          b.setAttribute('aria-hidden','true');
+          b.setAttribute('tabindex','-1');
+        }
+      }
+    }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',function(){hide(document)});
+  var mo=new MutationObserver(function(muts){
+    for(var i=0;i<muts.length;i++){
+      var m=muts[i];
+      for(var j=0;j<m.addedNodes.length;j++){
+        var n=m.addedNodes[j];
+        if(n.nodeType!==1)continue;
+        if((n.tagName==='BUTTON'||n.querySelector)&&((n.textContent||'').indexOf(TITLE)>-1))hide(n.parentNode||document);
+      }
+    }
+  });
+  mo.observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script><script data-hz-ux="comms-nav">
+/* ── R21: بخش «ارتباطات» (گفت‌وگوها + پیامک + ایمیل) و «فروشگاه آنلاین» در نوار بخش‌ها ──
+   گفت‌وگوها/پیامک با مسیریابی هش خود SPA می‌روند؛ ایمیل و پنل فروشگاه صفحات کامل سر رسیداند. */
+(function(){
+  'use strict';
+  var SVG_COMMS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>';
+  var SVG_SHOP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path></svg>';
+  var SVG_MAIL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="m22 7-10 6L2 7"></path></svg>';
+  var SVG_CHAT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"></path></svg>';
+  var panel=null;
+  function closePanel(){ if(panel){ panel.remove(); panel=null; } }
+  function openPanel(anchorBtn){
+    closePanel();
+    panel=document.createElement('div');
+    panel.setAttribute('data-hz-comms-panel','1');
+    panel.dir='rtl';
+    panel.style.cssText='position:fixed;z-index:60;background:var(--sidebar,#fafaf9);border:1px solid var(--border,#e7e5e4);border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.14);padding:8px;min-width:230px';
+    var r=anchorBtn.getBoundingClientRect();
+    if(window.innerWidth>767){ panel.style.top=Math.min(r.bottom+8, window.innerHeight-260)+'px'; panel.style.right=Math.max(8, window.innerWidth-r.right)+'px'; }
+    else { panel.style.bottom=(r.height+12)+'px'; panel.style.right='10px'; }
+    panel.innerHTML=
+      '<div style="font-size:13px;font-weight:800;padding:6px 10px 4px;color:var(--foreground,#292524)">ارتباطات</div>';
+    function item(svg,label,fn){
+      var b=document.createElement('button');
+      b.type='button';
+      b.style.cssText='display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;font:inherit;font-size:14px;color:var(--foreground,#292524);padding:10px 10px;border-radius:10px;cursor:pointer;text-align:right';
+      b.onmouseenter=function(){ b.style.background='var(--accent,#f5f5f4)'; };
+      b.onmouseleave=function(){ b.style.background='none'; };
+      b.innerHTML='<span style="width:22px;height:22px;display:inline-flex;color:var(--muted-foreground,#78716c)">'+svg+'</span>'+label;
+      b.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); closePanel(); fn(); };
+      panel.appendChild(b);
+    }
+    item(SVG_CHAT,'گفت‌وگوها (چت داخلی)',function(){ location.hash='#/messages'; });
+    item('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H8l-4 4z"></path><path d="M8 9h8"></path><path d="M8 12h5"></path></svg>','مرکز پیامک و اطلاع‌رسانی',function(){ location.hash='#/system/smscenter'; });
+    item(SVG_MAIL,'ایمیل (صندوق هایپر زیتون)',function(){ window.location.href='/email'; });
+    var sep=document.createElement('div');
+    sep.style.cssText='height:1px;background:var(--border,#e7e5e4);margin:6px 6px';
+    panel.appendChild(sep);
+    var shop=document.createElement('button');
+    shop.type='button';
+    shop.style.cssText='display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;font:inherit;font-size:14px;font-weight:700;color:#0e7a4a;padding:10px;border-radius:10px;cursor:pointer;text-align:right';
+    shop.onmouseenter=function(){ shop.style.background='#eef3ee'; };
+    shop.onmouseleave=function(){ shop.style.background='none'; };
+    shop.innerHTML='<span style="width:22px;height:22px;display:inline-flex;color:#0e7a4a">'+SVG_SHOP+'</span>فروشگاه آنلاین (سفارش‌ها)';
+    shop.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); closePanel(); window.location.href='/shop-ops'; };
+    panel.appendChild(shop);
+    document.body.appendChild(panel);
+    setTimeout(function(){
+      document.addEventListener('click',function h(e){ if(panel && !panel.contains(e.target)) closePanel(); document.removeEventListener('click',h); });
+    },0);
+  }
+  function injectRail(rail){
+    try{
+      if(!rail || rail.getAttribute('data-hz-comms')!=null) return;
+      rail.setAttribute('data-hz-comms','1');
+      function railBtn(svg,label,fn){
+        var b=document.createElement('button');
+        b.type='button';
+        b.title=label; b.setAttribute('aria-label',label);
+        b.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;flex-shrink:0;cursor:pointer';
+        b.innerHTML='<span style="width:30px;height:30px;display:inline-flex">'+svg+'</span><span style="font-size:12px;line-height:1.3;font-weight:600">'+label+'</span>';
+        b.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); fn(b); };
+        rail.appendChild(b);
+      }
+      railBtn(SVG_COMMS,'ارتباطات',function(btn){ if(panel) closePanel(); else openPanel(btn); });
+      railBtn(SVG_SHOP,'فروشگاه',function(){ window.location.href='/shop-ops'; });
+    }catch(e){}
+  }
+  function scan(root){
+    try{
+      var rails=document.querySelectorAll('.workspace-rail');
+      for(var i=0;i<rails.length;i++) injectRail(rails[i]);
+    }catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',function(){ scan(document); });
+  var mo=new MutationObserver(function(){ scan(document); });
+  mo.observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script><script data-hz-ux="nav-system">
+/* ── R7: سامانهٔ منو — دکمهٔ جمع‌کردن منو (دسکتاپ) + باز شدن کشوی زیرمنو با لمس بخشِ فعال (موبایل)
+   + هدایت hr/personnel قدیمی به پرونده پرسنل جدید
+   R8: ① دکمهٔ جمع‌کردن فقط وقتی نوار بخش‌ها در صفحه هست نمایش می‌یابد (صفحهٔ ورود نه!)
+      ② تعویض محتوای زیرمنو با انیمیشن نرم (کلاس hz-submenu-swap روی تغییر عنوان بخش)
+      ③ کشوی موبایل سریع‌تر (hz-drawer-fast) ── */
+(function(){
+  'use strict';
+  /* ۱) بازگرداندن حالت جمع‌شده پیش از رندر (بدون فلش منوی باز) */
+  try{ if(localStorage.getItem('hz-nav-compact')==='1') document.documentElement.classList.add('hz-nav-compact'); }catch(e){}
+
+  var SVG_COLLAPSE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+  var SVG_EXPAND='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+  function updateToggle(){
+    var b=document.getElementById('hz-nav-toggle'); if(!b)return;
+    var compact=document.documentElement.classList.contains('hz-nav-compact');
+    b.innerHTML=compact?SVG_EXPAND:SVG_COLLAPSE;
+    b.title=compact?'باز کردن منو':'جمع کردن منو';
+    b.setAttribute('aria-label',b.title);
+    b.setAttribute('aria-expanded',compact?'false':'true');
+  }
+  /* R8: صفحهٔ ورود نوار بخش‌ها ندارد — دکمهٔ جمع‌کردن باید پنهان بماند */
+  function syncToggleVisibility(){
+    var b=document.getElementById('hz-nav-toggle'); if(!b)return;
+    var hasRail=!!document.querySelector('.workspace-rail');
+    var hasLogin=document.body && (document.body.textContent||'').indexOf('ورود امن')>-1 && !hasRail;
+    if(hasRail && !hasLogin) b.classList.remove('hz-toggle-hidden');
+    else b.classList.add('hz-toggle-hidden');
+  }
+  function ensureToggle(){
+    if(document.getElementById('hz-nav-toggle')||!document.body)return;
+    var b=document.createElement('button');
+    b.id='hz-nav-toggle';b.type='button';
+    b.addEventListener('click',function(){
+      var on=document.documentElement.classList.toggle('hz-nav-compact');
+      try{localStorage.setItem('hz-nav-compact',on?'1':'0')}catch(e){}
+      updateToggle();
+    });
+    document.body.appendChild(b);
+    updateToggle();
+    syncToggleVisibility();
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',ensureToggle)}else{ensureToggle()}
+  var moT=new MutationObserver(function(){ensureToggle();syncToggleVisibility()});
+  moT.observe(document.documentElement,{childList:true,subtree:true});
+
+  /* R8-②: انیمیشن نرم تعویض محتوای زیرمنو — وقتی عنوان بخش (h2) تغییر کند،
+     کلاس hz-submenu-swap برای ۳۰۰ms روی aside می‌نشیند تا فرزندان با لغزش نرم بیایند */
+  (function(){
+    var lastTitle='';
+    function arm(){
+      var sb=document.querySelector('.workspace-sidebar'); if(!sb)return;
+      var h=sb.querySelector('h2');
+      var t=(h&&h.textContent||'').trim();
+      if(t && t!==lastTitle){
+        lastTitle=t;
+        sb.classList.remove('hz-submenu-swap');
+        /* دو rAF تا انیمیشن قطعاً از نو اجرا شود */
+        requestAnimationFrame(function(){requestAnimationFrame(function(){
+          sb.classList.add('hz-submenu-swap');
+          setTimeout(function(){sb.classList.remove('hz-submenu-swap')},460);
+        })});
+      }
+    }
+    arm();
+    var moS=new MutationObserver(arm);
+    moS.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+  })();
+
+  /* R8-③: کشوی زیرمنوی موبایل (Sheet رادیکس) — کلاس سرعت به محتوای کشو */
+  (function(){
+    function fastify(){
+      try{
+        var els=document.querySelectorAll('[data-state].fixed.z-50');
+        for(var i=0;i<els.length;i++){
+          var el=els[i];
+          if(el.getAttribute('data-hz-fast')!=null)continue;
+          /* فقط کشویی که منوی ناوبری دارد (نه سایر دیالوگ‌ها) */
+          if((el.textContent||'').indexOf('منوی ناوبری')>-1||(el.textContent||'').indexOf('سر رسید')>-1){
+            el.setAttribute('data-hz-fast','1');
+            el.classList.add('hz-drawer-fast');
+          }
+        }
+      }catch(e){}
+    }
+    if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',fastify)}else{fastify()}
+    var moF=new MutationObserver(fastify);
+    moF.observe(document.documentElement,{childList:true,subtree:true});
+  })();
+
+  /* ۲) موبایل: لمس بخشِ فعال در تب‌بار، کشوی زیرمنو (همبرگر) را باز می‌کند */
+  document.addEventListener('click',function(e){
+    try{
+      if(window.innerWidth>=768)return;
+      var t=e.target;
+      var btn=t&&t.closest?t.closest('.workspace-rail>button'):null;
+      if(!btn||btn.getAttribute('aria-current')!=='page')return;
+      var burger=document.querySelector('header button[aria-label="منو"]');
+      if(burger){e.preventDefault();e.stopPropagation();burger.click();}
+    }catch(err){}
+  },true);
+
+  /* ۳) نشانی‌های قدیمی hr/personnel → پرونده پرسنل (hrdocs) */
+  function fixHash(){
+    var h=location.hash||'';
+    if(h==='#/hr/personnel'||h==='#/hr/personnel/'){try{location.replace('#/hr/hrdocs')}catch(e){location.hash='#/hr/hrdocs'}}
+  }
+  window.addEventListener('hashchange',fixHash);
+  fixHash();
+})();
+</script><script src="/_next/static/chunks/a6dad97d9634a72d.js" noModule=""></script>
+<!-- R15: بازهدایش بخش قدیمی «مرجوعی» → «فروش و مشتریان» (crm) — لینک‌های فروزن را هم می‌گیرد
+     returns/new|history|approvals|payments → crm/… · returns/customers → crm/notebook -->
+<script id="returns2crm">
+(function () {
+  var MAP = { new: 'crm/new', history: 'crm/history', approvals: 'crm/approvals', payments: 'crm/payments', customers: 'crm/notebook' };
+  function fix() {
+    var m = (location.hash || '').match(/^#\/returns\/([a-z]+)(\?.*)?$/);
+    if (!m) return;
+    var to = MAP[m[1]];
+    if (!to) return;
+    var next = '#/' + to + (m[2] || '');
+    try { location.replace(next); } catch (e) { location.hash = next; }
+  }
+  window.addEventListener('hashchange', fix);
+  fix();
+})();
+</script>
+</head><body class="antialiased bg-background text-foreground min-h-screen"><div hidden=""><!--$--><!--/$--></div><div class="min-h-screen flex items-center justify-center"><div class="text-center"><div class="w-14 h-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center text-2xl mx-auto mb-3 animate-pulse">🫒</div><p class="text-sm text-muted-foreground">در حال بارگذاری سامانه…</p></div></div><!--$--><!--/$--><section aria-label="Notifications alt+T" tabindex="-1" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></section><script src="/_next/static/chunks/f6da3433981b0125.js" id="_R_" async=""></script><script>(self.__next_f=self.__next_f||[]).push([0])</script><script>self.__next_f.push([1,"1:\"$Sreact.fragment\"\n2:I[339756,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"default\"]\n3:I[837457,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"default\"]\n4:I[713354,[\"/_next/static/chunks/5105b1fa99b48db0.js\"],\"Toaster\"]\n5:I[573254,[\"/_next/static/chunks/5105b1fa99b48db0.js\",\"/_next/static/chunks/2fb9e5ced3d1b0e6.js\",\"/_next/static/chunks/f58febe0f4682bee.js\",\"/_next/static/chunks/c68fd1f39a67d827.js\"],\"AppShell\"]\n6:I[897367,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"OutletBoundary\"]\n7:\"$Sreact.suspense\"\n9:I[897367,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"ViewportBoundary\"]\nb:I[897367,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"MetadataBoundary\"]\nd:I[168027,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"default\"]\n:HL[\"/_next/static/chunks/b8c5081c57c11dd3.css\",\"style\"]\n"])</script><script>self.__next_f.push([1,"0:{\"P\":null,\"b\":\"beAIsjrl1RIepLOuaIq-W\",\"c\":[\"\",\"\"],\"q\":\"\",\"i\":false,\"f\":[[[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true],[[\"$\",\"$1\",\"c\",{\"children\":[[[\"$\",\"link\",\"0\",{\"rel\":\"stylesheet\",\"href\":\"/_next/static/chunks/b8c5081c57c11dd3.css\",\"precedence\":\"next\",\"crossOrigin\":\"$undefined\",\"nonce\":\"$undefined\"}],[\"$\",\"script\",\"script-0\",{\"src\":\"/_next/static/chunks/5105b1fa99b48db0.js\",\"async\":true,\"nonce\":\"$undefined\"}]],[\"$\",\"html\",null,{\"lang\":\"fa\",\"dir\":\"rtl\",\"suppressHydrationWarning\":true,\"children\":[[\"$\",\"head\",null,{\"children\":[\"$\",\"script\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"\\n(function () {\\n  try {\\n    var t = localStorage.getItem('hz-theme');\\n    if (!t) t = 'light';\\n    if (t === 'dark' || (t === 'system' \u0026\u0026 window.matchMedia('(prefers-color-scheme: dark)').matches)) {\\n      document.documentElement.classList.add('dark');\\n    }\\n  } catch (e) {}\\n})();\\n\"}}]}],[\"$\",\"body\",null,{\"className\":\"antialiased bg-background text-foreground min-h-screen\",\"children\":[[\"$\",\"$L2\",null,{\"parallelRouterKey\":\"children\",\"error\":\"$undefined\",\"errorStyles\":\"$undefined\",\"errorScripts\":\"$undefined\",\"template\":[\"$\",\"$L3\",null,{}],\"templateStyles\":\"$undefined\",\"templateScripts\":\"$undefined\",\"notFound\":[[[\"$\",\"title\",null,{\"children\":\"404: This page could not be found.\"}],[\"$\",\"div\",null,{\"style\":{\"fontFamily\":\"system-ui,\\\"Segoe UI\\\",Roboto,Helvetica,Arial,sans-serif,\\\"Apple Color Emoji\\\",\\\"Segoe UI Emoji\\\"\",\"height\":\"100vh\",\"textAlign\":\"center\",\"display\":\"flex\",\"flexDirection\":\"column\",\"alignItems\":\"center\",\"justifyContent\":\"center\"},\"children\":[\"$\",\"div\",null,{\"children\":[[\"$\",\"style\",null,{\"dangerouslySetInnerHTML\":{\"__html\":\"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}\"}}],[\"$\",\"h1\",null,{\"className\":\"next-error-h1\",\"style\":{\"display\":\"inline-block\",\"margin\":\"0 20px 0 0\",\"padding\":\"0 23px 0 0\",\"fontSize\":24,\"fontWeight\":500,\"verticalAlign\":\"top\",\"lineHeight\":\"49px\"},\"children\":404}],[\"$\",\"div\",null,{\"style\":{\"display\":\"inline-block\"},\"children\":[\"$\",\"h2\",null,{\"style\":{\"fontSize\":14,\"fontWeight\":400,\"lineHeight\":\"49px\",\"margin\":0},\"children\":\"This page could not be found.\"}]}]]}]}]],[]],\"forbidden\":\"$undefined\",\"unauthorized\":\"$undefined\"}],[\"$\",\"$L4\",null,{\"position\":\"bottom-center\",\"richColors\":true,\"closeButton\":true,\"dir\":\"rtl\"}]]}]]}]]}],{\"children\":[[\"$\",\"$1\",\"c\",{\"children\":[[\"$\",\"$L5\",null,{}],[[\"$\",\"script\",\"script-0\",{\"src\":\"/_next/static/chunks/2fb9e5ced3d1b0e6.js\",\"async\":true,\"nonce\":\"$undefined\"}],[\"$\",\"script\",\"script-1\",{\"src\":\"/_next/static/chunks/f58febe0f4682bee.js\",\"async\":true,\"nonce\":\"$undefined\"}],[\"$\",\"script\",\"script-2\",{\"src\":\"/_next/static/chunks/c68fd1f39a67d827.js\",\"async\":true,\"nonce\":\"$undefined\"}]],[\"$\",\"$L6\",null,{\"children\":[\"$\",\"$7\",null,{\"name\":\"Next.MetadataOutlet\",\"children\":\"$@8\"}]}]]}],{},null,false,false]},null,false,false],[\"$\",\"$1\",\"h\",{\"children\":[null,[\"$\",\"$L9\",null,{\"children\":\"$La\"}],[\"$\",\"div\",null,{\"hidden\":true,\"children\":[\"$\",\"$Lb\",null,{\"children\":[\"$\",\"$7\",null,{\"name\":\"Next.Metadata\",\"children\":\"$Lc\"}]}]}],null]}],false]],\"m\":\"$undefined\",\"G\":[\"$d\",[]],\"S\":true}\n"])</script><script>self.__next_f.push([1,"a:[[\"$\",\"meta\",\"0\",{\"charSet\":\"utf-8\"}],[\"$\",\"meta\",\"1\",{\"name\":\"viewport\",\"content\":\"width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover\"}],[\"$\",\"meta\",\"2\",{\"name\":\"theme-color\",\"media\":\"(prefers-color-scheme: light)\",\"content\":\"#f7f4ea\"}],[\"$\",\"meta\",\"3\",{\"name\":\"theme-color\",\"media\":\"(prefers-color-scheme: dark)\",\"content\":\"#1a2019\"}]]\n"])</script><script>self.__next_f.push([1,"e:I[27201,[\"/_next/static/chunks/452a3479b1b93bbe.js\"],\"IconMark\"]\n8:null\nc:[[\"$\",\"title\",\"0\",{\"children\":\"سر رسید | سامانه یکپارچه مدیریت هایپر زیتون\"}],[\"$\",\"meta\",\"1\",{\"name\":\"description\",\"content\":\"سامانه یکپارچه مدیریت هایپر زیتون — انبار و سفارش، مرجوعی، سودسنج، مالی و چک، چیدمان فروشگاه، کارکنان و چک‌لیست‌های استاندارد\"}],[\"$\",\"meta\",\"2\",{\"name\":\"application-name\",\"content\":\"سر رسید\"}],[\"$\",\"link\",\"3\",{\"rel\":\"manifest\",\"href\":\"/manifest.webmanifest\",\"crossOrigin\":\"$undefined\"}],[\"$\",\"meta\",\"4\",{\"name\":\"format-detection\",\"content\":\"telephone=no\"}],[\"$\",\"meta\",\"5\",{\"name\":\"mobile-web-app-capable\",\"content\":\"yes\"}],[\"$\",\"meta\",\"6\",{\"name\":\"apple-mobile-web-app-title\",\"content\":\"سر رسید\"}],[\"$\",\"meta\",\"7\",{\"name\":\"apple-mobile-web-app-status-bar-style\",\"content\":\"default\"}],[\"$\",\"link\",\"8\",{\"rel\":\"icon\",\"href\":\"/brand/icon-192.png\",\"type\":\"image/png\",\"sizes\":\"192x192\"}],[\"$\",\"link\",\"9\",{\"rel\":\"apple-touch-icon\",\"href\":\"/brand/apple-touch-icon.png\",\"sizes\":\"180x180\"}],[\"$\",\"$Le\",\"10\",{}]]\n"])</script></body></html>

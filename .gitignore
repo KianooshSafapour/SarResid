@@ -1,0 +1,86 @@
+# See https://help.github.com/articles/ignoring-a-files/ for more about ignoring files.
+
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+server.log
+
+# env files — هرگز (راز)
+.env
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# ═══ SarResid specific ═══
+
+# دیتابیس — هرگز در git (حجم > ۱۰۰MB؛ مرجع = سرور + /root/backups)
+db/custom.db
+db/*.db
+db/snapshots/
+
+# پکیج‌های deploy — هرگز در git
+deploy/*.tar.gz
+deploy/*.zip
+
+# ابزار محلی sandbox
+scripts/deploy-helper.py
+scripts/sshx.py
+scripts/sync-down.py
+scripts/apply-sync.sh
+tool-results/
+local-*
+.claude
+.z-ai-config
+prompt
+test
+skills/
+docs/live-reference/
+
+# پشتیبان محلی (راز — مودم/سرور)
+local-backups/
+
+# Holoo web service installer (۱۵۰MB+ — فقط مرجع محلی)
+upload/TncHolooWebServiceFull/Java JRE/
+upload/TncHolooWebServiceFull/JarFile/*.jar
+upload/TncHolooWebServiceFull/JarFile/*.exe
+upload/TncHolooWebServiceFull/JarFile/*.log
+
+# storefront
+storefront/.next/
+storefront/node_modules/
+
+# mssql probe (dev-only)
+scripts/mssql-probe/node_modules/
+
+# hz-ext build cache
+hz-ext/.build/

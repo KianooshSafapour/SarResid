@@ -1,0 +1,22 @@
+{
+  "name": "هایپر زیتون — فروشگاه آنلاین",
+  "short_name": "هایپر زیتون",
+  "description": "خرید آنلاین از هایپر زیتون رفسنجان",
+  "lang": "fa-IR",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf9f4",
+  "theme_color": "#1d3a2a",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "سبد خرید", "url": "/cart" },
+    { "name": "سفارش‌های من", "url": "/orders" }
+  ]
+}

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>گزارش انبارگردانی — هایپر زیتون</title>
+<style>
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-Regular.woff2) format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-Medium.woff2) format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-SemiBold.woff2) format('woff2');font-weight:600;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-Bold.woff2) format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-ExtraBold.woff2) format('woff2');font-weight:800;font-display:swap}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;padding:0}
+body{font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;color:#292524;background:#f5f5f4;font-size:12.5px;line-height:1.85}
+.sheet{position:relative;width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:11mm 12mm 13mm;overflow:hidden}
+.doc{position:relative;z-index:1}
+.na{color:#a8a29e}
+/* سربرگ */
+.lh{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.lh-brand{display:flex;align-items:center;gap:11px;min-width:0}
+.lh-emblem{flex:none;width:54px;height:54px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:27px}
+.lh-name{font-size:22px;font-weight:800;color:#065f46;line-height:1.35}
+.lh-sub{font-size:10.5px;font-weight:600;color:#57534e}
+.lh-addr{font-size:8.8px;color:#78716c;margin-top:1px}
+.lh-doc{text-align:left;flex:none;max-width:47%}
+.doc-title{font-size:15.5px;font-weight:800;color:#1c1917;margin-bottom:4px}
+.doc-code{direction:ltr;display:inline-block;font-family:ui-monospace,'Courier New',monospace;font-size:12px;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:1px 9px;letter-spacing:.4px}
+.doc-meta{font-size:9.5px;color:#57534e;margin-top:5px;line-height:1.75}
+.rule{height:3px;border-radius:2px;background:linear-gradient(to left,#065f46,#047857 45%,#14b8a6);margin:9px 0 13px}
+/* واترمارک */
+.wm{position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.wm-in{transform:rotate(-22deg);text-align:center;opacity:.045;color:#065f46;font-weight:800}
+.wm-in .wm-olive{font-size:110px;line-height:1}
+.wm-in .wm-text{font-size:58px;letter-spacing:10px;margin-top:2px}
+/* بخش‌ها */
+.sec-title{font-size:12.5px;font-weight:800;color:#065f46;border-right:3.5px solid #14b8a6;padding-right:9px;margin:15px 0 8px}
+.box{border:1px solid #e7e5e4;border-radius:11px;padding:10px 13px;background:#fff}
+.box.soft{background:#fafaf9}
+.row2{display:flex;gap:12px;align-items:stretch;flex-wrap:wrap}
+.row2>*{flex:1;min-width:220px}
+/* جفت کلید-مقدار */
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(146px,1fr));gap:8px 16px}
+.kv .k{font-size:9px;color:#78716c;margin-bottom:1px}
+.kv .v{font-size:11.5px;font-weight:700;color:#292524;word-break:break-word}
+.num{direction:ltr;text-align:left;font-variant-numeric:tabular-nums;unicode-bidi:embed}
+/* چیپ */
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 11px;border-radius:999px;font-size:10.5px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.chip.emerald{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.chip.teal{background:#f0fdfa;color:#0f766e;border-color:#99f6e4}
+.chip.amber{background:#fffbeb;color:#b45309;border-color:#fde68a}
+.chip.rose{background:#fff1f2;color:#be123c;border-color:#fecdd3}
+.chip.stone{background:#f5f5f4;color:#57534e;border-color:#e7e5e4}
+/* جدول */
+table.tbl{width:100%;border-collapse:collapse;font-size:10.8px}
+.tbl th{background:#065f46;color:#fff;font-weight:700;padding:6px 8px;border:1px solid #0b7a5c;font-size:10.3px;white-space:nowrap}
+.tbl td{border:1px solid #d6d3d1;padding:5px 8px;vertical-align:middle}
+.tbl tbody tr:nth-child(even){background:#fafaf9}
+.tbl .c{text-align:center}
+.tbl .mono{font-family:ui-monospace,'Courier New',monospace;font-size:9.6px}
+.tbl tfoot td{background:#ecfdf5;font-weight:800;border:1px solid #b9e6d2;color:#065f46}
+.bad{color:#be123c;font-weight:800}
+.good{color:#047857;font-weight:800}
+.sev-urgent{color:#be123c;font-weight:800}
+.sev-high{color:#b45309;font-weight:700}
+.sev-normal{color:#57534e}
+.sev-low{color:#a8a29e}
+/* جمع‌ها */
+.totwrap{display:flex;justify-content:flex-end;margin-top:10px}
+.totbox{width:330px;border:1px solid #d6d3d1;border-radius:10px;overflow:hidden;background:#fff}
+.totbox .trow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5.5px 12px;border-bottom:1px solid #e7e5e4;font-size:11px}
+.totbox .trow:last-child{border-bottom:0}
+.totbox .lbl{color:#57534e}
+.totbox .val{font-weight:700}
+.totbox .grand{background:#ecfdf5;font-size:12.5px;font-weight:800;color:#065f46;padding:7px 12px}
+.totbox .grand .lbl{color:#065f46}
+/* حروف مبلغ */
+.words{margin-top:9px;border:1px dashed #a7f3d0;background:#f6fefb;border-radius:10px;padding:8px 13px;font-size:11px}
+.words .w1{font-weight:700;color:#065f46}
+.words .w2{color:#57534e;font-size:9.8px;margin-top:1px}
+.words.big .w1{font-size:15px;font-weight:800}
+/* هایلایت مبلغ */
+.hl{border:1.5px solid #a7f3d0;background:linear-gradient(180deg,#ecfdf5,#f6fefb);border-radius:11px;padding:9px 14px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.hl .hl-lbl{font-size:11.5px;font-weight:800;color:#065f46}
+.hl .hl-amt{font-size:17px;font-weight:800;color:#065f46}
+/* هشدارها */
+.warn{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:10px;padding:8px 12px;font-size:11px;font-weight:600;margin-top:10px}
+.danger{border:1px solid #fecdd3;background:#fff1f2;color:#9f1239;border-radius:10px;padding:8px 12px;font-size:11px;font-weight:600;margin-top:10px}
+.note{border:1px solid #e7e5e4;border-radius:10px;background:#fafaf9;padding:8px 12px;font-size:11px;color:#44403c;margin-top:9px;line-height:2}
+/* کد پیگیری + مهری */
+.stamp-row{display:flex;gap:12px;align-items:stretch;margin-top:13px;flex-wrap:wrap}
+.tracking{flex:1;min-width:220px;border:1px solid #e7e5e4;border-radius:11px;padding:9px 14px;background:#fafaf9}
+.tracking .t-label{font-size:9.5px;color:#78716c;font-weight:600}
+.tracking .t-code{direction:ltr;text-align:left;font-family:ui-monospace,'Courier New',monospace;font-size:23px;font-weight:800;color:#1c1917;letter-spacing:1px;margin-top:2px}
+.stampbox{flex:none;width:150px;border:1.6px dashed #a8a29e;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:10px;font-weight:600;text-align:center;line-height:1.9;padding:8px}
+/* شبکهٔ شاخص‌ها */
+.mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mcell{border:1px solid #e7e5e4;border-radius:9px;padding:6px 11px;background:#fafaf9;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.mcell .ml{font-size:9.3px;color:#57534e}
+.mcell .mv{font-size:14.5px;font-weight:800;color:#292524}
+.mcell.warnv .mv{color:#be123c}
+/* کارنامه */
+.score-hero{display:flex;align-items:center;gap:16px;border:1.5px solid #a7f3d0;background:linear-gradient(180deg,#ecfdf5,#f6fefb);border-radius:12px;padding:12px 18px;margin-top:4px;flex-wrap:wrap}
+.score-num{font-size:42px;font-weight:800;color:#065f46;line-height:1}
+.score-sub{font-size:10.5px;color:#57534e}
+.score-bar{flex:1;min-width:160px;height:9px;background:#e7e5e4;border-radius:999px;overflow:hidden}
+.score-bar>div{height:100%;border-radius:999px;background:linear-gradient(to left,#065f46,#14b8a6)}
+/* امضا */
+.sigs{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+.sig{flex:1;min-width:150px;border:1.5px dashed #d6d3d1;border-radius:11px;min-height:84px;padding:8px 12px;position:relative}
+.sig .s-label{font-size:10px;font-weight:800;color:#57534e}
+.sig .s-name{font-size:11px;font-weight:600;color:#292524;margin-top:2px}
+.sig .s-hint{position:absolute;bottom:6px;right:12px;left:12px;text-align:center;font-size:8.4px;color:#a8a29e}
+/* پابرگ */
+.docfoot{margin-top:18px;border-top:1px solid #e7e5e4;padding-top:7px;display:flex;justify-content:space-between;gap:10px;font-size:8.6px;color:#78716c;flex-wrap:wrap}
+.pfoot{display:none}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px}
+.legend .chip{font-size:9.6px}
+@media print{
+  .no-print{display:none}
+  body{background:#fff}
+  .sheet{margin:0;width:auto;min-height:auto;padding:12mm;border-radius:0}
+  .pfoot{display:block;position:fixed;bottom:1.5mm;right:0;left:0;text-align:center;font-size:7.6px;color:#a8a29e}
+}
+@page{margin:12mm}</style>
+</head>
+<body>
+<div class="sheet">
+
+<div class="doc">
+<header class="lh">
+  <div class="lh-brand">
+    <div class="lh-emblem">🫒</div>
+    <div>
+      <div class="lh-name">هایپر زیتون</div>
+      <div class="lh-sub">فروشگاه زنجیره‌ای — رفسنجان</div>
+      <div class="lh-addr">نشانی: رفسنجان، بلوار ... — تلفن: ۰۳۴-۳۳ ...</div>
+    </div>
+  </div>
+  <div class="lh-doc">
+    <div class="doc-title">گزارش انبارگردانی</div>
+    
+    <div class="doc-meta">تاریخ: ۲۷ مهر ۱۴۰۵ — ساعت: ۰۸:۲۰</div>
+    
+  </div>
+</header>
+<div class="rule"></div>
+
+<div class="row2">
+  <div class="box"><div class="box-title">مشخصات شمارش</div><div class="kv"><div><div class="k">بخش / بلوک</div><div class="v">گوندولا ۱ — روی شرقی</div></div><div><div class="k">ناحیه</div><div class="v">خشک</div></div><div><div class="k">تاریخ شمارش</div><div class="v">۲۷ مهر ۱۴۰۵</div></div><div><div class="k">تاریخ زمان‌بندی</div><div class="v">۱۴۰۵-۰۷-۲۵</div></div><div><div class="k">شمارنده</div><div class="v">رضا کاظمی</div></div><div><div class="k">وضعیت</div><div class="v"><span class="chip rose">دارای مغایرت</span></div></div></div></div>
+</div>
+
+<div class="sec-title">اقلام شمارش‌شده</div>
+<table class="tbl">
+<thead><tr><th class="c" style="width:34px">ردیف</th><th>کالا</th><th class="c" style="width:104px">بارکد</th><th class="c" style="width:104px">موجودی سیستمی</th><th class="c" style="width:104px">شمارش‌شده</th><th class="c" style="width:86px">مغایرت</th></tr></thead>
+<tbody><tr>
+<td class="c">۱</td>
+<td><b>چای احمد ۵۰۰ گرمی</b></td>
+<td class="c mono">626000111</td>
+<td class="num">۱۸</td>
+<td class="num">۱۸</td>
+<td class="c"><span style="color:#047857;font-weight:700">✓ ۰</span></td>
+</tr><tr>
+<td class="c">۲</td>
+<td><b>شکر قند ۹۰۰ گرمی</b></td>
+<td class="c mono">626000222</td>
+<td class="num">۲۵</td>
+<td class="num">۲۳</td>
+<td class="c"><span class="bad">−۲</span></td>
+</tr><tr>
+<td class="c">۳</td>
+<td><b>برنج طارم ۵ کیلویی</b></td>
+<td class="c mono">626000333</td>
+<td class="num">۱۰</td>
+<td class="num">۱۲</td>
+<td class="c"><span class="sev-high">+۲</span></td>
+</tr><tr>
+<td class="c">۴</td>
+<td><b>ماکارونی رشته‌ای زر</b></td>
+<td class="c mono">626000444</td>
+<td class="num">۴۰</td>
+<td class="num">۴۰</td>
+<td class="c"><span style="color:#047857;font-weight:700">✓ ۰</span></td>
+</tr></tbody>
+</table>
+
+<div class="mgrid" style="margin-top:10px">
+  <div class="mcell"><span class="ml">اقلام شمارش‌شده</span><span class="mv num">۴</span></div>
+  <div class="mcell warnv"><span class="ml">اقلام دارای مغایرت</span><span class="mv num">۲</span></div>
+  <div class="mcell"><span class="ml">درصد تطابق</span><span class="mv num">۵۰٪</span></div>
+</div>
+<div class="warn">در صورت تأیید مدیر، موجودی سیستمی اقلام دارای مغایرت از طریق «مدیریت کالاها» اصلاح شود (شمارش، موجودی را تغییر نمی‌دهد).</div>
+<div class="note"><b>یادداشت:</b> شکر در انبار میانی جا مانده بود؛ برنج اضافه از پالت جدید.</div>
+
+<div class="sigs"><div class="sig"><div class="s-label">شمارنده</div><div class="s-name">رضا کاظمی</div><div class="s-hint">امضای پرسنل شمارش</div></div><div class="sig"><div class="s-label">تأییدکننده</div><div class="s-hint">مدیر فروشگاه</div></div></div>
+<footer class="docfoot">
+  <span>سند توسط سامانهٔ سررسید (SarResid) تولید شده</span>
+  <span>تاریخ تولید: ۲۷ مهر ۱۴۰۵ — ساعت ۰۸:۲۰</span>
+</footer>
+</div>
+<div class="pfoot">هایپر زیتون — گزارش انبارگردانی</div>
+</div>
+</body>
+</html>

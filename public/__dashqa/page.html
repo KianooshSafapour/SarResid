@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DashQA — میزکار من (نسخهٔ فشرده)</title>
+<link rel="stylesheet" href="/_next/static/chunks/b8c5081c57c11dd3.css" />
+<style>
+  body { font-family: Vazirmatn, Tahoma, sans-serif; background: #f7f4ea; margin: 0; }
+  /* mimic the shell's view container: p-4 md:p-6 max-w-7xl mx-auto */
+  #view-host { max-width: 80rem; margin: 0 auto; padding: 1rem; }
+  @media (min-width: 768px) { #view-host { padding: 1.5rem; } }
+</style>
+</head>
+<body>
+<div id="view-host"></div>
+<script src="/__dashqa/runtime.js"></script>
+<script src="/__dashqa/view-dashboard.js"></script>
+<script>
+(async function boot() {
+  try {
+    const r = await fetch('/api/auth/me', { credentials: 'same-origin' })
+    const j = await r.json()
+    if (j && j.ok && j.data && j.data.user) globalThis.__USER__ = j.data.user
+    else { document.body.innerHTML = '<p style="padding:2rem">not logged in</p>'; return }
+  } catch (e) { document.body.innerHTML = '<p style="padding:2rem">me fetch failed</p>'; return }
+  const React = globalThis.__HZ__.react
+  const RD = globalThis.__RD__
+  const host = document.getElementById('view-host')
+  RD.createRoot(host).render(React.createElement(globalThis.__HZ_VIEW__))
+  globalThis.__DASHQA_READY__ = true
+})()
+</script>
+</body>
+</html>

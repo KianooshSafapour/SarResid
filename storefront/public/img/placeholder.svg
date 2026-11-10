@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- جای‌نگهدار برداری کالا — شاخهٔ زیتون روی کرم (بدون متن/ایموجی؛ رندر یکدست در همهٔ مرورگرها) -->
+  <defs>
+    <linearGradient id="bgp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3f1e8"/>
+      <stop offset="1" stop-color="#e9e6d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" fill="url(#bgp)"/>
+  <g transform="translate(24 24) scale(0.76)">
+    <path d="M30 148 C 58 129, 82 100, 96 52" stroke="#c8a24a" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <g fill="#7ba05b">
+      <ellipse cx="86" cy="120" rx="15" ry="6" transform="rotate(-32 86 120)"/>
+      <ellipse cx="102" cy="104" rx="15" ry="6" transform="rotate(-14 102 104)"/>
+      <ellipse cx="95" cy="93" ry="6" rx="15" transform="rotate(-58 95 93)"/>
+      <ellipse cx="111" cy="83" rx="15" ry="6" transform="rotate(-6 111 83)"/>
+      <ellipse cx="106" cy="71" rx="15" ry="6" transform="rotate(-48 106 71)"/>
+      <ellipse cx="121" cy="63" rx="15" ry="6" transform="rotate(-18 121 63)"/>
+      <ellipse cx="118" cy="51" rx="14" ry="5.5" transform="rotate(-52 118 51)"/>
+    </g>
+    <g stroke="#3f6b34" stroke-width="1" stroke-opacity=".35">
+      <line x1="72" y1="127" x2="99" y2="114"/>
+      <line x1="88" y1="111" x2="115" y2="98"/>
+      <line x1="81" y1="97" x2="108" y2="89"/>
+      <line x1="97" y1="86" x2="124" y2="81"/>
+      <line x1="92" y1="73" x2="119" y2="70"/>
+      <line x1="107" y1="66" x2="134" y2="61"/>
+      <line x1="104" y1="54" x2="130" y2="49"/>
+    </g>
+    <ellipse cx="52" cy="141" rx="10" ry="12.5" fill="#7ba05b" transform="rotate(24 52 141)"/>
+    <ellipse cx="67" cy="130" rx="8.5" ry="11" fill="#5d7f42" transform="rotate(24 67 130)"/>
+    <circle cx="30" cy="148" r="4" fill="#c8a24a"/>
+  </g>
+</svg>

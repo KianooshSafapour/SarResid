@@ -1,0 +1,1 @@
+{ "views": [ { "key": "store/reviews", "src": "reviews", "section": "store", "title": "ارزیابی چیدمان و عملکرد", "roles": ["OWNER", "GM", "ADMIN", "EXEC", "PM"] } ] }

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>رسید مرجوعی کالا — هایپر زیتون</title>
+<style>
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-Regular.woff2) format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-Medium.woff2) format('woff2');font-weight:500;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-SemiBold.woff2) format('woff2');font-weight:600;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-Bold.woff2) format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url(/fonts/Vazirmatn-ExtraBold.woff2) format('woff2');font-weight:800;font-display:swap}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;padding:0}
+body{font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;color:#292524;background:#f5f5f4;font-size:12.5px;line-height:1.85}
+.sheet{position:relative;width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:11mm 12mm 13mm;overflow:hidden}
+.doc{position:relative;z-index:1}
+.na{color:#a8a29e}
+/* سربرگ */
+.lh{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.lh-brand{display:flex;align-items:center;gap:11px;min-width:0}
+.lh-emblem{flex:none;width:54px;height:54px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:27px}
+.lh-logo{flex:none;width:54px;height:54px;object-fit:contain;border-radius:10px;border:1px solid #d1fae5;background:#fff;padding:2px}
+.lh-name{font-size:22px;font-weight:800;color:#065f46;line-height:1.35}
+.lh-sub{font-size:10.5px;font-weight:600;color:#57534e}
+.lh-addr{font-size:8.8px;color:#78716c;margin-top:1px}
+.lh-doc{text-align:left;flex:none;max-width:47%}
+.doc-title{font-size:15.5px;font-weight:800;color:#1c1917;margin-bottom:4px}
+.doc-code{direction:ltr;display:inline-block;font-family:ui-monospace,'Courier New',monospace;font-size:12px;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:1px 9px;letter-spacing:.4px}
+.doc-meta{font-size:9.5px;color:#57534e;margin-top:5px;line-height:1.75}
+.rule{height:3px;border-radius:2px;background:linear-gradient(to left,#065f46,#047857 45%,#14b8a6);margin:8px 0 11px}
+/* واترمارک */
+.wm{position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.wm-in{transform:rotate(-22deg);text-align:center;opacity:.045;color:#065f46;font-weight:800}
+.wm-in .wm-olive{font-size:110px;line-height:1}
+.wm-in .wm-text{font-size:58px;letter-spacing:10px;margin-top:2px}
+/* بخش‌ها */
+.sec-title{font-size:12.5px;font-weight:800;color:#065f46;border-right:3.5px solid #14b8a6;padding-right:9px;margin:12px 0 7px}
+.box{border:1px solid #e7e5e4;border-radius:11px;padding:9px 12px;background:#fff}
+.box.soft{background:#fafaf9}
+.row2{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+.row2>*{flex:1;min-width:220px}
+/* جفت کلید-مقدار */
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(146px,1fr));gap:7px 14px}
+.kv .k{font-size:9px;color:#78716c;margin-bottom:1px}
+.kv .v{font-size:11.5px;font-weight:700;color:#292524;word-break:break-word}
+.num{direction:ltr;text-align:left;font-variant-numeric:tabular-nums;unicode-bidi:embed}
+/* چیپ */
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 11px;border-radius:999px;font-size:10.5px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.chip.emerald{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+.chip.teal{background:#f0fdfa;color:#0f766e;border-color:#99f6e4}
+.chip.amber{background:#fffbeb;color:#b45309;border-color:#fde68a}
+.chip.rose{background:#fff1f2;color:#be123c;border-color:#fecdd3}
+.chip.stone{background:#f5f5f4;color:#57534e;border-color:#e7e5e4}
+/* جدول */
+table.tbl{width:100%;border-collapse:collapse;font-size:10.8px}
+.tbl th{background:#065f46;color:#fff;font-weight:700;padding:5px 8px;border:1px solid #0b7a5c;font-size:10.3px;white-space:nowrap}
+.tbl td{border:1px solid #d6d3d1;padding:4.5px 8px;vertical-align:middle}
+.tbl tbody tr:nth-child(even){background:#fafaf9}
+.tbl .c{text-align:center}
+.tbl .mono{font-family:ui-monospace,'Courier New',monospace;font-size:9.6px}
+.tbl tfoot td{background:#ecfdf5;font-weight:800;border:1px solid #b9e6d2;color:#065f46}
+.bad{color:#be123c;font-weight:800}
+.good{color:#047857;font-weight:800}
+.sev-urgent{color:#be123c;font-weight:800}
+.sev-high{color:#b45309;font-weight:700}
+.sev-normal{color:#57534e}
+.sev-low{color:#a8a29e}
+/* جمع‌ها */
+.totwrap{display:flex;justify-content:flex-end;margin-top:10px}
+.totbox{width:330px;border:1px solid #d6d3d1;border-radius:10px;overflow:hidden;background:#fff}
+.totbox .trow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid #e7e5e4;font-size:11px}
+.totbox .trow:last-child{border-bottom:0}
+.totbox .lbl{color:#57534e}
+.totbox .val{font-weight:700}
+.totbox .grand{background:#ecfdf5;font-size:12.5px;font-weight:800;color:#065f46;padding:6px 12px}
+.totbox .grand .lbl{color:#065f46}
+/* حروف مبلغ */
+.words{margin-top:8px;border:1px dashed #a7f3d0;background:#f6fefb;border-radius:10px;padding:7px 12px;font-size:11px}
+.words .w1{font-weight:700;color:#065f46}
+.words .w2{color:#57534e;font-size:9.8px;margin-top:1px}
+.words.big .w1{font-size:15px;font-weight:800}
+/* هایلایت مبلغ */
+.hl{border:1.5px solid #a7f3d0;background:linear-gradient(180deg,#ecfdf5,#f6fefb);border-radius:11px;padding:9px 14px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.hl .hl-lbl{font-size:11.5px;font-weight:800;color:#065f46}
+.hl .hl-amt{font-size:17px;font-weight:800;color:#065f46}
+/* هشدارها */
+.warn{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:10px;padding:8px 12px;font-size:11px;font-weight:600;margin-top:10px}
+.danger{border:1px solid #fecdd3;background:#fff1f2;color:#9f1239;border-radius:10px;padding:8px 12px;font-size:11px;font-weight:600;margin-top:10px}
+.note{border:1px solid #e7e5e4;border-radius:10px;background:#fafaf9;padding:6px 11px;font-size:11px;color:#44403c;margin-top:8px;line-height:1.9}
+/* کد پیگیری + مهری */
+.stamp-row{display:flex;gap:10px;align-items:stretch;margin-top:10px;flex-wrap:wrap}
+.tracking{flex:1;min-width:220px;border:1px solid #e7e5e4;border-radius:11px;padding:8px 13px;background:#fafaf9}
+.tracking .t-label{font-size:9.5px;color:#78716c;font-weight:600}
+.tracking .t-code{direction:ltr;text-align:left;font-family:ui-monospace,'Courier New',monospace;font-size:22px;font-weight:800;color:#1c1917;letter-spacing:1px;margin-top:2px}
+.stampbox{flex:none;width:150px;border:1.6px dashed #a8a29e;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:10px;font-weight:600;text-align:center;line-height:1.9;padding:8px}
+/* شبکهٔ شاخص‌ها */
+.mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.mcell{border:1px solid #e7e5e4;border-radius:9px;padding:6px 11px;background:#fafaf9;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.mcell .ml{font-size:9.3px;color:#57534e}
+.mcell .mv{font-size:14.5px;font-weight:800;color:#292524}
+.mcell.warnv .mv{color:#be123c}
+/* کارنامه */
+.score-hero{display:flex;align-items:center;gap:16px;border:1.5px solid #a7f3d0;background:linear-gradient(180deg,#ecfdf5,#f6fefb);border-radius:12px;padding:12px 18px;margin-top:4px;flex-wrap:wrap}
+.score-num{font-size:42px;font-weight:800;color:#065f46;line-height:1}
+.score-sub{font-size:10.5px;color:#57534e}
+.score-bar{flex:1;min-width:160px;height:9px;background:#e7e5e4;border-radius:999px;overflow:hidden}
+.score-bar>div{height:100%;border-radius:999px;background:linear-gradient(to left,#065f46,#14b8a6)}
+/* امضا */
+.sigs{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.sig{flex:1;min-width:150px;border:1.5px dashed #d6d3d1;border-radius:11px;min-height:76px;padding:8px 12px;position:relative}
+.sig .s-label{font-size:10px;font-weight:800;color:#57534e}
+.sig .s-name{font-size:11px;font-weight:600;color:#292524;margin-top:2px}
+.sig .s-hint{position:absolute;bottom:6px;right:12px;left:12px;text-align:center;font-size:8.4px;color:#a8a29e}
+/* ═══ رسید مرجوعی — سبک فاکتور Apex (R8-RECEIPT) ═══ */
+.rx-head{display:flex;flex-direction:column;align-items:center;text-align:center;padding:2px 0 4px}
+.rx-logo{width:62px;height:62px;border-radius:50%;object-fit:cover;border:2px solid #a7f3d0;background:#fff;padding:3px}
+.rx-emblem{width:62px;height:62px;border-radius:50%;background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:2px solid #047857;display:flex;align-items:center;justify-content:center;font-size:30px}
+.rx-name{font-size:25px;font-weight:800;color:#065f46;line-height:1.4}
+.rx-latin{direction:ltr;font-size:10px;font-weight:700;letter-spacing:5px;color:#78716c;margin-top:1px}
+.rx-slogan{font-size:11px;font-weight:600;color:#0f766e;margin-top:1px}
+.rx-title{display:inline-block;margin-top:7px;border:1.5px solid #a7f3d0;background:#ecfdf5;color:#065f46;font-size:12.5px;font-weight:800;border-radius:999px;padding:2px 18px 3px}
+.rx-bar{display:flex;border:1px solid #e7e5e4;border-radius:10px;overflow:hidden;margin-top:9px;background:#fafaf9}
+.rx-cell{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:7px 8px;border-left:1px solid #e7e5e4;min-width:0}
+.rx-cell:last-child{border-left:0}
+.rx-ic{color:#047857;display:inline-flex;flex:none}
+.rx-cl{display:block;font-size:9px;color:#78716c;line-height:1.6}
+.rx-cv{display:block;font-size:12px;font-weight:800;color:#1c1917;line-height:1.5}
+.rx-ctx{border:1px solid #e7e5e4;border-right:3.5px solid #14b8a6;border-radius:10px;margin-top:9px;background:#fff;overflow:hidden}
+.rx-ctx .cx1{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 12px;font-size:11.5px;border-bottom:1px dashed #e7e5e4}
+.rx-ctx .cx2{display:flex;flex-wrap:wrap;gap:3px 16px;padding:6px 12px;font-size:10.5px;color:#57534e;background:#fafaf9;line-height:1.9}
+.rx-ctx .cx2 b{color:#292524}
+table.tbl.rx-tbl{font-size:11px}
+.rx-tbl th{background:#1c1917;border-color:#1c1917;color:#fff;font-size:10.6px}
+.rx-tbl td{padding:4.5px 9px}
+.rx-foot{border:1.5px solid #e7e5e4;border-radius:12px;background:#fafaf9;padding:8px 14px;margin-top:12px;text-align:center;font-size:10.5px;line-height:2}
+/* پابرگ */
+.docfoot{margin-top:12px;border-top:1px solid #e7e5e4;padding-top:6px;display:flex;justify-content:space-between;gap:10px;font-size:8.6px;color:#78716c;flex-wrap:wrap}
+.pfoot{display:none}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px}
+.legend .chip{font-size:9.6px}
+@media print{
+  .no-print{display:none}
+  body{background:#fff}
+  .sheet{margin:0;width:auto;min-height:auto;padding:12mm;border-radius:0}
+  .pfoot{display:block;position:fixed;bottom:1.5mm;right:0;left:0;text-align:center;font-size:7.6px;color:#a8a29e}
+}
+@page{margin:12mm}</style>
+</head>
+<body>
+<div class="sheet">
+<div class="wm"><div class="wm-in"><div class="wm-olive">🫒</div><div class="wm-text">سر رسید</div></div></div>
+<div class="doc">
+<header class="rx-head">
+  <div class="rx-emblem">🫒</div>
+  <div class="rx-name">هایپر زیتون</div>
+  <div class="rx-latin">HYPER ZEYTOON</div>
+  <div class="rx-slogan">«سالم غذای سالم، زندگی سالم»</div>
+  <div class="rx-title">رسید مرجوعی کالا</div>
+</header>
+<div class="rule"></div>
+
+<div class="rx-bar">
+  <div class="rx-cell"><span class="rx-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg></span><span><span class="rx-cl">شماره سند</span><span class="rx-cv num" style="font-size:11px">HZ-050801-0004</span></span></div>
+  <div class="rx-cell"><span class="rx-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span><span><span class="rx-cl">تاریخ</span><span class="rx-cv">۱۴۰۵.۰۷.۲۷</span></span></div>
+  <div class="rx-cell"><span class="rx-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><span><span class="rx-cl">ساعت</span><span class="rx-cv">۱۴:۰۵</span></span></div>
+</div>
+<div class="rx-ctx">
+  <div class="cx1">
+    <span>مرجوعی فروش — ثبت‌شده توسط: <b>کیانوش صفاپور</b></span>
+    <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span class="chip amber">وضعیت: در انتظار تأیید</span>
+      <span class="chip emerald">بازگشت کامل وجه</span>
+    </span>
+  </div>
+  <div class="cx2">
+    <span>نام خریدار: <b>مریم احمدی</b></span>
+    <span>موبایل: <b class="num">۰۹۱۲۳۴۵۶۷۸۹</b></span>
+    <span>کارت: <b class="num">۶۰۳۷-۹۹۱۲-۳۴۵۶-۷۸۹۰</b></span>
+    <span>تاریخ خرید: <b>۱۴۰۵/۰۷/۲۱</b></span>
+    <span>علت مرجوعی: <b>کالای معیوب</b></span>
+  </div>
+</div>
+<table class="tbl rx-tbl">
+<thead><tr><th>شرح کالا</th><th class="c" style="width:84px">تعداد</th><th class="c" style="width:112px">قیمت واحد (ریال)</th><th class="c" style="width:118px">مبلغ کل (ریال)</th></tr></thead>
+<tbody><tr>
+<td><b>مغز بادام زمینی</b><div class="mono" style="font-size:8.8px;color:#a8a29e;direction:ltr;text-align:right">1550</div></td>
+<td class="c">۰٫۷۲ <span style="font-size:9px;color:#a8a29e">کیلوگرم</span></td>
+<td class="num">۱۱٬۵۰۵٬۰۰۰</td>
+<td class="num"><b>۸٬۲۸۳٬۶۰۰</b></td>
+</tr><tr>
+<td><b>شیر پرچرب ۱ لیتری</b><div class="mono" style="font-size:8.8px;color:#a8a29e;direction:ltr;text-align:right">1234567890123</div></td>
+<td class="c">۲ <span style="font-size:9px;color:#a8a29e">عدد</span></td>
+<td class="num">۴۸٬۰۰۰</td>
+<td class="num"><b>۹۶٬۰۰۰</b></td>
+</tr></tbody>
+<tfoot><tr><td colspan="3" style="text-align:right">جمع کل اقلام مرجوعی</td><td class="num">۸٬۲۸۳٬۶۰۰</td></tr></tfoot>
+</table>
+
+<div class="totwrap"><div class="totbox"><div class="trow"><span class="lbl">مجموع کالاها (۲ قلم)</span><span class="val">۸٬۲۸۳٬۶۰۰ ریال</span></div><div class="trow"><span class="lbl">بازپرداخت به کارت</span><span class="val">۸٬۲۸۳٬۶۰۰ ریال</span></div><div class="grand"><span class="lbl">مبلغ قابل پرداخت</span><span class="val"><b>۸٬۲۸۳٬۶۰۰ ریال</b></span></div></div></div>
+<div class="words big"><div class="w1">هشت میلیون و دویست و هشتاد و سه هزار و ششصد ریال</div><div class="w2">معادل: هشتصد و بیست و هشت هزار و سیصد و شصت تومان</div></div>
+<div class="note"><b>توضیح تسویه:</b> واریز به کارت</div>
+<div class="note"><b>یادداشت:</b> یادداشت آزمون</div>
+
+<div class="sigs"><div class="sig"><div class="s-label">امضای صندوق</div><div class="s-name">کیانوش صفاپور</div><div class="s-hint">صندوکار ثبت‌کننده</div></div><div class="sig"><div class="s-label">امضای مدیر</div><div class="s-hint">تأیید و مهر فروشگاه</div></div></div>
+
+<div class="rx-foot">
+  <div style="font-weight:800;color:#065f46">مرجوعی مطابق سیاست‌های فروشگاه و پس از تأیید مدیریت انجام می‌شود؛ وجه قابل پرداخت به کارت خریدار واریز می‌گردد.</div>
+  <div>خدمات مشتریان: <b class="num">—</b></div>
+  <div style="color:#78716c">نشانی: رفسنجان، بلوار ... — تلفن: ۰۳۴-۳۳ ...</div>
+</div>
+<footer class="docfoot">
+  <span>سر رسید — سامانه یکپارچه مدیریت هایپر زیتون</span>
+  <span>کد سند: <span class="num">HZ-050801-0004</span> — تاریخ تولید: ۲۷ مهر ۱۴۰۵ — ساعت ۱۴:۰۵</span>
+</footer>
+</div>
+<div class="pfoot">هایپر زیتون — رسید مرجوعی کالا — کد سند: HZ-050801-0004</div>
+</div>
+</body>
+</html>

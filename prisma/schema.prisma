@@ -1,0 +1,1505 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ USERS & AUTH ============
+
+model User {
+  id          String    @id @default(cuid())
+  username    String    @unique
+  fullName    String
+  honorific   String    @default("")
+  role        String // OWNER | GM | ADMIN | EXEC | ACC | PM | HC | SK | SALES | CASHIER | MERCH
+  title       String    @default("")
+  phone       String?
+  mobile      String? // شمارهٔ موبایل ترجیحی برای پیامک‌های کاری — 09xxxxxxxxx
+  address     String?
+  postalCode  String? // کد پستی ۱۰ رقمی ایران
+  avatarJson  String? // {"emoji":"👑","color":"#0e7a4a"}
+  pin         String? // 4-digit plain (initial 1234) — dual auth: pin OR password
+  password    String? // admin password
+  points      Int       @default(0)
+  active      Boolean   @default(true)
+  lastLoginAt DateTime?
+  defaultShift String? // R17: شیفت پیش‌فرض 'MORNING'|'EVENING'|'BOTH' — مبنای پرکردن برنامهٔ هفتگی و فیلتر بررسی تیم
+  createdAt   DateTime  @default(now())
+}
+
+model RealtimeTicket {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+// ============ CHECKLISTS / SOP / TASKS ============
+
+model ChecklistTemplate {
+  id          String  @id @default(cuid())
+  title       String
+  description String  @default("")
+  phase       String  @default("start") // start | middle | end
+  frequency   String  @default("DAILY") // DAILY | WEEKLY | MONTHLY
+  points      Int     @default(1)
+  roleKey     String? // limit to role
+  itemsJson   String  @default("[]") // [{text,hint}]
+  order       Int     @default(0)
+  active      Boolean @default(true)
+}
+
+model ChecklistState {
+  id          String    @id @default(cuid())
+  day         String // Jalali YYYY-MM-DD
+  templateId  String
+  itemsJson   String    @default("[]") // [{text,hint,done,note}]
+  userId      String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([day, templateId])
+}
+
+model Sop {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  stepsJson   String   @default("[]") // [{title, detail?}]
+  views       Int      @default(0)
+  completions Int      @default(0) // R5-P4: شمارندهٔ اجرای کامل روال (پایان «شروع روال»)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  title          String
+  detail         String?
+  assignedToId   String?
+  assignedToName String?
+  createdById    String?
+  createdByName  String?
+  dueDate        String? // Jalali
+  status         String    @default("open") // open | done
+  points         Int       @default(1)
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+}
+
+// ============ COLLABORATION ============
+
+model Message {
+  id        String    @id @default(cuid())
+  fromId    String
+  toId      String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Broadcast {
+  id         String   @id @default(cuid())
+  fromId     String
+  content    String
+  attachment String?
+  seenJson   String   @default("[]") // [userId]
+  createdAt  DateTime @default(now())
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  kind      String   @default("ANON") // ANON | IDEA
+  authorId  String?
+  content   String
+  status    String   @default("NEW") // NEW | REVIEWED | IMPLEMENTED
+  response  String?
+  points    Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Problem {
+  id          String    @id @default(cuid())
+  date        String // Jalali
+  problem     String
+  action      String?
+  responsible String?
+  status      String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED
+  reporterId  String?
+  shift       String    @default("MORNING") // MORNING | EVENING
+  time        String? // HH:MM ساعت وقوع
+  source      String    @default("STAFF") // STAFF | MANAGER | GM
+  escalated   Boolean   @default(false) // ارجاع به شیفت عصر
+  // v0.3 (B1): دسته‌بندی، شدت، مکان، مسئول پیگیری، مهلت و زمان حل
+  category    String    @default("other") // equipment | it | supply | cleaning | product | staff | customer | security | other
+  severity    String    @default("normal") // low | normal | high | urgent
+  location    String? // برچسب بلوک نقشه فروشگاه
+  assigneeId  String? // User.id مسئول پیگیری
+  dueDate     String? // Jalali YYYY-MM-DD
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model ShiftReport {
+  id               String    @id @default(cuid())
+  userId           String
+  date             String // Jalali
+  type             String // HANDOVER | MORNING | WEEKLY | MONTHLY_EVAL
+  dataJson         String // {cashCounted, cashExpected, ..., metrics} | legacy notepad JSON
+  note             String?
+  shift            String    @default("MORNING") // MORNING | EVENING
+  acknowledgedById String?
+  acknowledgedAt   DateTime?
+  createdAt        DateTime  @default(now())
+}
+
+model WallPost {
+  id        String   @id @default(cuid())
+  content   String
+  pinned    Boolean  @default(false)
+  authorId  String
+  likesJson String? // [userId]
+  createdAt DateTime @default(now())
+}
+
+model KbArticle {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  category  String
+  summary   String   @default("")
+  body      String   @default("")
+  imageUrl  String?
+  pinned    Boolean  @default(false)
+  views     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model Award {
+  id            String   @id @default(cuid())
+  userId        String
+  points        Int
+  reason        String
+  awardedById   String?
+  awardedByName String?
+  createdAt     DateTime @default(now())
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String?
+  role      String?
+  kind      String // message | return | cheque | ...
+  severity  String    @default("info") // info | warning | critical
+  title     String
+  body      String
+  go        String? // hash route
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  userName    String?
+  action      String
+  actionLabel String?
+  category    String   @default("general")
+  detail      String?
+  entityId    String?
+  createdAt   DateTime @default(now())
+}
+
+// ============ PRODUCTS & SUPPLIERS ============
+
+model Product {
+  id                String   @id @default(cuid())
+  name              String
+  code              String? // Holoo code / main barcode
+  unit              String   @default("عدد")
+  manualUnit        Boolean  @default(false) // R4-8: true = واحد دستی مدیر؛ موتور قاعده لمس نمی‌کند
+  category          String?
+  mainGroup         String?
+  subGroup          String?
+  barcodesJson      String   @default("[]")
+  sellPrice         Float    @default(0)
+  sellPrice2        Float    @default(0)
+  lastBuyPrice      Float    @default(0)
+  stock             Int      @default(0)
+  reorderLevel      Int?
+  shelfLifeDays     Int?
+  status            String   @default("فعال")
+  active            Boolean  @default(true)
+  sectionLabel      String? // R5-P4: بخش/قفسهٔ فروشگاه (برچسب بلوک نقشه) که کالا در آن چیده می‌شود
+  // v0.2: سفارش‌گذاری و هوشمندسازی
+  defaultOrderQty   Int      @default(6) // تعداد پیش‌فرض سفارش (عدد)
+  defaultCartonQty  Int      @default(1) // تعداد پیش‌فرض سفارش (کارتن)
+  unitsPerCarton    Int      @default(0) // تعداد در هر کارتن (0 = نامشخص)
+  lowStockThreshold Int? // حد سفارش مجدد اختصاصی
+  smsAlert          Boolean  @default(false) // اطلاع SMS به مدیران هنگام اتمام
+  leadTimeDays      Int      @default(1) // زمان تأمین تأمین‌کننده
+  imported          Boolean  @default(false) // کالای وارداتی (تقویم میلادی برای تاریخ‌ها)
+  holooErp          String? // شناسه ErpCode کالا در هلو (سینک دوطرفه)
+  monthlySold       Int      @default(0) // آمار فروش ماه اخیر (برای تحلیل)
+  lastCountDate     String? // Jalali آخرین انبارگردانی
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  key       String   @unique // barcode or product id key
+  url       String
+  bytes     Int      @default(0)
+  hits      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Supplier {
+  id             String   @id @default(cuid())
+  name           String
+  code           String?
+  phone          String?
+  job            String?
+  classification String? // شهر / دسته
+  intermediary   String?
+  balance        Float?
+  creditLimit    Float    @default(0)
+  holooErp       String? // شناسه ErpCode طرف حساب در هلو
+  status         String   @default("فعال")
+  note           String?
+  createdAt      DateTime @default(now())
+}
+
+// ============ ORDERS ============
+
+model Order {
+  id            String    @id @default(cuid())
+  code          String    @unique // HZ-ORD-001
+  status        String    @default("SUBMITTED") // SUBMITTED | APPROVED | RECEIVING | RECEIVED | VERIFIED | DONE | CANCELLED
+  supplierId    String?
+  supplierName  String?
+  deliveryDate  String? // Jalali
+  payMethod     String    @default("CASH") // CASH | CHEQUE | POS
+  chequeDays    Int       @default(0) // R8: سررسید چک این سفارش (روز) — هنگام پایان دریافت، چک با این سررسید خودکار ثبت می‌شود
+  notes         String?
+  totalAmount   Float     @default(0)
+  createdById   String?
+  createdByName String?
+  holooErp      String? // شناسه ErpCode سفارش خرید ثبت‌شده در هلو
+  receivedAt    DateTime?
+  // ── R14: تأیید مدیر کل (خانم لطفی) پس از ثبت حسابداری — پیش از بستن سفارش؛
+  //    هم‌زمان قیمت‌های فاکتور سودسنجِ متصل منتشر می‌شود
+  gmApprovedAt    DateTime?
+  gmApprovedById  String?
+  gmApprovedByName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  items OrderItem[]
+}
+
+model OrderItem {
+  id                String  @id @default(cuid())
+  orderId           String
+  productId         String?
+  name              String
+  barcode           String?
+  qty               Int     @default(1)
+  unitBuyPrice      Float   @default(0)
+  printedPrice      Float   @default(0)
+  receivedQty       Int?
+  returnedQty       Int     @default(0) // R8: تعداد مرجوعی جزئی همین قلم (مثلاً ۴ از ۱۲)
+  returnReason      String? // R8: علت مرجوعی (شکسته · قیمت چاپی متفاوت · تاریخ‌گذشته · …)
+  status            String  @default("PENDING") // PENDING | OK | MISSING | REJECTED | PARTIAL_RETURN | RETURNED
+  expiryDate        String?
+  note              String?
+  // v0.2: سفارش بر اساس کارتن
+  cartonQty         Int     @default(0) // تعداد کارتن (0 = سفارش تکی)
+  unitsPerCarton    Int     @default(0) // تعداد در کارتن
+  lineTotal         Float   @default(0) // برآورد هزینه سطر
+  supplierProductId String? // انتخاب تأمین‌کننده مشخص برای این کالا
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// ============ RETURNS ============
+
+model ReturnRequest {
+  id                 String    @id @default(cuid())
+  code               String    @unique // HZ-050723-0001
+  customerName       String?
+  customerPhone      String?
+  customerCardNumber String?
+  purchaseAt         String? // Jalali
+  reason             String?
+  note               String?
+  totalAmount        Float     @default(0)
+  exchangeValue      Float     @default(0)
+  transferAmount     Float     @default(0)
+  transferNote       String?
+  settlementType     String    @default("exchange") // exchange | transfer | both
+  status             String    @default("draft") // draft | pending | approved | paid
+  cashierId          String?
+  approvedById       String?
+  approvedAt         DateTime?
+  submittedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  items ReturnItem[]
+}
+
+model ReturnItem {
+  id        String  @id @default(cuid())
+  returnId  String
+  name      String
+  barcode   String?
+  qty       Float   @default(1) // R7: مقدار اعشاری برای کالایbulk (مثلاً ۰٫۷۲ کیلوگرم بادام زمینی)
+  unit      String  @default("عدد")
+  unitPrice Float   @default(0)
+  lineTotal Float   @default(0)
+
+  ret ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+}
+
+model ReturnPayment {
+  id        String   @id @default(cuid())
+  returnId  String
+  kind      String // TRANSFER | ...
+  amount    Int
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+/// الگوی پیام مرجوعی — پیام آمادهٔ مشتری بر اساس علت مرجوعی (R10-MSG)
+/// reason: یکی از REASON_PRESETS (کالای معیوب، …) یا «*» برای پیش‌فرض کلی
+model ReturnMsgTemplate {
+  id        String   @id @default(cuid())
+  reason    String   @unique // علت مرجوعی (دقیقاً مثل REASON_PRESETS) یا «*» برای پیش‌فرض کلی
+  title     String
+  body      String   // با جای‌نگردها: {مشتری} {مبلغ} {کد} {تاریخ} {علت} {بانک} {شماره‌پیگیری}
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============ CRM ============
+
+model Customer {
+  id           String   @id @default(cuid())
+  phone        String   @unique
+  name         String
+  returnsCount Int      @default(0)
+  totalAmount  Float    @default(0)
+  firstAt      DateTime @default(now())
+  lastVisitAt  DateTime @default(now())
+  smsEnabled   Boolean  @default(true)
+  birthday     String? // Jalali
+  note         String?
+  manualTier   String? // VIP | LOYAL | REGULAR | NEW | AT_RISK | DORMANT
+}
+
+model Campaign {
+  id         String   @id @default(cuid())
+  title      String
+  kind       String   @default("WINBACK") // WINBACK | BIRTHDAY | SEASONAL | ...
+  targetTier String?
+  date       String? // Jalali
+  status     String   @default("DRAFT") // DRAFT | SENT
+  createdAt  DateTime @default(now())
+}
+
+model CrmEvent {
+  id         String   @id @default(cuid())
+  customerId String?
+  kind       String // sms | note | call | visit
+  content    String
+  userId     String?
+  createdAt  DateTime @default(now())
+}
+
+// ============ FINANCE ============
+
+model Cheque {
+  id          String   @id @default(cuid())
+  number      String
+  amount      Float    @default(0)
+  status      String   @default("PENDING_OWNER") // PENDING_OWNER | WRITTEN | SIGNED | READY | COLLECTED | DONE | REJECTED | UNCOLLECTED
+  recipient   String?
+  sayadSerial String?
+  selfIssued  Boolean  @default(false)
+  writtenAt   String? // Jalali
+  dueDate     String // Jalali
+  note        String?
+  orderCode   String?
+  orderId     String? // R8: سفارشی که این چک برایش خودکار ثبت شد
+  historyJson String   @default("[]") // [{at, by, action, detail}]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  kind           String // CASH | POS | TRANSFER
+  amount         Float    @default(0)
+  supplierName   String?
+  orderCode      String?
+  note           String?
+  holooReceiptNo String?
+  createdById    String?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+}
+
+// ============ MARGIN (سودسنج) ============
+
+model MarginInvoice {
+  id                String    @id @default(cuid())
+  number            Int       @default(1)
+  supplierId        String?
+  supplierName      String?
+  note              String?
+  // R12 گردش‌کار دفتر فاکتورها: draft (پیش‌نویس) | delivered (تحویل‌شده) |
+  // reviewing (در بررسی حسابداری) | final (فاکتور خرید) | archived (بایگانی‌شده) | cancelled
+  status            String    @default("draft")
+  archived          Boolean   @default(false)
+  archivedAt        DateTime?
+  dateJalali        String?
+  // R5-B: شمارهٔ سند کاغذی تأمین‌کننده (شمارهٔ داخلی همان number خودکار است)
+  providerDocNumber String?
+  // R5-B: شناسهٔ سفارش خرید (Order) که از «ثبت تحویل و خرید» ساخته شده
+  purchaseOrderId   String?
+  // ── R12: ردپای گردش‌کار چندمرحله‌ای پیش‌فاکتور → فاکتور خرید → بایگانی ──
+  deliveredAt       DateTime? // گام ۲: کارمند، تحویل فیزیکی را تأیید کرد
+  deliveredById     String?
+  deliveredByName   String?
+  reviewedAt        DateTime? // گام ۳: حسابدار/مدیر بررسی را شروع/انجام داد
+  reviewedById      String?
+  reviewedByName    String?
+  finalizedAt       DateTime? // گام ۴: فاکتور خرید نهایی شد (سند خرید + موجودی + هلو)
+  finalizedById     String?
+  finalizedByName   String?
+  // ── R13: گام ۵ — تأیید نهایی مدیرعامل (خانم لطفی) پیش از بایگانی؛
+  //    هم‌زمان قیمت نهایی (sellPrice) و قیمت چاپی (sellPrice2 = SellPrice2 هلو)
+  //    روی کالا به‌روز و در هلو منتشر می‌شود.
+  gmApprovedAt      DateTime?
+  gmApprovedById    String?
+  gmApprovedByName  String?
+  cancelledAt       DateTime?
+  cancelledByName   String?
+  cancelReason      String?
+  holooInvoiceNo    String? // شماره فاکتور خرید هلو (پس از انتقال/ثبت)
+  holooReceiptNo    String? // شماره رسید پرداخت هلو
+  archiveDocId      String? // سند بایگانی (ArchiveDocument) ساخته‌شده از این فاکتور
+  historyJson       String    @default("[]") // [{at,by,action,detail}] ردپای گردش‌کار
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  items MarginItem[]
+}
+
+model MarginItem {
+  id            String  @id @default(cuid())
+  invoiceId     String
+  productId     String?
+  barcode       String?
+  productName   String
+  unit          String  @default("عدد")
+  quantity      Float   @default(1) // R5-B: اعشاری برای اقلام وزنی (۱٫۵ کیلو)
+  totalCost     Float   @default(0)
+  unitCost      Float   @default(0)
+  printedPrice  Float   @default(0)
+  margin        Float   @default(0)
+  profitPerUnit Float   @default(0)
+  note          String?
+  level         String  @default("OK") // OK | WARN | CRITICAL
+  alertsJson    String  @default("[]")
+  // ─── R5-B: بازطراحی سودسنج ───
+  salePrice     Float   @default(0) // قیمت فروش نهایی (۰ = همان قیمت چاپی — سازگار با ردیف‌های قدیمی)
+  marginPct     Float   @default(0) // درصد سود ۴ رقمی روی بهای خرید (همان عددی که حسابدار می‌بیند)
+  free100       Boolean @default(false) // تخفیف ۱۰۰٪ / رایگان — بدون قیمت چاپی
+  baseCost      Float   @default(0) // مبنای محاسبهٔ فروش کالای رایگان (قیمت عادی تأمین‌کننده)
+  // ─── R12: بررسی حسابداری — پذیرش/رد هر قلم (مرجوعی به تأمین‌کننده) ───
+  accepted      Boolean @default(true) // مورد تأیید حسابداری (وارد انبار/هلو می‌شود)
+  rejectReason  String? // علت مرجوعی: قیمت چاپی متفاوت · تاریخ‌گذشته · شکسته · …
+
+  invoice MarginInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+// ============ HR ============
+
+model Personnel {
+  id             String  @id @default(cuid())
+  userId         String  @unique
+  fullName       String
+  nationalId     String?
+  phone          String?
+  jobTitle       String?
+  department     String?
+  hireDate       String? // Jalali
+  birthday       String? // Jalali
+  bankCard       String?
+  shaba          String?
+  emergencyName  String?
+  emergencyPhone String?
+  note           String?
+  // قرارداد کار — قابل ویرایش توسط مدیران (R4-6)
+  contractType   String? // FULL_TIME | PART_TIME | CONTRACT
+  contractStart  String? // Jalali
+  contractEnd    String? // Jalali
+  contractSalary Float?
+  contractNote   String?
+  active         Boolean @default(true)
+}
+
+/// مدارک قانونی پرسنل — کارت ملی/شناسنامه/قرارداد/عکس/مدرک/فیش (R4-6)
+model StaffDocument {
+  id         String   @id @default(cuid())
+  userId     String // staff User id
+  kind       String // NATIONAL_CARD | ID_BOOK | CONTRACT | PHOTO | CERT | PAYSLIP | OTHER
+  title      String   @default("")
+  mimeType   String   @default("image/jpeg")
+  size       Int      @default(0)
+  dataUrl    String // base64 data URL (cap 2.5MB server-side)
+  note       String   @default("")
+  uploadedBy String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+model SalaryProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  baseSalary       Float    @default(0)
+  housingAllowance Float    @default(0)
+  foodAllowance    Float    @default(0)
+  childAllowance   Float    @default(0)
+  children         Int      @default(0)
+  seniorityDaily   Float    @default(0)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+}
+
+model ShiftAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  date      String // Jalali
+  shift     String // MORNING | EVENING | NIGHT | OFF
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+model LeaveRequest {
+  id           String   @id @default(cuid())
+  userId       String
+  type         String // HOURLY | DAILY | SICK | UNPAID
+  fromDate     String // Jalali
+  toDate       String // Jalali
+  days         Int      @default(1)
+  hours        Float    @default(0) // مرخصی ساعتی — کسری ساعت (۲٫۵) پشتیبانی می‌شود (R5-C)
+  reason       String?
+  status       String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  responseNote String?
+  approverId   String?
+  approverName String?
+  createdAt    DateTime @default(now())
+}
+
+model PayrollRecord {
+  id              String   @id @default(cuid())
+  userId          String
+  year            Int
+  month           Int
+  overtimeMinutes Int      @default(0)
+  absenceDays     Int      @default(0)
+  adjustment      Float    @default(0)
+  savedJson       String   @default("{}") // {gross, insurance, tax, net, ...}
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, year, month])
+}
+
+// ============ STORE ============
+
+model Floorplan {
+  id          String  @id @default(cuid())
+  name        String
+  width       Int     @default(2560)
+  height      Int     @default(1200)
+  outlineJson String? // [[x,y],...] خط دور واقعی فروشگاه (متر/پیکسل طرح)
+
+  blocks FloorBlock[]
+}
+
+/// ردیف‌های چیدمان هر بخش (نام مدل تاریخی: ZoneColumn) برای کنترل تاریخ چرخشی (B3)
+/// R5-E: ردیف = ردیف کالا روی قفسه — دارای محصولات و ظرفیت و وضعیت شارژ
+// ═══ R16: درخواست‌ها — کارکنان و مشتریان (گردش‌کار شفاف: ثبت ← بررسی ← تأیید/رد ← انجام) ═══
+model StaffRequest {
+  id            String   @id @default(cuid())
+  code          String   @unique // REQ-101
+  kind          String   // NEW_PRODUCT | SUPPLY | REPAIR | SOFTWARE | CUSTOMER | OTHER
+  title         String
+  body          String?
+  productId     String?  // برای درخواست کالای جدید (اگر به کالا ختم شد)
+  customerId    String?  // درخواست‌های پیگیری مشتری
+  status        String   @default("SUBMITTED") // SUBMITTED | SEEN | APPROVED | REJECTED | DONE
+  priority      String   @default("NORMAL") // LOW | NORMAL | HIGH
+  requestedById String
+  requestedByName String
+  handledById   String?
+  handledByName String?
+  resultNote    String?
+  historyJson   String   @default("[]") // [{at,by,action,detail}] — زنجیرهٔ فرمان و مرحله
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ZoneColumn {
+  id           String   @id @default(cuid())
+  planId       String
+  blockLabel   String
+  name         String
+  order        Int      @default(0)
+  active       Boolean  @default(true)
+  productsJson String   @default("[]") // [{productId,name,capacity}] — محتوای ردیف (R5-E)
+  statusJson   String   @default("{}") // {lastCharge:{count,at,by},lastCount:{count,at,by},minCount} (R5-E)
+  createdAt    DateTime @default(now())
+
+  @@unique([planId, blockLabel, name])
+}
+
+model FloorBlock {
+  id       String  @id @default(cuid())
+  planId   String
+  kind     String // ENTRANCE | EXIT | CHECKOUT | SHELF | WALL | COOLER | ...
+  x        Int
+  y        Int
+  w        Int
+  h        Int
+  rotation Int     @default(0)
+  label    String?
+  zoneName String?
+  metaJson String? // {responsible, ...}
+
+  plan Floorplan @relation(fields: [planId], references: [id], onDelete: Cascade)
+}
+
+model Planogram {
+  id         String   @id @default(cuid())
+  name       String
+  blockLabel String?
+  rows       Int      @default(4)
+  cols       Int      @default(6)
+  cellsJson  String   @default("[]") // flat array rows*cols of productId|null
+  status     String   @default("DRAFT") // DRAFT | PUBLISHED | DONE | ARCHIVE
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Zone {
+  id             String  @id @default(cuid())
+  name           String
+  type           String  @default("SALES") // SALES | BACKROOM | COLD | ...
+  criticality    String  @default("C") // A | B | C
+  countFrequency String  @default("MONTHLY") // DAILY | WEEKLY | MONTHLY
+  ownerName      String?
+  minStaff       Int?
+}
+
+model ZoneCount {
+  id            String   @id @default(cuid())
+  date          String // Jalali
+  zoneId        String
+  zoneName      String
+  userId        String?
+  userName      String?
+  itemsJson     String   @default("[]") // [{name|barcode, expected, counted}]
+  status        String   @default("open") // open | done
+  mismatchCount Int      @default(0)
+  totalItems    Int      @default(0)
+  tolerance     Float    @default(0)
+  recheckCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PriceCheck {
+  id        String   @id @default(cuid())
+  date      String // Jalali
+  productId String
+  userId    String?
+  lastCost  Int      @default(0)
+  sellPrice Float    @default(0)
+  margin    Float    @default(0)
+  ok        Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model WasteRecord {
+  id        String   @id @default(cuid())
+  date      String // Jalali
+  name      String
+  qty       Int      @default(1)
+  unit      String   @default("عدد")
+  reason    String // EXPIRED | DAMAGED | LOST | ...
+  estValue  Float    @default(0)
+  userId    String?
+  userName  String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  // ── R9: ضایعات به تفکیک طرف‌حساب (تأمین‌کننده) — برگشت با سفارش بعدی ──
+  // گردش کار: PENDING (در انبار ضایعاتِ تأمین‌کننده) → SELECTED (خانم لطفی برای سفارش بعدی علامت می‌زند)
+  // → RETURNED (هنگام پایان دریافت سفارش، همراه مامور پخش به تأمین‌کننده برگشت)
+  supplierId       String?
+  supplierName     String?
+  productId        String?
+  barcode          String?
+  status           String   @default("PENDING") // PENDING | SELECTED | RETURNED
+  orderId          String?
+  orderCode        String?
+  selectedAtJalali String?
+  selectedByName   String?
+  returnedAtJalali String?
+
+  // ── R11: مامور پخش (نمایندهٔ تأمین‌کننده) که اقلام ضایعات به او سپرده شد —
+  // هنگام «پایان دریافت» اجباری ثبت می‌شود (نام کامل + موبایل)
+  repName  String?
+  repPhone String?
+}
+
+// ============ SETTINGS ============
+
+model Setting {
+  key   String @id
+  value String // JSON
+}
+
+// ===================== v0.2 EXTENSIONS =====================
+
+/// دستور کار مدیر → کارمند (task order with instructions, requirements, deadline)
+model TaskOrder {
+  id             String    @id @default(cuid())
+  title          String
+  instructions   String    @default("") // نحوه انجام
+  requirements   String? // ملزومات
+  createdById    String
+  createdByName  String
+  assigneeId     String // User.id
+  assigneeName   String
+  category       String    @default("general") // general | layout | cleanliness | dates | labels | receiving | customer | other
+  relatedBlock   String? // floor block label (G1, IC-A, W-L2…)
+  dueDate        String? // Jalali YYYY-MM-DD
+  dueTime        String? // HH:MM
+  priority       String    @default("normal") // low | normal | high | urgent
+  status         String    @default("assigned") // assigned | in_progress | blocked | done | verified | cancelled
+  progressNote   String?
+  blockedReason  String?
+  doneAt         DateTime?
+  verifiedById   String?
+  verifiedByName String?
+  verifiedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+/// کنترل پرسنل شیفت عصر/صبح — حضور، تأخیر، بهداشت个体
+model StaffCheck {
+  id                 String   @id @default(cuid())
+  date               String // Jalali YYYY-MM-DD
+  shift              String   @default("EVENING") // MORNING | EVENING
+  checkerId          String
+  checkerName        String
+  staffId            String // User.id
+  staffName          String
+  present            Boolean  @default(true)
+  arrival            String   @default("on_time") // on_time | late | absent | permitted_leave
+  lateMinutes        Int      @default(0)
+  hourlyLeaveMinutes Int      @default(0) // مرخصی ساعتی (دقیقه)
+  overtimeMinutes    Int      @default(0) // اضافه‌کاری (دقیقه)
+  hadPermission      Boolean  @default(false) // اجازه تأخیر از مدیر
+  uniform            String   @default("ok") // ok | minor | needs_followup (لباس فرم و ظاهر — سه‌سطحی R7)
+  hygiene            String   @default("ok") // ok | minor | needs_followup (بهداشت فردی — سه‌سطحی R7)
+  behavior           String   @default("ok") // ok | minor | needs_followup (برخورد با مشتری — سه‌سطحی R7)
+  workQuality        String   @default("ok") // ok | minor | needs_followup (کیفیت کار — سه‌سطحی R7)
+  note               String?
+  createdAt          DateTime @default(now())
+
+  @@unique([date, shift, staffId])
+}
+
+/// ارزیابی چیدمان هر خط/قفسه — ۴ شاخص علمی (تاریخ‌ها/FEFO، نظم چیدمان، نظافت، برچسب‌ها)
+model SectionReview {
+  id           String   @id @default(cuid())
+  date         String // Jalali
+  reviewerId   String
+  reviewerName String
+  blockLabel   String // G1 | IC-A | NUTS | SWEETS | FRZ | W-L1 …
+  staffId      String? // مسئول آن خط
+  staffName    String?
+  dateScore    Int      @default(0) // 0-5 کنترل تولید/انقضا و چیدمان FEFO
+  layoutScore  Int      @default(0) // 0-5 نظم و مرتب بودن چیدمان
+  cleanScore   Int      @default(0) // 0-5 نظافت خط، قفسه‌ها، کف وعدم گرد روی کالا
+  labelScore   Int      @default(0) // 0-5 برچسب و قیمت در برابر هر ردیف
+  /* R15: انقضا به «کنترل انقضای قفسه‌ها» (lane-check) رفت؛ به‌جایش دو شاخص عملکردی:
+     dateScore اکنون «شارژ و کامل بودن قفسه» را می‌سنجد (نام ستون حفظ شد) + serveScore جدید */
+  serveScore   Int      @default(0) // 0-5 برخورد و پاسخگویی به مشتری (R15)
+  note         String?
+  points       Int      @default(0) // امتیاز اهدایی
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// امتیاز ترکیبی عملکرد کارکنان (روش علمی: ترکیب وزن‌دار چندشاخصه)
+model PerformanceScore {
+  id              String   @id @default(cuid())
+  userId          String
+  userName        String
+  periodType      String // WEEKLY | MONTHLY
+  periodKey       String // 1405-07 or 1405-W30
+  startDate       String // Jalali
+  endDate         String // Jalali
+  taskScore       Float    @default(0) // 0-100: نرخ تکمیل دستور کار به‌موقع
+  sectionScore    Float    @default(0) // 0-100: میانگین ۴ شاخص ارزیابی چیدمان
+  dailyCheckScore Float    @default(0) // 0-100: میانگین بازرسی روزانهٔ ۴ معیار (ok=1, minor=0.5, needs_followup=0) — R7-PERF
+  checklistScore  Float    @default(0) // 0-100: تکمیل چک‌لیست‌ها
+  attendanceScore Float    @default(0) // 0-100: حضور و تعجیل
+  zoneCountScore  Float    @default(0) // 0-100: دقت شمارش
+  extraScore      Float    @default(0) // امتیاز تشویقی − جریمه
+  total           Float    @default(0) // 0-100 ترکیب وزن‌دار
+  grade           String   @default("") // A | B | C | D
+  breakdownJson   String   @default("{}") // جزئیات محاسبه برای شفافیت
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, periodType, periodKey])
+}
+
+/// ارزیابی ماهانه مدیر شیفت توسط مدیر ارشد (۱۱ شاخص شرح وظایف)
+model ManagerReview {
+  id           String   @id @default(cuid())
+  periodKey    String // 1405-07
+  managerId    String
+  managerName  String
+  reviewerId   String
+  reviewerName String
+  scoresJson   String // {"staffMgmt":4,"hallControl":3,…} 1-5 × 11 شاخص
+  total        Float    @default(0)
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([managerId, periodKey])
+}
+
+/// انبارگردانی — زمان‌بندی و اجرای شمارش
+model StockCount {
+  id           String           @id @default(cuid())
+  date         String? // Jalali اجرا
+  scheduledFor String // Jalali زمان‌بندی
+  blockLabel   String? // خط/بخش
+  zoneName     String?
+  staffId      String?
+  staffName    String?
+  status       String           @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | DONE | MISMATCH
+  itemsCounted Int              @default(0)
+  mismatches   Int              @default(0)
+  note         String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  items        StockCountItem[]
+}
+
+model StockCountItem {
+  id         String     @id @default(cuid())
+  countId    String
+  productId  String
+  name       String
+  barcode    String?
+  systemQty  Int        @default(0)
+  countedQty Int        @default(0)
+  diff       Int        @default(0)
+  note       String?
+  count      StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+}
+
+/// تعطیلات رسمی ایران (تقویم خورشیدی — قابل ویرایش توسط مدیر)
+model Holiday {
+  id    String @id
+  date  String // Jalali YYYY-MM-DD
+  title String
+  kind  String @default("OFFICIAL") // OFFICIAL | RELIGIOUS | NATIONAL | CUSTOM | FRIDAY-EQUIV
+}
+
+/// ارتباط چندتأمین‌کننده ↔ کالا (قیمت‌ها، کارتن)
+model SupplierProduct {
+  id           String   @id @default(cuid())
+  supplierId   String
+  productId    String
+  unitPrice    Float    @default(0) // فی آخرین خرید از این تأمین‌کننده
+  lastBuyPrice Float    @default(0)
+  perCarton    Int      @default(0) // تعداد در کارتن (0 = نامشخص)
+  isPrimary    Boolean  @default(false)
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([supplierId, productId])
+}
+
+/// برنامه پرداخت‌ها روی تقویم (چک/POS/نقد)
+model PaymentPlan {
+  id           String   @id @default(cuid())
+  date         String // Jalali
+  kind         String   @default("CHEQUE") // CHEQUE | POS | CASH
+  amount       Float    @default(0)
+  status       String   @default("PLANNED") // PLANNED | CONFIRMED | DONE
+  orderCode    String?
+  supplierName String?
+  note         String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// کنترل تاریخ انقضا — ثبت نتیجه بررسی خط‌ها در چرخه ۲۸ روزه (سیستم شماره‌گذاری خطوط)
+model DateCheck {
+  id              String   @id @default(cuid())
+  date            String // Jalali YYYY-MM-DD
+  lineId          String // LINE-07
+  lineLabel       String // «گوندولا ۲ — روی شرقی»
+  blockLabel      String
+  daySlot         Int      @default(0) // روز چرخه (۱..۲۸)
+  checkerId       String
+  checkerName     String
+  status          String   @default("ok") // ok | issues
+  expiredCount    Int      @default(0)
+  nearExpiryCount Int      @default(0)
+  fefoOk          Boolean  @default(true) // 临期 در جلو (FEFO)
+  action          String? // اقدام انجام‌شده
+  note            String?
+  columnsJson     String? // [{name,status,expiredCount,note}] — ستون‌های کنترل‌شده این چرخش (B3)
+  createdAt       DateTime @default(now())
+
+  @@unique([date, lineId])
+}
+
+/// صف پیامک — هشدار اتمام موجودی و اطلاع‌رسانی مدیریت
+model SmsOutbox {
+  id        String    @id @default(cuid())
+  to        String
+  toName    String    @default("")
+  text      String
+  reason    String    @default("LOW_STOCK") // LOW_STOCK | MANUAL | SYSTEM
+  refId     String? // productId / entityId
+  status    String    @default("PENDING") // PENDING | SENT | FAILED | SKIPPED
+  provider  String    @default("")
+  messageId String?
+  error     String?
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+}
+
+/// پنل‌های پیامک — پیکربندی چند سرویس‌دهنده ایرانی + پنل سفارشی (R4-5)
+model SmsPanel {
+  id           String    @id @default(cuid())
+  name         String
+  provider     String // melipayamak|farazsms|payamresan|webone|niksms|payamito|smsir|farapayamak|custom
+  mode         String    @default("mock") // mock | real
+  settingsJson String    @default("{}") // provider-specific credentials + sender
+  active       Boolean   @default(true)
+  isDefault    Boolean   @default(false)
+  lastTestAt   DateTime?
+  lastTestOk   Boolean?
+  note         String    @default("")
+  createdAt    DateTime  @default(now())
+}
+
+/// قالب پیامک — متن آماده با جای‌نگرد {name} {amount} {code} {date} (R4-5)
+model SmsTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique // PAYMENT_SUBMITTED | RETURN_PAYMENT | STAFF_BROADCAST | LOW_STOCK | ...
+  title     String
+  body      String // {name} {amount} {code} {date} placeholders
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ===================== v0.3 EXTENSIONS (B1) =====================
+
+/// دسترسی اختصاصی هر کاربر به صفحه/بخش/قابلیت — توسط مدیر سیستم تنظیم می‌شود
+/// pageKey: "finance/cheques" (صفحه) | "section:hr" (کل بخش) | "cap:approveReturns" (قابلیت)
+model UserPermOverride {
+  id        String   @id @default(cuid())
+  userId    String
+  pageKey   String
+  allow     Boolean // true = مجازسازی اجباری | false = مسدودسازی
+  createdAt DateTime @default(now())
+
+  @@unique([userId, pageKey])
+}
+
+// ===================== v0.3 EXTENSIONS (B2 — Holoo) =====================
+
+/// گزارش هر عملیات سینک با حسابداری هلو (PULL_PRODUCTS / PULL_SUPPLIERS / PUSH_ORDER / PUSH_ORDERS_BULK / PUSH_RETURN)
+model HolooSyncLog {
+  id        String   @id @default(cuid())
+  kind      String // نوع عملیات
+  status    String // OK | FAIL
+  statsJson String // آمار عملیات (pulled/created/updated/pushed/failed ...)
+  error     String?
+  createdAt DateTime @default(now())
+}
+
+// ===================== R4-7 — Snapshot / Reset =====================
+
+/// نسخه پشتیبان داده‌ها — «بازنشانی به آخرین وضعیت داده» (R4-7)
+model DataSnapshot {
+  id         String   @id @default(cuid())
+  name       String
+  note       String   @default("")
+  kind       String   @default("MANUAL") // MANUAL | BASELINE | PRE_IMPORT
+  tablesJson String   @default("{}") // per-table row dumps
+  tableCount Int      @default(0)
+  rowCount   Int      @default(0)
+  createdBy  String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+// ===================== R7 EXTENSIONS (پوسته — v_0.1.1_alpha) =====================
+
+/// مدیریت واحدهای شمارش — مدیر می‌تواند واحد جدید بسازد (R7)
+model Unit {
+  id        String   @id @default(cuid())
+  name      String   @unique // عدد · کیلوگرم · بسته …
+  kind      String   @default("count") // count (صحیح) | weight (اعشاری) | volume (اعشاری)
+  decimals  Int      @default(0) // حداکثر ارقام اعشار مجاز
+  active    Boolean  @default(true)
+  sortOrder Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ===================== R7 — آرشیو اسناد (مدیریت اسناد هیبریدی دیجیتال/فیزیکی) =====================
+
+/// کابینت فیزیکی آرشیو
+model ArchiveCabinet {
+  id        String   @id @default(cuid())
+  name      String // «کابینت حسابداری ۱»
+  code      String   @unique // CAB-01
+  location  String? // محل فیزیکی (دفتر حسابداری …)
+  note      String?
+  sortOrder Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shelves ArchiveShelf[]
+}
+
+/// قفسهٔ داخل کابینت
+model ArchiveShelf {
+  id        String   @id @default(cuid())
+  cabinetId String
+  name      String // «قفسهٔ ۲»
+  code      String   @unique // CAB-01-S2
+  note      String?
+  sortOrder Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cabinet ArchiveCabinet  @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  binders ArchiveBinder[]
+}
+
+/// زون‌بند (ledger binder) داخل قفسه
+model ArchiveBinder {
+  id        String   @id @default(cuid())
+  shelfId   String
+  name      String // «زون‌بند لبنیات»
+  code      String   @unique // CAB-01-S2-B1
+  category  String? // دسته‌بندی محتوا (لبنیات · شیرینی · وارداتی …)
+  color     String? // رنگ زون‌بند فیزیکی
+  note      String?
+  sortOrder Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shelf     ArchiveShelf      @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  documents ArchiveDocument[]
+}
+
+/// نمایندهٔ فروش / رانندهٔ تأمین‌کننده — افراد بیرونی که با آن‌ها سر و کار داریم
+model SalesRep {
+  id        String   @id @default(cuid())
+  name      String
+  mobile    String?
+  company   String? // شرکت / تأمین‌کنندهٔ مربوطه (متن آزاد — برای سازگاری با گذشته)
+  title     String? // سمت (نماینده · راننده …)
+  note      String?
+  active    Boolean  @default(true)
+  supplierIdsJson String? // R10: آرایهٔ JSON شناسهٔ تأمین‌کننده‌هایی که این نماینده برایشان کار می‌کند
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// سند آرشیو — رکورد دیجیتالِ هر مدرک فیزیکی (فاکتور خرید · رسید پرداخت · چک · مرجوعی · سفارش …)
+model ArchiveDocument {
+  id             String   @id @default(cuid())
+  kind           String   @default("ORDER") // ORDER | INVOICE | RECEIPT | CHEQUE | RETURN | OTHER
+  title          String
+  dateJalali     String? // تاریخ سند YYYY-MM-DD
+  // ارتباط با موجودیت‌های سامانه (loosely coupled — فقط شناسه/نام، بدون FK سخت)
+  supplierId     String?
+  supplierName   String?
+  orderId        String?
+  orderCode      String?
+  returnId       String?
+  returnCode     String?
+  chequeId       String?
+  chequeNumber   String?
+  // شماره‌های هلو
+  holooInvoiceNo String? // شماره فاکتور خرید هلو
+  holooReceiptNo String? // شماره رسید پرداخت هلو
+  // نمایندهٔ بیرونی
+  repId          String?
+  repName        String?
+  repRole        String? // دریافت چک · دریافت نقدی · تحویل مرجوعی · کالای نیامده …
+  repNote        String?
+  // محل فیزیکی سند
+  binderId       String?
+  folio          String? // شمارهٔ صفحه/جیب داخل زون‌بند
+  // R8: اسکن دیجیتال سند (data-URL تصویر — مثل لوگوی برند، حداکثر ~۳۰۰KB)
+  scanDataUrl    String?
+  scanName       String? // نام فایل اصلی اسکن
+  // مبالغ و وضعیت
+  amount         Float    @default(0)
+  status         String   @default("ARCHIVED") // PENDING | IN_PROGRESS | ARCHIVED | MISSING
+  returnedJson   String   @default("[]") // اقلام مرجوعی [{name, qty, reason}] — در قرمز نمایش داده می‌شود
+  note           String?
+  createdById    String?
+  createdByName  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  binder ArchiveBinder? @relation(fields: [binderId], references: [id], onDelete: SetNull)
+}
+
+// ===================== R7 — تاریخچهٔ خرید و فروش (دادهٔ واقعی هلو) =====================
+
+/// رکورد خرید/فروش ماهانه از خروجی هلو (تیر تا مهر ۱۴۰۵) — مبنای نمودارهای عملکرد کالا
+model TradeRecord {
+  id          String   @id @default(cuid())
+  kind        String // BUY | SELL
+  month       String // 1405-04 (تیر)
+  dateJalali  String // 1405.04.01
+  invoiceNo   String // شماره فاکتور هلو
+  rowIdx      Int // ردیف در فایل مبدأ (کلید idempotency)
+  productName String
+  productId   String? // اتصال به Product (با بارکد/نام)
+  barcode     String?
+  qty         Float    @default(0)
+  unitPrice   Float    @default(0)
+  lineTotal   Float    @default(0)
+  discount    Float    @default(0)
+  totalAfter  Float    @default(0)
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@unique([kind, month, invoiceNo, rowIdx])
+}
+
+// ===================== R8 — کنترل انقضای کالاها (روی ردیف/قفسه) =====================
+
+/// بازرسی انقضا توسط چیدمان‌گر — مدیر انتخاب می‌کند کدام چیدمان‌گر، کدام بخش/ردیف را
+/// بررسی کرده و سیستم آخرین وضعیت هر ردیف را نگه می‌دارد («هر ردیف کِی و چطور دیده شد»)
+model LaneCheck {
+  id               String   @id @default(cuid())
+  dateJalali       String // YYYY-MM-DD روز بازرسی
+  merchandiserId   String? // کاربر چیدمان‌گر (خانم لطفی / آقای ملایی و…)
+  merchandiserName String
+  sectionLabel     String // بخش فروشگاه (برچسب بلوک نقشه — G1 | IC-A | NUTS | …)
+  lane             String // ردیف/طبقهٔ مشخص — «طبقهٔ ۲» | «قفسهٔ یخچال ۱» | «باتوم راست» …
+  status           String   @default("ok") // ok | needs_attention | problem
+  expiredFound     Int      @default(0) // تعداد اقلام تاریخ‌گذشتهٔ پیدا‌شده
+  nearExpiry       Int      @default(0) // اقلام نزدیک انقضا (۳۰ روز)
+  removedQty       Int      @default(0) // تعداد جمع‌آوری‌شده از قفسه
+  note             String?
+  createdById      String?
+  createdByName    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([sectionLabel, lane])
+}
+
+// ===================== SHOP — فروشگاه آنلاین hyperzeytoon.com (ECOMMERCE) =====================
+
+/// مشتری فروشگاه آنلاین — هویت = شمارهٔ موبایل + OTP
+model ShopCustomer {
+  id          String    @id @default(cuid())
+  phone       String    @unique // 09xxxxxxxxx
+  name        String    @default("")
+  isBlocked   Boolean   @default(false)
+  otpHash     String? // کد فعال هش‌شده (sha256)
+  otpExpAt    DateTime?
+  otpTryCount Int       @default(0) // تلاش‌های ورود کد از آخرین ارسال
+  otpSentAt   DateTime? // آخرین زمان ارسال (نرخ‌محوری ۳/ساعت)
+  loginCount  Int       @default(0)
+  lastLoginAt DateTime?
+  holooErp    String? // ErpCode طرف حساب هلو (پس از اولین فاکتور)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  addresses ShopAddress[]
+  orders    ShopOrder[]
+  baskets   ShopBasket[]
+}
+
+/// آدرس‌های مشتری (اسنپ‌شات هنگام ثبت سفارش جدا ذخیره می‌شود)
+model ShopAddress {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String   @default("خانه") // خانه | محل کار | …
+  receiver   String // نام گیرنده
+  phone      String? // شمارهٔ تماس جایگزین
+  city       String   @default("رفسنجان")
+  address    String // متن کامل آدرس
+  postalCode String?
+  note       String? // زنگ/واحد/توضیح
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  customer ShopCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+}
+
+/// سبد خرید — یک سبد فعال به ازای توکن سبد (کوکی ویترین). رزرو موجودی: سبدهای به‌روزشده
+/// در ۱۵ دقیقهٔ اخیر + سفارش‌های در جریان (پیش از تحویل/لغو) از موجودیِ قابل‌فروش کم می‌شوند.
+model ShopBasket {
+  id         String   @id @default(cuid())
+  token      String   @unique // توکن سبد (کوکی httpOnly ویترین)
+  customerId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer ShopCustomer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items    ShopBasketItem[]
+
+  @@index([updatedAt])
+}
+
+model ShopBasketItem {
+  id        String   @id @default(cuid())
+  basketId  String
+  productId String
+  qty       Int      @default(1)
+  unitPrice Float    @default(0) // قیمت لحظهٔ افزودن (نمایش؛ نهایی = قیمت لحظهٔ ثبت سفارش)
+  addedAt   DateTime @default(now())
+
+  basket ShopBasket @relation(fields: [basketId], references: [id], onDelete: Cascade)
+
+  @@unique([basketId, productId])
+  @@index([productId])
+}
+
+/// سفارش آنلاین — CART → AWAITING_PAYMENT → PAID/COD → PICKING → DELIVERING → DELIVERED → INVOICED (+CANCELLED)
+model ShopOrder {
+  id           String    @id @default(cuid())
+  code         String    @unique // HZ-WEB-1401
+  customerId   String
+  status       String    @default("CART") // CART | AWAITING_PAYMENT | PAID | COD | PICKING | DELIVERING | DELIVERED | INVOICED | CANCELLED
+  payMethod    String    @default("COD") // COD | GATEWAY
+  paymentRef   String? // مرجع درگاه
+  paidAt       DateTime?
+  addressJson  String // اسنپ‌شات: {receiver, phone, city, address, postalCode, note, label}
+  slotDate     String? // Jalali YYYY-MM-DD
+  slotFrom     String? // HH:MM
+  slotTo       String? // HH:MM
+  deliveryFee  Float     @default(0)
+  itemsTotal   Float     @default(0)
+  discount     Float     @default(0)
+  total        Float     @default(0)
+  note         String?
+  // گردش‌کار کارکنان
+  pickerId     String?
+  pickerName   String?
+  pickedAt     DateTime?
+  delivererName String?
+  delivererPhone String?
+  deliveredAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+  // هلو — فاکتور فروش نوع ۱ (idempotency: holooInvoiceNo پر شده = یک‌بار)
+  holooCustomerErp String?
+  holooInvoiceNo   String?
+  holooSanadNo     String?
+  holooPushAt      DateTime?
+  holooError       String?
+  historyJson  String    @default("[]") // [{at, by, action, detail}]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  customer ShopCustomer  @relation(fields: [customerId], references: [id])
+  items    ShopCartItem[]
+
+  @@index([status, createdAt])
+  @@index([customerId, createdAt])
+}
+
+/// اقلام سفارش آنلاین (نام/قیمت اسنپ‌شات لحظهٔ ثبت)
+model ShopCartItem {
+  id           String @id @default(cuid())
+  orderId      String
+  productId    String
+  name         String
+  barcode      String?
+  unit         String @default("عدد")
+  qty          Int    @default(1)
+  unitPrice    Float  @default(0) // قیمت فروش نهایی (فروش)
+  printedPrice Float  @default(0) // قیمت چاپی
+  lineTotal    Float  @default(0)
+  pickedQty    Int    @default(0) // جمع‌آوری‌شده توسط کارتن‌زن
+  pickNote     String? // مثلاً «نبود — جایگزین شد»
+
+  order ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+/// گفت‌وگوی دستیار هوشمند — تاریخچهٔ جلسات (هر کاربر جلسات خودش را می‌بیند)
+model AiChatSession {
+  id        String         @id @default(cuid())
+  userId    String
+  title     String         @default("گفت‌وگوی جدید")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  messages  AiChatMessage[]
+}
+
+model AiChatMessage {
+  id        String        @id @default(cuid())
+  sessionId String
+  role      String // user | assistant
+  content   String
+  toolsJson String        @default("[]")
+  model     String?
+  createdAt DateTime      @default(now())
+  session   AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+/// ایمیل ارسالی از پلتفرم (بخش ایمیل ساررسید) — لاگ کامل ارسال‌ها
+model EmailOutbox {
+  id        String    @id @default(cuid())
+  to        String
+  toName    String    @default("")
+  subject   String    @default("")
+  body      String
+  status    String    @default("PENDING") // PENDING | SENT | FAILED
+  messageId String?
+  error     String?
+  userId    String?
+  userName  String    @default("")
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@index([createdAt])
+}
+
+/// پیش‌نویس پیامک مرکز پیامک — ذخیره/بازیابی متن‌های آماده
+model SmsDraft {
+  id        String   @id @default(cuid())
+  userId    String?
+  userName  String   @default("")
+  title     String   @default("")
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// دستهٔ نمایشی فروشگاه آنلاین — نگاشتِ گروه‌های هلو به دستهٔ تمیز مشتری (ادغام «لبنیات»/«گروه لبنیات» و…)
+model ShopCategory {
+  id         String   @id @default(cuid())
+  name       String   @unique // نام نمایشی به فارسی
+  emoji      String   @default("🛒")
+  sortOrder  Int      @default(100)
+  active     Boolean  @default(true)
+  groupsJson String   @default("[]") // [«لبنیات», «گروه لبنیات»] ← mainGroup های Product که این دسته را می‌سازند
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// تصاویر چندگانهٔ کالا در فروشگاه — انتخاب از جست‌وجوی وب یا دستی؛ primary نمای کارت/PDP
+model ShopProductMedia {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  caption   String   @default("")
+  source    String   @default("manual") // web-search | manual
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([productId, url])
+  @@index([productId])
+}
+
+/// گزارش رویداد قیمت/موجودی برای ویترین (outbox) — ETag کاتالوگ مرجع اصلی است؛
+/// این جدول ژورنال رویدادها برای پایش و آپگرید آیندهٔ real-time است.
+model ShopSyncEvent {
+  id             String    @id @default(cuid())
+  kind           String // PRICE | STOCK | PRODUCT | SYNC
+  productId      String?
+  payloadJson    String    @default("{}")
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
+/// محدودیت نرخ OTP — ۳ ارسال در ساعت به هر شماره + سقف روزانهٔ IP
+model ShopOtpLog {
+  id        String   @id @default(cuid())
+  phone     String
+  ip        String   @default("")
+  code      String? // فقط در حالت dev ذخیره می‌شود (shop:devOtp)
+  createdAt DateTime @default(now())
+
+  @@index([phone, createdAt])
+  @@index([ip, createdAt])
+}
+
+// ===================== R8 — زمان‌بندی انبارگردانی بر اساس کالا =====================
+
+/// برنامهٔ شمارش دوره‌ای هر کالا — بعد از هر انبارگردانی، تاریخ بعدی بر اساس دورهٔ
+/// عملی (بر پایهٔ گردش فروش) خودکار می‌نشیند؛ مدیر می‌تواند دوره‌ها را شخصی‌سازی کند
+model CountSchedule {
+  id              String   @id @default(cuid())
+  productId       String
+  productName     String
+  barcode         String?
+  intervalDays    Int      @default(30) // دورهٔ شمارش (روز) — 7/14/30/60/90/120/180
+  lastCountJalali String? // آخرین بار کِی شمرده شد
+  lastDiff        Int      @default(0) // آخرین مغایرت
+  nextDueJalali   String // موعد بعدی
+  active          Boolean  @default(true)
+  autoReschedule  Boolean  @default(true) // بعد از هر شمارش، موعد بعدی خودکار جلو برود
+  priority        String   @default("NORMAL") // HIGH | NORMAL | LOW (بر پایهٔ گردش فروش)
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([productId])
+}

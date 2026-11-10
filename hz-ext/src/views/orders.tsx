@@ -817,7 +817,7 @@ export default function OrdersView() {
   }
 
   async function doSearch(t: string) {
-    const r = await api('/api/products/search' + qs({ q: t, full: '1', limit: 20 }))
+    const r = await api('/api/products/search' + qs({ q: t, full: '1', limit: 200 }))
     setSearching(false)
     if (!r.ok) { toast.error(r.error || 'خطا در جست‌وجو'); setResults([]); return }
     const products = r.data?.products ?? []

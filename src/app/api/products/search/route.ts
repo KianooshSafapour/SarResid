@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   const q = (sp.get('q') || '').trim()
   const full = sp.get('full') === '1'
-  const limit = Math.max(1, Math.min(30, Math.round(Number(sp.get('limit')) || 20)))
+  const limit = Math.max(1, Math.min(200, Math.round(Number(sp.get('limit')) || 100)))
 
   if (!q) return ok({ products: [] })
 
@@ -71,7 +71,8 @@ export async function GET(req: NextRequest) {
     },
   })
   const ranked = rankFuzzy(q, candidates)
-  const products = (ranked.matched.length ? ranked.matched : ranked.partial).slice(0, limit)
+  const sorted = (ranked.matched.length ? ranked.matched : ranked.partial).sort((a, b) => a.name.localeCompare(b.name, 'fa'))
+  const products = sorted.slice(0, limit)
 
   if (!full) {
     return ok({

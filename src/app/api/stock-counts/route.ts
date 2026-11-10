@@ -296,8 +296,22 @@ async function countProduct(user: NonNullable<SessionUser>, body: Record<string,
     const item = await tx.stockCountItem.create({
       data: { countId: count.id, productId, name: product.name, barcode, systemQty, countedQty, diff, note },
     })
-    /* اصلاح واقعی موجودی + تاریخ آخرین شمارش */
-    await tx.product.update({ where: { id: productId }, data: { stock: countedQty, lastCountDate: today } })
+    /* R23: قانون ۳-شمار — اگر اختلاف باشد، موجودی فقط در شمارش سوم (یا بعدی) اصلاح می‌شود
+       شمارش ۱ و ۲ با اختلاف: ثبت می‌شوند ولی موجودی عوض نمی‌شود (احتمال خطای شمارش) */
+    if (diff === 0) {
+      await tx.product.update({ where: { id: productId }, data: { stock: countedQty, lastCountDate: today } })
+    } else {
+      // شمارش‌های قبلی این کالا با اختلاف را بشمار
+      const prevMismatches = await tx.stockCountItem.count({
+        where: { productId, diff: { not: 0 }, count: { date: today } },
+      })
+      const totalMismatchesToday = prevMismatches + 1
+      if (totalMismatchesToday >= 3) {
+        // شمارش سوم یا بیشتر — موجودی اصلاح شود
+        await tx.product.update({ where: { id: productId }, data: { stock: countedQty, lastCountDate: today } })
+      }
+      // شمارش ۱ یا ۲: فقط ثبت، بدون اصلاح
+    }
     /* زمان‌بندی بعدی: با autoReschedule جلو می‌رود؛ فعال/غیرفعال بودن حفظ می‌شود */
     const schedule = await tx.countSchedule.upsert({
       where: { productId },

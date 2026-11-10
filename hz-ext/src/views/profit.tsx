@@ -1380,7 +1380,7 @@ export default function ProfitView() {
                     dir="ltr"
                     inputMode="decimal"
                     className="num text-end"
-                    value={toFaDigits(free100 ? baseCost : totalCost)}
+                    value={faMoneyFmt(free100 ? baseCost : totalCost)}
                     placeholder={free100 ? 'قیمت عادی تأمین‌کننده…' : 'مثلاً ۲۵۰٬۰۰۰'}
                     onChange={(e: any) => {
                       const v = toEnDigits(e.target.value).replace(/٫/g, '.').replace(/[^\d.]/g, '')
@@ -1604,7 +1604,7 @@ export default function ProfitView() {
                               ) : (
                                 <RowNumInput
                                   className="num h-8 w-24 text-center text-xs"
-                                  value={toFaDigits(String(r.totalCost))}
+                                  value={faMoneyFmt(r.totalCost)}
                                   onCommit={(v) => updateItem(r.key, { totalCost: Math.round(num(v)) })}
                                 />
                               )}

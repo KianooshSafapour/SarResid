@@ -274,6 +274,7 @@ model Supplier {
   creditLimit    Float    @default(0)
   holooErp       String? // شناسه ErpCode طرف حساب در هلو
   status         String   @default("فعال")
+  chequeMaxDays  Int?     // سقف مهلت چک این تأمین‌کننده (null = نامحدود)
   note           String?
   createdAt      DateTime @default(now())
 }

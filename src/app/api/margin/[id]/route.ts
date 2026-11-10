@@ -4,7 +4,7 @@ import { ok, fail, logActivity, safeJson } from '@/lib/api'
 import { getSessionUser, type SessionUser } from '@/lib/auth'
 import { toFaDigits, todayJalaliDash, addDaysJalaliDash } from '@/lib/jalali'
 import { deriveItem, invoiceListOut, MARGIN_ROLES, getMarginThresholds, type MarginItemInput } from '../route'
-import { createPurchaseOrder, publishPricesToHoloo, faMoney, MAX_CHEQUE_DAYS, type PurchaseDerivedItem } from '@/lib/margin-purchase'
+import { createPurchaseOrder, publishPricesToHoloo, faMoney, type PurchaseDerivedItem } from '@/lib/margin-purchase'
 import { pushPurchaseInvoiceToHoloo } from '@/lib/purchase-invoice-push'
 
 export const dynamic = 'force-dynamic'
@@ -469,7 +469,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const payMethod = ['CASH', 'CHEQUE', 'POS'].includes(String(body.payMethod)) ? String(body.payMethod) : 'CASH'
     const pushToHoloo = body.pushToHoloo === true
     /* R17: چکِ پرداخت خرید همیشه با سقف مهلت (۴۵ روز) ثبت می‌شود — سررسید = تاریخ فاکتور + مهلت */
-    const chequeDays = payMethod === 'CHEQUE' ? Math.max(1, Math.min(MAX_CHEQUE_DAYS, Math.round(Number(body?.chequeDays) || MAX_CHEQUE_DAYS))) : 0
+    const chequeDays = payMethod === 'CHEQUE' ? Math.max(1, Math.round(Number(body?.chequeDays) || 45)) : 0
 
     const { order, totalAmount, stockUpdated } = await createPurchaseOrder({
       items: acceptedItems as unknown as PurchaseDerivedItem[],

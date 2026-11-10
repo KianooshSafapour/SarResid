@@ -1,4 +1,18 @@
 import { useState, useEffect, useMemo, useRef, api, qs, useShell, toast, cn, Button, Input, Card, CardContent, CardHeader, CardTitle, Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, money, fa, toEnDigits, toFaDigits, todayJalali, faSlash, jsDateToJalali, Icon, I } from '../lib/hz'
+
+/* جداکنندهٔ هزارگان برای نمایش قیمت: 1250000 → ۱٬۲۵۰٬۰۰۰ */
+function faMoneyFmt(v: string | number): string {
+  const raw = toEnDigits(String(v ?? '')).replace(/[^\d.]/g, '')
+  if (!raw) return ''
+  const [int, dec] = raw.split('.')
+  const intFmt = Number(int || 0).toLocaleString('en-US')
+  let out = toFaDigits(intFmt).replace(/,/g, '\u066c')
+  if (dec !== undefined) out += '\u066b' + toFaDigits(dec)
+  return out
+}
+function stripMoneyFmt(v: string): string {
+  return toEnDigits(v).replace(/[^\d.]/g, '')
+}
 /* ═══════════════════════════════════════════════════════════════
    profit/builder — «سودسنج پیشرفته» هایپر زیتون — بازطراحی R5-B
    موتور حاشیه سود + گیج زندهٔ SVG خالص + ویرایش درجای اقلام
@@ -1404,8 +1418,8 @@ export default function ProfitView() {
                     <Input
                       ref={priceRef}
                       dir="ltr" inputMode="decimal" className="num text-end"
-                      value={toFaDigits(printedPrice)}
-                      onChange={(e: any) => onPrintedChange(toEnDigits(e.target.value).replace(/٫/g, '.').replace(/[^\d.]/g, ''))}
+                      value={faMoneyFmt(printedPrice)}
+                      onChange={(e: any) => onPrintedChange(stripMoneyFmt(e.target.value))}
                       onKeyDown={(e: any) => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
                       placeholder="قیمت روی برچسب کالا"
                     />
@@ -1429,8 +1443,8 @@ export default function ProfitView() {
                       <Input
                         ref={saleRef}
                         dir="ltr" inputMode="decimal" className="num text-end"
-                        value={toFaDigits(salePrice)}
-                        onChange={(e: any) => onSaleChange(toEnDigits(e.target.value).replace(/٫/g, '.').replace(/[^\d.]/g, ''))}
+                        value={faMoneyFmt(salePrice)}
+                        onChange={(e: any) => onSaleChange(stripMoneyFmt(e.target.value))}
                         onKeyDown={(e: any) => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
                         placeholder="اگر همان چاپی است خالی بماند"
                       />

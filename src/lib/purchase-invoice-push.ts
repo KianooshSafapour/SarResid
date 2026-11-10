@@ -119,8 +119,8 @@ export async function pushPurchaseInvoiceToHoloo(marginInvoiceId: string): Promi
       }
     }
     const succ = assertHolooWrite(res, 'فاکتور خرید')
-    const invoiceNo = succ.ReturnParam1 || ''
-    const sanadNo = succ.ReturnParam2 || ''
+    const invoiceNo = succ.ReturnParam1 || succ.Code || ''
+    const sanadNo = succ.ReturnParam2 || succ.SanadCode || ''
 
     // ۵) ذخیرهٔ شماره‌ها در MarginInvoice + رویداد تاریخچه
     const history = (() => {

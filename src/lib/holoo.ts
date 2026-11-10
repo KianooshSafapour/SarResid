@@ -401,6 +401,8 @@ export interface HolooWriteSuccess {
   ReturnParam1?: string
   ReturnParam2?: string
   ReturnParam3?: string
+  Code?: string      // سرویس واقعی: شمارهٔ فاکتور در Code
+  SanadCode?: string // سرویس واقعی: شمارهٔ سند در SanadCode
 }
 
 export interface HolooWriteResult {

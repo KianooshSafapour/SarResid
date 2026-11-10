@@ -118,8 +118,8 @@ async function pushInvoice(marginInvoiceId: string) {
       }
     }
     const succ = assertHolooWrite(res, 'فاکتور خرید')
-    const invoiceNo = succ.ReturnParam1 || ''
-    const sanadNo = succ.ReturnParam2 || ''
+    const invoiceNo = succ.ReturnParam1 || succ.Code || ''
+    const sanadNo = succ.ReturnParam2 || succ.SanadCode || ''
 
     await p.marginInvoice.update({
       where: { id: marginInvoiceId },

@@ -120,3 +120,41 @@ export async function recalcAllSmartStocks(): Promise<{ updated: number; manual:
 
   return { updated, manual, default: default_ }
 }
+
+/**
+ * R24: کالاهای مرده — کالاهایی که ۶+ ماه خریداری/فروش نشده‌اند باید غیرفعال شوند
+ */
+export async function markDeadProducts(): Promise<{ marked: number }> {
+  // آخرین خرید/فروش هر کالا از TradeRecord
+  const sixMonthsAgoJalali = (() => {
+    // تقریب: ۶ ماه پیش
+    const d = new Date()
+    d.setMonth(d.getMonth() - 6)
+    const jy = d.getFullYear() - 621
+    return jy // سال جلالی تقریبی
+  })()
+
+  // کالاهایی که در ۶ ماه اخیر هیچ خرید یا فروشی نداشته‌اند و موجودی صفر است
+  const products = await db.product.findMany({
+    where: {
+      active: true,
+      stock: { lte: 0 },
+    },
+    select: { id: true, name: true },
+    take: 5000,
+  })
+
+  let marked = 0
+  for (const p of products) {
+    const hasRecentTrade = await db.tradeRecord.findFirst({
+      where: { productId: p.id, kind: { in: ['BUY', 'SELL'] } },
+      orderBy: { createdAt: 'desc' },
+    })
+    // اگر آخرین معامله بیش از ۶ ماه پیش بوده یا اصلاً نبوده
+    if (!hasRecentTrade || new Date(hasRecentTrade.createdAt) < new Date(Date.now() - 180 * 24 * 3600 * 1000)) {
+      await db.product.update({ where: { id: p.id }, data: { active: false } }).catch(() => null)
+      marked++
+    }
+  }
+  return { marked }
+}

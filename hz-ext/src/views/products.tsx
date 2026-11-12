@@ -1097,7 +1097,8 @@ export default function ProductsView() {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(24) // R8: ۲۴/۴۸/۹۶ کالا در هر صفحه
-  const [lowStock, setLowStock] = useState(false) // R8: فیلتر «کم‌موجود» (کالاهای فعالِ زیر حد سفارش مجدد)
+  const [lowStock, setLowStock] = useState(false)
+  const [negStock, setNegStock] = useState(false) // R8: فیلتر «کم‌موجود» (کالاهای فعالِ زیر حد سفارش مجدد)
   const [pageInput, setPageInput] = useState('1') // R8: ورودی شمارهٔ صفحه (ارقام فارسی مجاز)
   const [pageBad, setPageBad] = useState(false) // R8: ورودی نامعتبر ⇒ قرمزی + لرزش + بازگشت
   const pageInputRef = useRef<HTMLInputElement | null>(null)
@@ -1131,7 +1132,7 @@ export default function ProductsView() {
     api('/api/products' + qs({
       q: qEff || undefined, mainGroup: mainGroup || undefined, subGroup: subGroup || undefined,
       unit: unit || undefined, status: status || undefined,
-      lowStock: lowStock ? 1 : undefined, page, pageSize, // R8: فیلتر کم‌موجود + اندازهٔ صفحه
+      lowStock: lowStock ? 1 : undefined, negStock: negStock ? 1 : undefined, page, pageSize, // R8: فیلتر کم‌موجود + اندازهٔ صفحه
     }))
       .then((r: any) => {
         if (my !== seqRef.current) return
@@ -1172,7 +1173,7 @@ export default function ProductsView() {
     api('/api/products' + qs({
       q: qEff || undefined, mainGroup: mainGroup || undefined, subGroup: subGroup || undefined,
       unit: unit || undefined, status: status || undefined,
-      lowStock: lowStock ? 1 : undefined, page, pageSize,
+      lowStock: lowStock ? 1 : undefined, negStock: negStock ? 1 : undefined, page, pageSize,
     })).then((r: any) => { if (my === seqRef.current) applyList(r, page) })
   }
   /* R5-F: پس از ثبت/ویرایش، متا (شمارش‌ها + فهرست گروه‌ها) هم تازه شود */

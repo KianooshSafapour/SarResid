@@ -1564,7 +1564,7 @@ export default function OrdersView() {
                                     <span
                                       title={`آخرین خرید ثبت‌شده در هلو — ${toFaDigits(String(lb.lastBuyDateLabel ?? '').replace(/\./g, '/'))} · ${fa(lb.lastBuyQty)} ${p.unit ?? 'عدد'} · ${money(lb.lastBuyPrice)} ریال${lb.buyCount > 1 ? ` · ${fa(lb.buyCount)} خرید در ${fa(lb.buyMonths)} ماه` : ''}`}
                                       className="inline-flex shrink-0 items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-bold text-teal-800">
-                                      <I.carton size={10} /> آخرین خرید: {lb.lastBuyMonthLabel} · {fa(lb.lastBuyQty)} عدد
+                                      <I.carton size={10} /> خرید: {lb.lastBuyDateLabel ? toFaDigits(lb.lastBuyDateLabel.replace(/\./g, '/')).slice(5) : lb.lastBuyMonthLabel} · {fa(lb.lastBuyQty)}عد
                                     </span>
                                   ) : (
                                     <span className="shrink-0 text-stone-400">بدون سابقهٔ خرید</span>

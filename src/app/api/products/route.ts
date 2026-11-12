@@ -113,7 +113,8 @@ function barcodeCountOf(barcodesJson: string, code: string | null): number {
 /** R8: کم‌موجودی — آستانهٔ هر کالا: COALESCE(lowStockThreshold, reorderLevel, 5)
  *  (میان‌بر: حد اختصاصی مدیر ← حد هلو ← ۵). فقط کالاهای فعال.
  *  Prisma مقایسهٔ دو ستون را نمی‌تواند بنویسد ⇒ مسیر raw SQL (الگوی /api/trades). */
-const LOW_STOCK_SQL = Prisma.sql`stock <= COALESCE(lowStockThreshold, reorderLevel, 5)`
+const LOW_STOCK_SQL = Prisma.sql`stock <= COALESCE(lowStockThreshold, reorderLevel, 5)",
+      ...(filters.negStock ? Prisma.sql" AND stock < 0" : Prisma.empty)`
 
 interface ProductRow {
   id: string
